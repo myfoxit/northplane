@@ -256,9 +256,33 @@ web/              React 19 + TypeScript + Vite + Tailwind
 
 ## Development
 
+**Hot-reload dev pipeline** — one command runs everything:
+
+```bash
+make dev
+```
+
+| | URL | reloads on |
+|---|---|---|
+| UI (Vite, HMR) | http://localhost:5173 | any edit under `web/src` — instant, state-preserving |
+| API (`northplaned`) | http://127.0.0.1:8443 | any edit under `cmd/` or `internal/` — auto rebuild + restart (~2 s) |
+
+The Vite server proxies all backend routes (`/api`, `/login`, `/auth`,
+`/status`, `/setup`, `/mcp`, health) to the Go process, so the SPA on
+:5173 talks to a fully live backend — cookies same-origin, SSE streams
+through. Dev state lives in git-ignored `.dev/` (SQLite, config, key);
+the idempotent demo environment is seeded on start (`NP_DEV_DEMO=0` to
+skip — demo logins: `demo-operator / operator-demo-2026!`). A failed Go
+build keeps the previous server running and prints the errors.
+`make dev-reset` wipes the dev state. No watcher tools needed (portable
+source polling); knobs: `NP_DEV_LISTEN`, `NP_DEV_WEB_PORT`, `NP_DEV_DIR`,
+`NP_DEV_POLL`.
+
+**Release build & tests:**
+
 ```bash
 make                      # build the UI + all three binaries into ./bin
-./bin/northplaned serve   # dev mode: SQLite per-user data dir, HTTP on loopback
+./bin/northplaned serve   # prod-like: embedded UI, SQLite, HTTP on loopback
 
 make test                 # go vet + all suites (SQLite)
 go test -race ./...       # race detector
