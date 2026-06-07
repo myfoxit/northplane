@@ -38,6 +38,12 @@ COPY --from=build --chown=65532:65532 /data /var/lib/northplane
 # or a config file. Runs as the distroless 'nonroot' user (uid 65532) — the
 # platform-aware default data dir resolves under its home when not root.
 ENV NORTHPLANE_DATA_DIR=/var/lib/northplane
+# Bind all interfaces so -p port mapping works (loopback inside the container
+# namespace is unreachable from the host). The server still refuses plaintext
+# on this non-loopback listener unless TLS is configured, or it runs behind a
+# TLS-terminating proxy (NORTHPLANE_TRUST_PROXY=true — see docker-compose.yml),
+# or NORTHPLANE_TLS_INSECURE=true is set explicitly for dev.
+ENV NORTHPLANE_LISTEN=:8443
 VOLUME /var/lib/northplane
 EXPOSE 8443
 

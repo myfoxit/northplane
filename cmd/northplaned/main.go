@@ -205,8 +205,9 @@ WantedBy=multi-user.target
 
 next steps:
   1. review %s (TLS, storage backend, OIDC)
-  2. northplaned bootstrap-admin -config %s
-  3. systemctl enable --now northplaned
+  2. systemctl enable --now northplaned
+  3. open /setup in the browser to create the admin account
+     (or headless: northplaned bootstrap-admin -config %s)
 `, cfgPath, keyPath, unitPath, cfgPath, cfgPath)
 }
 
@@ -335,6 +336,9 @@ func mcpCmd(args []string) {
 	}
 }
 
+// bootstrapAdminCmd mints the initial admin API token for headless installs.
+// Creating any token also closes the web first-run /setup gate (by design —
+// whoever ran this already has admin access).
 func bootstrapAdminCmd(args []string) {
 	fs := flag.NewFlagSet("bootstrap-admin", flag.ExitOnError)
 	cfg := loadConfig(fs, args)

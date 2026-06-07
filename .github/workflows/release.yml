@@ -1,0 +1,132 @@
+name: Release
+
+# Tag-triggered release: cross-platform binary tarballs + checksums on a
+# GitHub Release, and a multi-arch image on ghcr.io. Asset names form a
+# contract with install.sh: northplane_<tag>_<os>_<arch>.tar.gz
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  # Build the embedded UI once and share it (same pattern as ci.yml).
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: cd web && npm ci && npm run build
+      - run: |
+          rm -rf internal/web/dist
+          cp -r web/dist internal/web/dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ui-dist
+          path: internal/web/dist
+          retention-days: 1
+
+  binaries:
+    needs: ui
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: darwin, goarch: amd64 }
+          - { goos: darwin, goarch: arm64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: ui-dist
+          path: internal/web/dist
+      - name: Build and package
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p dist
+          for bin in northplaned np np-agent; do
+            CGO_ENABLED=0 go build -trimpath \
+              -ldflags "-s -w -X main.version=${VERSION}" \
+              -o "dist/${bin}" "./cmd/${bin}"
+          done
+          cp LICENSE README.md dist/
+          ASSET="northplane_${GITHUB_REF_NAME}_${GOOS}_${GOARCH}.tar.gz"
+          tar -czf "${ASSET}" -C dist northplaned np np-agent LICENSE README.md
+          sha256sum "${ASSET}" > "${ASSET}.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: archive-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            northplane_*.tar.gz
+            northplane_*.sha256
+          retention-days: 1
+
+  release:
+    needs: binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: archive-*
+          merge-multiple: true
+      - name: Aggregate checksums
+        run: |
+          cat northplane_*.sha256 > checksums.txt
+          rm northplane_*.sha256
+          cat checksums.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            northplane_*.tar.gz
+            checksums.txt
+          generate_release_notes: true
+
+  # Multi-arch image; the Dockerfile is self-contained (builds its own UI)
+  # so the compose `build: .` fallback keeps working unchanged.
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            VERSION=${{ github.ref_name }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -1,0 +1,5 @@
+# DOMAIN=localhost (default) → Caddy issues an internal self-signed cert.
+# DOMAIN=monitoring.example.net (public DNS → this host) → automatic Let's Encrypt.
+{$DOMAIN:localhost} {
+	reverse_proxy northplane:8443
+}

@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -151,6 +152,7 @@ func (s *Server) rootHandler(apiHandler http.Handler, authn *auth.Authenticator)
 	mux.Handle("/auth/", pages) // login, callback, logout
 	mux.Handle("/status/", pages)
 	mux.Handle("/login", pages)
+	mux.Handle("/setup", pages) // one-shot first-run admin setup
 	// MCP Streamable HTTP (SPEC §10.3) — Northplane tokens authenticate
 	if svc, ok := s.api.AI.(*ai.Service); ok {
 		mux.Handle("/mcp", mcpserver.HTTPHandler(svc, authn, s.version))
@@ -182,7 +184,11 @@ func (s *Server) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	tlsCfg, useTLS := s.tlsConfig(ln)
+	tlsCfg, useTLS, err := s.tlsConfig(ln)
+	if err != nil {
+		_ = ln.Close()
+		return err
+	}
 	scheme := "http"
 	if useTLS {
 		s.httpSrv.TLSConfig = tlsCfg
@@ -192,6 +198,9 @@ func (s *Server) Run(ctx context.Context) error {
 	s.Log.Info("northplane: listening", "addr", s.Cfg.Listen, "scheme", scheme,
 		"storage", s.Store.Dialect().Name(), "objects", s.cat.Size(),
 		"ai", s.api.AI.Enabled())
+	if web.FirstRunOpen(ctx, s.Store) {
+		s.Log.Warn("first run: open " + s.setupURL(scheme) + " to create your admin account")
+	}
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- s.httpSrv.Serve(ln) }()
@@ -211,25 +220,41 @@ func (s *Server) Run(ctx context.Context) error {
 }
 
 // tlsConfig resolves the TLS setup; plaintext is refused on non-loopback
-// listeners unless explicitly insecure (A-15.10).
-func (s *Server) tlsConfig(ln net.Listener) (*tls.Config, bool) {
+// listeners unless TLS is terminated upstream (trustProxy) or explicitly
+// insecure (A-15.10). A non-nil error means the server must not start.
+func (s *Server) tlsConfig(ln net.Listener) (*tls.Config, bool, error) {
 	if s.Cfg.TLS.CertFile != "" && s.Cfg.TLS.KeyFile != "" {
 		cert, err := tls.LoadX509KeyPair(s.Cfg.TLS.CertFile, s.Cfg.TLS.KeyFile)
 		if err != nil {
-			s.Log.Error("server: TLS cert load failed, refusing to start insecure", "err", err)
-			return nil, false
+			return nil, false, fmt.Errorf("TLS cert load failed, refusing to start insecure: %w", err)
 		}
 		return &tls.Config{
 			Certificates: []tls.Certificate{cert},
 			MinVersion:   tls.VersionTLS12,
-		}, true
+		}, true, nil
 	}
-	if s.Cfg.TLS.Insecure || isLoopback(ln.Addr()) {
-		s.Log.Warn("server: serving plaintext HTTP (dev/loopback only — A-15.10 requires TLS in production)")
-		return nil, false
+	if s.Cfg.TLS.Insecure || s.Cfg.TrustProxy || isLoopback(ln.Addr()) {
+		s.Log.Warn("server: serving plaintext HTTP (loopback/dev or behind a TLS-terminating proxy — A-15.10 requires TLS in production)")
+		return nil, false, nil
 	}
-	s.Log.Error("server: no TLS configured on a non-loopback listener — set tls.certFile/keyFile or tls.insecure for dev")
-	return nil, false
+	return nil, false, errors.New("no TLS configured on a non-loopback listener — set tls.certFile/keyFile, or trustProxy behind a TLS-terminating proxy, or tls.insecure for dev")
+}
+
+// setupURL derives a human-pasteable URL for the first-run hint: the
+// configured external BaseURL when set, otherwise scheme + listen address
+// with a wildcard/empty host rewritten to 127.0.0.1.
+func (s *Server) setupURL(scheme string) string {
+	if s.Cfg.BaseURL != "" {
+		return strings.TrimRight(s.Cfg.BaseURL, "/") + "/setup"
+	}
+	host, port, err := net.SplitHostPort(s.Cfg.Listen)
+	if err != nil {
+		return scheme + "://" + s.Cfg.Listen + "/setup"
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	return scheme + "://" + net.JoinHostPort(host, port) + "/setup"
 }
 
 func isLoopback(addr net.Addr) bool {

@@ -1,0 +1,61 @@
+# Northplane behind a TLS-terminating Caddy proxy.
+#
+#   Local trial:   docker compose up -d          → https://localhost  (self-signed)
+#   Production:    DOMAIN=monitoring.example.net docker compose up -d
+#                  (public DNS → this host; Caddy fetches a Let's Encrypt cert)
+#
+# First run: open the URL in a browser and create the admin account (/setup).
+
+services:
+  northplane:
+    image: ghcr.io/northplane/northplane:latest
+    # build: .          # uncomment to build from source instead of the published image
+    restart: unless-stopped
+    environment:
+      NORTHPLANE_LISTEN: ":8443"
+      NORTHPLANE_TRUST_PROXY: "true" # Caddy terminates TLS and sets X-Forwarded-*
+      NORTHPLANE_BASE_URL: "https://${DOMAIN:-localhost}"
+      # NORTHPLANE_STORAGE_DSN: "postgres://np:np@db:5432/northplane?sslmode=disable"
+    volumes:
+      - northplane-data:/var/lib/northplane
+    expose:
+      - "8443" # compose-network only; Caddy publishes 80/443
+    # no healthcheck here: the distroless image has no shell — Caddy probes it below
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - northplane
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: "${DOMAIN:-localhost}"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://northplane:8443/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # --- Optional: PostgreSQL instead of the embedded SQLite ------------------
+  # (set NORTHPLANE_STORAGE_DSN above and add `db` to northplane.depends_on)
+  # db:
+  #   image: postgres:16
+  #   restart: unless-stopped
+  #   environment:
+  #     POSTGRES_USER: np
+  #     POSTGRES_PASSWORD: np
+  #     POSTGRES_DB: northplane
+  #   volumes:
+  #     - pg-data:/var/lib/postgresql/data
+
+volumes:
+  northplane-data:
+  caddy-data:
+  caddy-config:
+  # pg-data:
