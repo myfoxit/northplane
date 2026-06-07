@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  background: #020617;
+  color: #e2e8f0;
+  -webkit-font-smoothing: antialiased;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+/* uPlot dark-theme adjustments */
+.u-legend { color: #94a3b8; font-size: 11px; }
+.u-inline tr { margin-right: 8px; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+details > summary::-webkit-details-marker { display: none; }

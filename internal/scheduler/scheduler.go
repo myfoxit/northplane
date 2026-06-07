@@ -100,6 +100,7 @@ func (s *Scheduler) Upsert(e *catalog.Entry) {
 			return
 		}
 	}
+	interval = interval.Truncate(time.Second)
 	if interval < time.Second {
 		interval = time.Second
 	}
@@ -114,12 +115,14 @@ func (s *Scheduler) Upsert(e *catalog.Entry) {
 		s.removeLocked(old)
 	}
 	// First due: align to splay grid — the next grid point ≥ now.
-	off := splay(id, interval)
-	gridStart := now.Truncate(interval).Add(off)
+	// Due times are always whole seconds (the wheel's resolution);
+	// fractional dues would defer entries by a full revolution.
+	off := splay(id, interval).Truncate(time.Second)
+	gridStart := now.Truncate(interval).Add(off).Truncate(time.Second)
 	for gridStart.Before(now) {
 		gridStart = gridStart.Add(interval)
 	}
-	en := &entry{objectID: id, interval: interval, due: gridStart}
+	en := &entry{objectID: id, interval: interval, due: gridStart.Truncate(time.Second)}
 	s.insertLocked(en)
 	s.entries[id] = en
 }
@@ -170,7 +173,7 @@ func (s *Scheduler) Reschedule(objectID string) {
 		return
 	}
 	s.removeLocked(en)
-	en.due = time.Now().Add(en.interval)
+	en.due = time.Now().Add(en.interval).Truncate(time.Second)
 	s.insertLocked(en)
 }
 

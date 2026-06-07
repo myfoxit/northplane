@@ -4,5 +4,4 @@
 *.test
 /web/node_modules/
 /web/dist/
-/internal/web/dist/
 testdata/fuzz/
