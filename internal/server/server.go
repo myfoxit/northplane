@@ -107,7 +107,7 @@ func New(ctx context.Context, cfg config.Config, store *storage.Store, ts *tsdb.
 	authn := &auth.Authenticator{Store: store}
 	var oidc *auth.OIDC
 	if cfg.OIDC.Issuer != "" {
-		o, err := auth.NewOIDC(ctx, cfg.OIDC, cfg.BaseURL, store, authn)
+		o, err := auth.NewOIDC(ctx, cfg.OIDC, cfg.BaseURL, store, authn, cfg.TrustProxy)
 		if err != nil {
 			log.Warn("server: OIDC disabled", "err", err)
 		} else {
@@ -156,7 +156,7 @@ func (s *Server) rootHandler(apiHandler http.Handler, authn *auth.Authenticator)
 		mux.Handle("/mcp", mcpserver.HTTPHandler(svc, authn, s.version))
 	}
 	mux.Handle("/", spa) // SPA + static assets (auth enforced client-side + API)
-	return securityHeaders(mux)
+	return securityHeaders(mux, s.Cfg.TrustProxy)
 }
 
 // Run starts all subsystems and serves until ctx is cancelled.
@@ -242,10 +242,10 @@ func isLoopback(addr net.Addr) bool {
 }
 
 // securityHeaders applies HSTS and hardening (SPEC §13.2).
-func securityHeaders(next http.Handler) http.Handler {
+func securityHeaders(next http.Handler, trustProxy bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		if r.TLS != nil {
+		if auth.RequestIsHTTPS(r, trustProxy) {
 			h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		}
 		h.Set("X-Content-Type-Options", "nosniff")

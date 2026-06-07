@@ -86,15 +86,52 @@ func (r *Rotation) OnCallAt(t time.Time, loc *time.Location, offset int) (string
 			return "", time.Time{}, time.Time{}
 		}
 	}
-	sl := r.shiftLength()
-	elapsed := t.Sub(r.Anchor)
-	idx := int(elapsed / sl)
-	if elapsed < 0 {
-		idx-- // floor division for pre-anchor times
+	var idx int
+	var start, end time.Time
+	switch r.Unit {
+	case RotateDaily, RotateWeekly:
+		// Daily/weekly handoffs happen at a fixed wall-clock time in the
+		// schedule's timezone. Use calendar arithmetic (AddDate) in loc so
+		// a DST transition does not shift the handover by an hour or drift
+		// the "every Monday 08:00" boundary over the year.
+		step := 1
+		if r.Unit == RotateWeekly {
+			step = 7
+		}
+		idx, start, end = calendarShift(r.Anchor.In(loc), t.In(loc), step)
+	default:
+		sl := r.shiftLength()
+		elapsed := t.Sub(r.Anchor)
+		idx = int(elapsed / sl)
+		if elapsed < 0 {
+			idx-- // floor division for pre-anchor times
+		}
+		start = r.Anchor.Add(time.Duration(idx) * sl)
+		end = start.Add(sl)
 	}
 	who := ((idx+offset)%len(r.Participants) + len(r.Participants)) % len(r.Participants)
-	start := r.Anchor.Add(time.Duration(idx) * sl)
-	return r.Participants[who], start, start.Add(sl)
+	return r.Participants[who], start, end
+}
+
+// calendarShift returns the rotation index and [start,end) bounds of the
+// shift containing t, where each shift is stepDays calendar days long
+// anchored to anchor's wall-clock time. anchor and t must already be in
+// the target location so AddDate preserves the local time-of-day across
+// DST.
+func calendarShift(anchor, t time.Time, stepDays int) (int, time.Time, time.Time) {
+	idx := int(t.Sub(anchor).Hours()/24) / stepDays // close approximation
+	start := anchor.AddDate(0, 0, idx*stepDays)
+	// Converge to the exact period: start <= t < end.
+	for next := anchor.AddDate(0, 0, (idx+1)*stepDays); !next.After(t); next = anchor.AddDate(0, 0, (idx+1)*stepDays) {
+		idx++
+		start = next
+	}
+	for start.After(t) {
+		idx--
+		start = anchor.AddDate(0, 0, idx*stepDays)
+	}
+	end := anchor.AddDate(0, 0, (idx+1)*stepDays)
+	return idx, start, end
 }
 
 // OnCallShift is a resolved duty assignment.

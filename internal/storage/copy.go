@@ -59,9 +59,19 @@ func copyTable(ctx context.Context, src, dst *Store, table string) (int64, error
 	if err != nil {
 		return 0, err
 	}
+	// Destination column types: needed to coerce SQLite's INTEGER-backed
+	// booleans into real bools for PostgreSQL (pgx rejects int→boolean).
+	dstBool, err := boolColumns(ctx, dst, table)
+	if err != nil {
+		return 0, err
+	}
+
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(cols)), ",")
+	// ON CONFLICT DO NOTHING: the destination Open() already seeded the
+	// default tenant and builtin roles, so a plain INSERT of the source's
+	// identical rows would hit a UNIQUE violation on the first table.
 	insert := dst.Q(`INSERT INTO ` + table + ` (` + strings.Join(cols, ",") +
-		`) VALUES (` + placeholders + `)`)
+		`) VALUES (` + placeholders + `) ON CONFLICT DO NOTHING`)
 
 	var n int64
 	err = dst.Write(ctx, func(tx *sql.Tx) error {
@@ -76,7 +86,7 @@ func copyTable(ctx context.Context, src, dst *Store, table string) (int64, error
 			}
 			vals := make([]any, len(cols))
 			for i, v := range raw {
-				vals[i] = convertValue(v, types[i].DatabaseTypeName(), dst.dialect)
+				vals[i] = convertValue(v, types[i].DatabaseTypeName(), dstBool[cols[i]], dst.dialect)
 			}
 			if _, err := tx.ExecContext(ctx, insert, vals...); err != nil {
 				return err
@@ -88,9 +98,44 @@ func copyTable(ctx context.Context, src, dst *Store, table string) (int64, error
 	return n, err
 }
 
+// boolColumns reports which columns of a destination table are boolean,
+// keyed by name, by inspecting an empty result set's column types.
+func boolColumns(ctx context.Context, dst *Store, table string) (map[string]bool, error) {
+	rows, err := dst.db.QueryContext(ctx, `SELECT * FROM `+table+` WHERE 1=0`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	cols, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+	types, err := rows.ColumnTypes()
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]bool, len(cols))
+	for i, c := range cols {
+		t := strings.ToUpper(types[i].DatabaseTypeName())
+		out[c] = strings.HasPrefix(t, "BOOL")
+	}
+	return out, nil
+}
+
 // convertValue bridges dialect representations (RFC3339 text ↔
 // timestamptz, int ↔ bool).
-func convertValue(v any, typeName string, dst Dialect) any {
+func convertValue(v any, typeName string, dstIsBool bool, dst Dialect) any {
+	if dstIsBool {
+		// SQLite stores booleans as INTEGER 0/1 → real bool for the dest.
+		switch x := v.(type) {
+		case int64:
+			return x != 0
+		case bool:
+			return x
+		case nil:
+			return nil
+		}
+	}
 	switch x := v.(type) {
 	case []byte:
 		if looksTimestamp(typeName) {
@@ -109,6 +154,13 @@ func convertValue(v any, typeName string, dst Dialect) any {
 	case time.Time:
 		return dst.TimeValue(x)
 	case bool:
+		// Destination is integer-backed (SQLite): store 0/1.
+		if dst.Name() != "postgres" {
+			if x {
+				return int64(1)
+			}
+			return int64(0)
+		}
 		return x
 	default:
 		return v
@@ -173,10 +225,13 @@ func copyEvents(ctx context.Context, src, dst *Store) (int64, error) {
 		return 0, err
 	}
 	for _, t := range tenants {
-		from := time.Time{}
+		cursor := ""
 		for {
+			// Page by UUIDv7 id cursor, not by advancing the timestamp:
+			// the old +1ms advance skipped any events sharing the boundary
+			// millisecond beyond the page size.
 			events, err := src.QueryEvents(ctx, EventFilter{
-				TenantID: t.ID, From: from, Limit: 1000, Asc: true})
+				TenantID: t.ID, Cursor: cursor, Limit: 1000, Asc: true})
 			if err != nil {
 				return total, err
 			}
@@ -187,7 +242,7 @@ func copyEvents(ctx context.Context, src, dst *Store) (int64, error) {
 				return total, err
 			}
 			total += int64(len(events))
-			from = events[len(events)-1].TS.Add(time.Millisecond)
+			cursor = events[len(events)-1].ID
 			if len(events) < 1000 {
 				break
 			}

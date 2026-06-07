@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"math/rand"
 	"strings"
+	"sync/atomic"
 	"text/template"
 	"time"
 
@@ -39,8 +40,12 @@ type Manager struct {
 	// SendHook overrides actual transport in tests.
 	SendHook func(channel *model.NotificationChannel, target string, subject, body string) (string, error)
 
-	statSent, statFailed, statDead uint64
+	statSent, statFailed, statDead atomic.Uint64
 }
+
+// outboxLease is how long a claimed delivery is hidden from other ticks
+// while it is being sent — must exceed the longest transport timeout.
+const outboxLease = 2 * time.Minute
 
 // New builds the manager.
 func New(store *storage.Store, bus *eventbus.Bus, log *slog.Logger) *Manager {
@@ -61,7 +66,7 @@ func (m *Manager) Run(ctx context.Context) {
 		case <-m.bus.Notifications:
 		case <-ticker.C:
 		}
-		items, err := m.store.DueOutbox(ctx, time.Now().UTC(), 100)
+		items, err := m.store.ClaimOutbox(ctx, time.Now().UTC(), outboxLease, 100)
 		if err != nil {
 			m.log.Error("notify: poll", "err", err)
 			continue
@@ -106,16 +111,16 @@ func (m *Manager) deliver(ctx context.Context, item *storage.OutboxItem) {
 		err = fmt.Errorf("unknown outbox kind %q", item.Kind)
 	}
 	if err == nil {
-		m.statSent++
+		m.statSent.Add(1)
 		_ = m.store.OutboxDone(ctx, item.ID)
 		_ = providerID
 		return
 	}
-	m.statFailed++
+	m.statFailed.Add(1)
 	attempts := item.Attempts + 1
 	dead := attempts >= maxAttempts
 	if dead {
-		m.statDead++
+		m.statDead.Add(1)
 		m.log.Error("notify: moved to DLQ", "item", item.ID, "err", err)
 	}
 	_ = m.store.OutboxRetry(ctx, item.ID, attempts,
@@ -139,8 +144,11 @@ func (m *Manager) deliverNotification(ctx context.Context, item *storage.OutboxI
 		return "", fmt.Errorf("bad payload: %w", err)
 	}
 	alert, err := m.store.GetAlert(ctx, job.TenantID, job.AlertID)
+	if err == storage.ErrNotFound {
+		return "", nil // alert genuinely gone: drop silently (delivered=true)
+	}
 	if err != nil {
-		return "", nil // alert gone: drop silently (delivered=true)
+		return "", err // transient (DB blip): retry rather than lose the page
 	}
 	if alert.Status == model.AlertResolved || alert.Status == model.AlertExpired {
 		return "", nil // raced resolution: nothing to send
@@ -416,5 +424,5 @@ type Stats struct {
 // Stats for self-metrics (notification success/error per channel lives
 // in events; this is the coarse counter).
 func (m *Manager) Stats() Stats {
-	return Stats{Sent: m.statSent, Failed: m.statFailed, Dead: m.statDead}
+	return Stats{Sent: m.statSent.Load(), Failed: m.statFailed.Load(), Dead: m.statDead.Load()}
 }

@@ -37,9 +37,20 @@ type Engine struct {
 	rules    map[string][]*CompiledRule // tenant →
 	pending  map[string]*pendingAlert   // tenant/dedup →
 	lastSeen map[string]time.Time       // tenant/source → heartbeat tracking
+	// suppressedOpen tracks alerts that opened while suppressed (downtime/
+	// silence/flap) so their escalation chain can be started once the
+	// suppression lifts — otherwise a still-broken service that went CRIT
+	// during a downtime would never page (SPEC §9.1).
+	suppressedOpen map[string]suppressedRef // alertID →
 
 	statMatched uint64
 	statOpened  uint64
+}
+
+// suppressedRef remembers what to start once suppression lifts.
+type suppressedRef struct {
+	tenantID string
+	policy   string
 }
 
 type pendingAlert struct {
@@ -59,9 +70,10 @@ func NewEngine(store *storage.Store, cat *catalog.Catalog, bus *eventbus.Bus,
 	}
 	return &Engine{
 		store: store, cat: cat, bus: bus, esc: esc, log: log,
-		rules:    map[string][]*CompiledRule{},
-		pending:  map[string]*pendingAlert{},
-		lastSeen: map[string]time.Time{},
+		rules:          map[string][]*CompiledRule{},
+		pending:        map[string]*pendingAlert{},
+		lastSeen:       map[string]time.Time{},
+		suppressedOpen: map[string]suppressedRef{},
 	}
 }
 
@@ -117,6 +129,7 @@ func (en *Engine) Run(ctx context.Context) {
 			en.firePending(ctx, time.Now().UTC())
 			en.checkHeartbeats(ctx, time.Now().UTC())
 			en.autoClose(ctx, time.Now().UTC())
+			en.reEvaluateSuppressed(ctx)
 		}
 	}
 }
@@ -295,6 +308,12 @@ func (en *Engine) open(ctx context.Context, r *model.AlertRule, draft *model.Ale
 			Type: model.EventNotification, ObjectID: stored.ObjectID,
 			Severity: model.SevInfo, Payload: raw,
 		})
+		// Remember so the chain can start once suppression lifts.
+		if r.EscalationPolicy != "" && en.esc != nil {
+			en.mu.Lock()
+			en.suppressedOpen[stored.ID] = suppressedRef{tenantID: stored.TenantID, policy: r.EscalationPolicy}
+			en.mu.Unlock()
+		}
 		return
 	}
 	if r.EscalationPolicy != "" && en.esc != nil {
@@ -302,6 +321,49 @@ func (en *Engine) open(ctx context.Context, r *model.AlertRule, draft *model.Ale
 			en.log.Error("alerting: escalation start", "alert", stored.ID, "err", err)
 		}
 	}
+}
+
+// reEvaluateSuppressed starts the escalation chain for any alert that
+// opened while suppressed and is now (a) still open & unacked and (b) no
+// longer suppressed — e.g. its downtime/silence window ended while the
+// service stayed broken (SPEC §9.1). Resolved/acked/vanished alerts are
+// simply forgotten.
+func (en *Engine) reEvaluateSuppressed(ctx context.Context) {
+	en.mu.RLock()
+	pendingChecks := make(map[string]suppressedRef, len(en.suppressedOpen))
+	for id, ref := range en.suppressedOpen {
+		pendingChecks[id] = ref
+	}
+	en.mu.RUnlock()
+
+	for id, ref := range pendingChecks {
+		alert, err := en.store.GetAlert(ctx, ref.tenantID, id)
+		if err != nil { // gone or transient — drop on not-found, retry otherwise
+			if err == storage.ErrNotFound {
+				en.forgetSuppressed(id)
+			}
+			continue
+		}
+		if alert.Status != model.AlertOpen { // acked/resolved/expired
+			en.forgetSuppressed(id)
+			continue
+		}
+		if suppressed, _ := en.Suppressed(ctx, alert); suppressed {
+			continue // still suppressed; check again next tick
+		}
+		if err := en.esc.StartChain(ctx, alert, ref.policy); err != nil {
+			en.log.Error("alerting: deferred escalation start", "alert", id, "err", err)
+			continue
+		}
+		en.log.Info("alerting: escalation started after suppression lifted", "alert", id)
+		en.forgetSuppressed(id)
+	}
+}
+
+func (en *Engine) forgetSuppressed(alertID string) {
+	en.mu.Lock()
+	delete(en.suppressedOpen, alertID)
+	en.mu.Unlock()
 }
 
 func (en *Engine) maybeResolve(ctx context.Context, r *model.AlertRule, e *model.Event, view map[string]any) {

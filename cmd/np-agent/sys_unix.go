@@ -27,6 +27,30 @@ func loadAvg() (float64, bool) {
 	return 0, false
 }
 
+// memUsage returns used %, total bytes and available bytes for host RAM.
+func memUsage() (usedPct float64, total, avail uint64, ok bool) {
+	if raw, err := os.ReadFile("/proc/meminfo"); err == nil { // linux
+		var t, a uint64
+		for _, line := range strings.Split(string(raw), "\n") {
+			f := strings.Fields(line)
+			if len(f) < 2 {
+				continue
+			}
+			v, _ := strconv.ParseUint(f[1], 10, 64)
+			switch f[0] {
+			case "MemTotal:":
+				t = v * 1024
+			case "MemAvailable:":
+				a = v * 1024
+			}
+		}
+		if t > 0 {
+			return 100 * float64(t-a) / float64(t), t, a, true
+		}
+	}
+	return darwinMem() // darwin path (stub on linux)
+}
+
 // diskUsage returns used % and free bytes for a mount point.
 func diskUsage(mount string) (float64, uint64, bool) {
 	var st syscall.Statfs_t

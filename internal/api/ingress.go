@@ -111,12 +111,19 @@ func (a *API) registerIngress() {
 					continue
 				}
 				parsed := parsePassiveOutput(res.Output)
-				a.Bus.Results <- &model.CheckResult{
+				select {
+				case a.Bus.Results <- &model.CheckResult{
 					ObjectID: entry.Object.ID, State: state,
 					Output: parsed.Text, LongOutput: parsed.LongText, Perfdata: parsed.Perfdata,
 					At: time.Now().UTC(), Source: "passive",
+				}:
+					resp.Accepted++
+				case <-r.Context().Done():
+					// pipeline stalled and client gave up — stop buffering
+					resp.Rejected = append(resp.Rejected, "server busy")
+					a.writeJSON(w, http.StatusServiceUnavailable, resp)
+					return
 				}
-				resp.Accepted++
 			}
 			a.writeJSON(w, http.StatusAccepted, resp)
 		})
@@ -177,7 +184,7 @@ func (a *API) registerIngress() {
 				Type: model.EventHeartbeatMiss, SourceID: h.ID,
 				Severity: model.SevOK, Payload: raw}
 			_ = a.Store.InsertEvents(r.Context(), []*model.Event{ev})
-			a.Bus.PublishEvent(ev)
+			_ = a.Bus.PublishEventCtx(r.Context(), ev)
 		}
 		a.writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	}
@@ -272,7 +279,7 @@ func (a *API) publishNorm(r *http.Request, tenantID string, src *model.EventSour
 	ev := &model.Event{ID: model.NewID(), TenantID: tenantID, TS: norm.ReceivedAt,
 		Type: model.EventIngress, SourceID: src.ID, Severity: sev, Payload: raw}
 	_ = a.Store.InsertEvents(r.Context(), []*model.Event{ev})
-	a.Bus.PublishEvent(ev)
+	_ = a.Bus.PublishEventCtx(r.Context(), ev)
 }
 
 // findEventSource resolves by id or name across tenants (ingest URLs
@@ -316,7 +323,8 @@ func (a *API) ingressAuth(r *http.Request, src *model.EventSource, body []byte) 
 		return secret != "" && hmac.Equal([]byte(want), []byte(sig))
 	case "basic":
 		_, pass, ok := r.BasicAuth()
-		return ok && secret != "" && pass == secret
+		// constant-time compare (the hmac/token branches already do)
+		return ok && secret != "" && hmac.Equal([]byte(pass), []byte(secret))
 	default: // token
 		tok := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if tok == "" {

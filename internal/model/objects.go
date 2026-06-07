@@ -340,6 +340,14 @@ func inRanges(ranges []string, t time.Time) bool {
 		if end == 0 {
 			end = 24 * 60
 		}
+		if end <= start {
+			// Wrapping window like "19:00-07:00": match either side of
+			// midnight (≥ start OR < end).
+			if minutes >= start || minutes < end {
+				return true
+			}
+			continue
+		}
 		if minutes >= start && minutes < end {
 			return true
 		}

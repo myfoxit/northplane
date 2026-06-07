@@ -6,6 +6,7 @@ package alerting
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/cel-go/cel"
@@ -63,15 +64,21 @@ func CompileRule(r *model.AlertRule) (*CompiledRule, error) {
 	return cr, nil
 }
 
-// Matches evaluates the rule against an event view.
+// Matches evaluates the rule against an event view. A missing key is a
+// legitimate no-match (event shapes vary by type); any other evaluation
+// error is returned so the engine can log it and — crucially — NOT treat
+// the event as a clear (which would let a broken rule resolve real
+// alerts).
 func (cr *CompiledRule) Matches(view map[string]any) (bool, error) {
 	if cr.program == nil {
 		return false, nil // heartbeat rules never match events directly
 	}
 	out, _, err := cr.program.Eval(map[string]any{"event": view})
 	if err != nil {
-		// Missing keys are normal across event types — treat as no-match.
-		return false, nil
+		if isMissingKeyErr(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("rule %q eval: %w", cr.Rule.Name, err)
 	}
 	b, ok := out.(ref.Val)
 	if !ok {
@@ -81,6 +88,17 @@ func (cr *CompiledRule) Matches(view map[string]any) (bool, error) {
 		return true, nil
 	}
 	return false, nil
+}
+
+// isMissingKeyErr reports whether a CEL runtime error is just an absent
+// field/key/index — the normal "this event type doesn't have that field"
+// case — as opposed to a genuine type or evaluation error.
+func isMissingKeyErr(err error) bool {
+	s := err.Error()
+	return strings.Contains(s, "no such key") ||
+		strings.Contains(s, "no such attribute") ||
+		strings.Contains(s, "no such field") ||
+		strings.Contains(s, "index out of range")
 }
 
 // EventView renders the CEL-visible shape of an event (documented in

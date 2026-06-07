@@ -3,6 +3,7 @@ package ai
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"regexp"
 	"sync"
 
@@ -72,7 +73,9 @@ func (r *Redactor) pseudoHost(host string) string {
 		return p
 	}
 	r.counter++
-	p := "host-" + hex.EncodeToString([]byte{byte(r.counter >> 8), byte(r.counter)})[:4]
+	// Full counter width so the mapping stays injective beyond 65 535
+	// distinct hosts in a session.
+	p := fmt.Sprintf("host-%04x", r.counter)
 	r.mapping[host] = p
 	return p
 }

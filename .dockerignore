@@ -1,0 +1,12 @@
+.git
+.github
+bin/
+data/
+web/node_modules
+*.db
+*.db-wal
+*.db-shm
+secret.key
+config.local.yaml
+*.test
+.DS_Store

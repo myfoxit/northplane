@@ -132,6 +132,11 @@ type bucketAcc struct {
 }
 
 func (b *bucketAcc) addSample(t int64, v float64) {
+	// Defensive: skip non-finite values that may exist in pre-fix on-disk
+	// blocks so they cannot poison min/max/avg or break JSON encoding.
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return
+	}
 	if !b.touched {
 		b.min, b.max = v, v
 		b.touched = true

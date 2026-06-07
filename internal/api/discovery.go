@@ -65,6 +65,15 @@ func (a *API) registerDiscovery() {
 				a.validationError(w, r, "cidr", "scan limited to /20 or smaller")
 				return
 			}
+			// SSRF guard: refuse loopback / link-local (incl. the cloud
+			// metadata endpoint 169.254.169.254) / multicast / unspecified
+			// targets so the scanner can't be turned inward. Private RFC1918
+			// ranges remain allowed — they are the normal monitoring case.
+			if ip := ipnet.IP; ip.IsLoopback() || ip.IsLinkLocalUnicast() ||
+				ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
+				a.validationError(w, r, "cidr", "refusing to scan loopback/link-local/multicast range")
+				return
+			}
 			if len(req.Ports) == 0 {
 				req.Ports = []int{22, 80, 443, 3389, 5432, 3306, 8080}
 			}

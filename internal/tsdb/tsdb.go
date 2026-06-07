@@ -109,6 +109,7 @@ type DB struct {
 
 	stopFsync chan struct{}
 	fsyncWG   sync.WaitGroup
+	closeOnce sync.Once
 
 	statSamples uint64
 	statDropped uint64
@@ -338,6 +339,13 @@ func (db *DB) headAppend(seriesID uint64, t int64, v float64) bool {
 	ws := windowStart(t)
 	app := hs.windows[ws]
 	if app == nil {
+		// Never reopen a window that has already been flushed to a block:
+		// a fresh appender here would, on the next Flush, overwrite the
+		// existing block with only the late sample(s). Drop instead.
+		if db.blockExists(ws) {
+			db.statDropped++
+			return false
+		}
 		app = NewChunkAppender()
 		hs.windows[ws] = app
 	}
@@ -354,6 +362,14 @@ func (db *DB) headAppend(seriesID uint64, t int64, v float64) bool {
 // ride along and update the registry).
 func (db *DB) Append(objectID, metric, unit string, labels map[string]string,
 	warn, crit string, min, max *float64, ts time.Time, v float64) {
+	// Reject non-finite values: NaN/Inf poison min/max/avg aggregation and
+	// break JSON encoding when the series is later served via the API.
+	if mathIsNaN(v) || mathIsInf(v) {
+		db.mu.Lock()
+		db.statDropped++
+		db.mu.Unlock()
+		return
+	}
 	db.mu.Lock()
 	meta := db.series(objectID, metric, unit, labels, warn, crit, min, max)
 	id := meta.ID
@@ -425,15 +441,22 @@ func (db *DB) rewriteWAL() error {
 	}
 	w := bufio.NewWriterSize(f, 1<<20)
 
+	// Snapshot each open window's encoded bytes+count *under the lock* —
+	// decoding the live appender after releasing the lock races with
+	// concurrent Append (torn reads, lost recent samples).
 	db.mu.RLock()
 	type openWin struct {
-		id  uint64
-		app *ChunkAppender
+		id    uint64
+		bytes []byte
+		count uint32
 	}
 	var open []openWin
 	for id, hs := range db.heads {
 		for _, app := range hs.windows {
-			open = append(open, openWin{id, app})
+			src := app.Bytes()
+			cp := make([]byte, len(src))
+			copy(cp, src)
+			open = append(open, openWin{id, cp, app.Count()})
 		}
 	}
 	db.mu.RUnlock()
@@ -441,7 +464,7 @@ func (db *DB) rewriteWAL() error {
 	var rec [25]byte
 	rec[0] = 1
 	for _, ow := range open {
-		samples, err := DecodeChunk(ow.app.Bytes(), ow.app.Count())
+		samples, err := DecodeChunk(ow.bytes, ow.count)
 		if err != nil {
 			continue
 		}
@@ -469,6 +492,9 @@ func (db *DB) rewriteWAL() error {
 	if err := os.Rename(tmp, db.walPath()); err != nil {
 		return err
 	}
+	if err := syncDir(db.walPath()); err != nil {
+		return err
+	}
 	nf, err := os.OpenFile(db.walPath(), os.O_WRONLY|os.O_APPEND, 0o640)
 	if err != nil {
 		return err
@@ -477,21 +503,29 @@ func (db *DB) rewriteWAL() error {
 	return nil
 }
 
-// Close flushes everything (treating all windows as closed).
+// Close flushes everything (treating all windows as closed). It is
+// idempotent — a second call is a no-op rather than a panic on the
+// already-closed stopFsync channel.
 func (db *DB) Close() error {
-	close(db.stopFsync)
-	db.fsyncWG.Wait()
-	// flush every non-empty window regardless of age
-	err := db.Flush(time.Now().Add(rawWindow + flushGrace))
-	db.walMu.Lock()
-	db.walW.Flush()
-	db.walF.Sync()
-	db.walF.Close()
-	db.walMu.Unlock()
-	db.mu.Lock()
-	db.seriesW.Flush()
-	db.seriesF.Close()
-	db.mu.Unlock()
+	var err error
+	closed := false
+	db.closeOnce.Do(func() {
+		closed = true
+		close(db.stopFsync)
+		db.fsyncWG.Wait()
+		// flush every non-empty window regardless of age
+		err = db.Flush(time.Now().Add(rawWindow + flushGrace))
+		db.walMu.Lock()
+		db.walW.Flush()
+		db.walF.Sync()
+		db.walF.Close()
+		db.walMu.Unlock()
+		db.mu.Lock()
+		db.seriesW.Flush()
+		db.seriesF.Close()
+		db.mu.Unlock()
+	})
+	_ = closed
 	return err
 }
 
@@ -583,6 +617,8 @@ func (db *DB) enforceRetention(now time.Time) error {
 
 func mathFloat64bits(v float64) uint64     { return math.Float64bits(v) }
 func mathFloat64frombits(b uint64) float64 { return math.Float64frombits(b) }
+func mathIsNaN(v float64) bool             { return math.IsNaN(v) }
+func mathIsInf(v float64) bool             { return math.IsInf(v, 0) }
 
 // listBlockStarts returns sorted window starts present on disk.
 func (db *DB) listBlockStarts() []int64 {

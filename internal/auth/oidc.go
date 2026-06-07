@@ -21,17 +21,18 @@ import (
 // OIDC implements Authorization Code + PKCE SSO (SPEC §11.2; Entra ID
 // and Keycloak are the tested providers).
 type OIDC struct {
-	cfg      config.OIDCConfig
-	provider *gooidc.Provider
-	verifier *gooidc.IDTokenVerifier
-	oauth    oauth2.Config
-	store    *storage.Store
-	auth     *Authenticator
+	cfg        config.OIDCConfig
+	provider   *gooidc.Provider
+	verifier   *gooidc.IDTokenVerifier
+	oauth      oauth2.Config
+	store      *storage.Store
+	auth       *Authenticator
+	trustProxy bool
 }
 
 // NewOIDC initialises the provider (nil when unconfigured).
 func NewOIDC(ctx context.Context, cfg config.OIDCConfig, baseURL string,
-	store *storage.Store, a *Authenticator) (*OIDC, error) {
+	store *storage.Store, a *Authenticator, trustProxy bool) (*OIDC, error) {
 	if cfg.Issuer == "" {
 		return nil, nil
 	}
@@ -52,7 +53,7 @@ func NewOIDC(ctx context.Context, cfg config.OIDCConfig, baseURL string,
 			Endpoint: provider.Endpoint(), Scopes: scopes,
 			RedirectURL: baseURL + "/auth/callback",
 		},
-		store: store, auth: a,
+		store: store, auth: a, trustProxy: trustProxy,
 	}, nil
 }
 
@@ -62,7 +63,7 @@ func (o *OIDC) Start(w http.ResponseWriter, r *http.Request) {
 	verifier := randB64(48)
 	sum := sha256.Sum256([]byte(verifier))
 	challenge := base64.RawURLEncoding.EncodeToString(sum[:])
-	secure := r.TLS != nil
+	secure := RequestIsHTTPS(r, o.trustProxy)
 	http.SetCookie(w, &http.Cookie{Name: "np_oidc_state", Value: state,
 		Path: "/auth", HttpOnly: true, Secure: secure, MaxAge: 600, SameSite: http.SameSiteLaxMode})
 	http.SetCookie(w, &http.Cookie{Name: "np_oidc_verifier", Value: verifier,

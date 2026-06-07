@@ -324,15 +324,61 @@ func (s *Store) SaveCheckStates(ctx context.Context, states []*model.CheckState)
 			latency_ms = excluded.latency_ms, exec_ms = excluded.exec_ms,
 			last_check = excluded.last_check, next_check = excluded.next_check,
 			last_hard_change = excluded.last_hard_change, last_ok = excluded.last_ok,
-			flapping = excluded.flapping, flap_pct = excluded.flap_pct, flap_history = excluded.flap_history,
-			acked_by = excluded.acked_by, ack_comment = excluded.ack_comment,
-			downtime_depth = excluded.downtime_depth`)
+			flapping = excluded.flapping, flap_pct = excluded.flap_pct, flap_history = excluded.flap_history`)
+		// acked_by/ack_comment/downtime_depth are intentionally absent from
+		// the DO UPDATE SET: the pipeline keeps a long-lived working-set copy
+		// of check_state and would clobber acks (written by the API via
+		// SetAck) and downtime depth (written by the janitor via
+		// SetDowntimeDepths) with its stale cached values on the next result.
+		// Those columns are owned by their writers; the pipeline clears acks
+		// on recovery via ClearAck. New rows still take the INSERT values.
 		for _, cs := range states {
 			if _, err := tx.ExecContext(ctx, q, cs.ObjectID, int(cs.State), string(cs.StateType),
 				cs.Attempt, cs.Output, cs.LongOutput, cs.Perfdata, cs.LatencyMS, cs.ExecMS,
 				s.TP(cs.LastCheck), s.TP(cs.NextCheck), s.TP(cs.LastHardChange), s.TP(cs.LastOK),
 				cs.Flapping, cs.FlapPct, int64(cs.FlapHistory), cs.AckedBy, cs.AckComment,
 				cs.DowntimeDepth); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// SetAck sets the sticky acknowledgement columns on a check_state row
+// without touching the pipeline-owned result columns (avoids the
+// last-write-wins clobber between the API and the pipeline batch).
+func (s *Store) SetAck(ctx context.Context, objectID, by, comment string) error {
+	return s.Write(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, s.Q(
+			`UPDATE check_state SET acked_by = ?, ack_comment = ? WHERE object_id = ?`),
+			by, comment, objectID)
+		return err
+	})
+}
+
+// ClearAck clears the sticky acknowledgement (called by the pipeline on
+// hard recovery).
+func (s *Store) ClearAck(ctx context.Context, objectID string) error {
+	return s.Write(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, s.Q(
+			`UPDATE check_state SET acked_by = '', ack_comment = '' WHERE object_id = ?`),
+			objectID)
+		return err
+	})
+}
+
+// SetDowntimeDepths writes downtime_depth deltas in one transaction
+// (janitor batch) without disturbing pipeline-owned columns.
+func (s *Store) SetDowntimeDepths(ctx context.Context, depths map[string]int) error {
+	if len(depths) == 0 {
+		return nil
+	}
+	return s.Write(ctx, func(tx *sql.Tx) error {
+		for id, d := range depths {
+			if _, err := tx.ExecContext(ctx, s.Q(
+				`UPDATE check_state SET downtime_depth = ? WHERE object_id = ?`),
+				d, id); err != nil {
 				return err
 			}
 		}

@@ -5,6 +5,7 @@
 package eventbus
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 
@@ -92,6 +93,20 @@ func (b *Bus) Subscribe(buffer int) *Subscriber {
 func (b *Bus) PublishEvent(e *model.Event) {
 	b.Events <- e // blocking: events are not droppable
 	b.fanout(e)
+}
+
+// PublishEventCtx is PublishEvent for request-path callers: if the
+// alerting queue is full and the consumer is stalled, it abandons the
+// send when ctx is cancelled (client disconnected) instead of pinning the
+// HTTP goroutine indefinitely. Returns ctx.Err() if it gave up.
+func (b *Bus) PublishEventCtx(ctx context.Context, e *model.Event) error {
+	select {
+	case b.Events <- e:
+		b.fanout(e)
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // FanoutOnly distributes to subscribers without alerting (used for

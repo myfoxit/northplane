@@ -71,10 +71,15 @@ func Import(path string) (*ImportResult, error) {
 		res.Deviations = append(res.Deviations, devs...)
 		res.Stats.Files++
 	}
-	// Icinga2 DSL files
-	icingaFiles, _ := filepath.Glob(filepath.Join(path, "**/*.conf"))
-	moreIcinga, _ := filepath.Glob(filepath.Join(path, "*.conf"))
-	icingaFiles = append(icingaFiles, moreIcinga...)
+	// Icinga2 DSL files — walk the tree (filepath.Glob does NOT support
+	// "**", so a glob would silently miss conf.d/hosts/*.conf layouts).
+	var icingaFiles []string
+	_ = filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && strings.HasSuffix(p, ".conf") {
+			icingaFiles = append(icingaFiles, p)
+		}
+		return nil
+	})
 	for _, f := range dedupe(icingaFiles) {
 		objs, devs, err := parseIcinga2File(f)
 		if err != nil {

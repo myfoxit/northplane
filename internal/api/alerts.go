@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -65,7 +66,7 @@ func (a *API) registerAlerts() {
 		"alerts:ack", ackRequest{}, model.Alert{},
 		func(w http.ResponseWriter, r *http.Request, p *auth.Principal) {
 			var req ackRequest
-			_ = json.NewDecoder(r.Body).Decode(&req) // body optional
+			_ = json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req) // body optional, capped
 			alert, err := a.ackAlert(r, p.TenantID, param(r, "id"), p.Name, req.Comment, p)
 			if err != nil {
 				a.fail(w, r, err)
@@ -349,12 +350,11 @@ func (a *API) ackAlert(r *http.Request, tenantID, alertID, by, comment string, p
 		return nil, err
 	}
 	_ = a.Escal.StopChain(r.Context(), alert.ID)
-	// mirror onto the object's check_state (sticky ack, SPEC §6.3)
+	// mirror onto the object's check_state (sticky ack, SPEC §6.3) via a
+	// column-scoped write so the pipeline's batched state flush can't
+	// clobber it with a stale cached copy.
 	if alert.ObjectID != "" {
-		if cs, err := a.Store.GetCheckState(r.Context(), alert.ObjectID); err == nil {
-			cs.AckedBy, cs.AckComment = by, comment
-			_ = a.Store.SaveCheckStates(r.Context(), []*model.CheckState{cs})
-		}
+		_ = a.Store.SetAck(r.Context(), alert.ObjectID, by, comment)
 	}
 	if p != nil {
 		a.audit(r, p, "alert.ack", alert.ID, nil, map[string]string{"comment": comment})

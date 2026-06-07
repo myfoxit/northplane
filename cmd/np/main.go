@@ -32,28 +32,47 @@ func main() {
 		token:  os.Getenv("NP_TOKEN"),
 	}
 	args := os.Args[1:]
-	// global flags before the command
+	// global flags before the command — accept both "--flag value" and
+	// "--flag=value" (the latter is a common scripting idiom that would
+	// otherwise be silently dropped, making the command a no-op with exit 0).
 	for len(args) > 0 && strings.HasPrefix(args[0], "--") {
-		switch {
-		case args[0] == "--json":
+		flag, val, hasVal := strings.Cut(args[0], "=")
+		take := func() (string, bool) { // resolve "=value" or next arg
+			if hasVal {
+				return val, true
+			}
+			if len(args) > 1 {
+				args = args[1:]
+				return args[0], true
+			}
+			return "", false
+		}
+		switch flag {
+		case "--json":
 			c.jsonOut = true
-			args = args[1:]
-		case args[0] == "--insecure":
+		case "--insecure":
 			c.insecure = true
-			args = args[1:]
-		case args[0] == "--server" && len(args) > 1:
-			c.server = args[1]
-			args = args[2:]
-		case args[0] == "--token" && len(args) > 1:
-			c.token = args[1]
-			args = args[2:]
-		case args[0] == "--version":
+		case "--server":
+			if v, ok := take(); ok {
+				c.server = v
+			} else {
+				fatalf("--server requires a value")
+			}
+		case "--token":
+			if v, ok := take(); ok {
+				c.token = v
+			} else {
+				fatalf("--token requires a value")
+			}
+		case "--version":
 			fmt.Println("np", version)
 			return
 		default:
+			fmt.Fprintf(os.Stderr, "unknown flag %q\n\n", flag)
 			usage()
-			return
+			os.Exit(2)
 		}
+		args = args[1:]
 	}
 	c.server = strings.TrimSuffix(c.server, "/")
 	c.client = &http.Client{Timeout: 60 * time.Second}
@@ -103,6 +122,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "np: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func fatalf(format string, args ...any) {
+	fmt.Fprintf(os.Stderr, "np: "+format+"\n", args...)
+	os.Exit(2)
 }
 
 func usage() {

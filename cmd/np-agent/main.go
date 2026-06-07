@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -28,6 +29,24 @@ import (
 )
 
 var version = "1.0.0-dev"
+
+// defaultAgentConfigPath mirrors config.DefaultConfigPath for the
+// standalone agent (which avoids importing internal/config to stay a
+// minimal binary): /etc/northplane/agent.yaml as root or when present,
+// the per-user config dir otherwise.
+func defaultAgentConfigPath() string {
+	system := "/etc/northplane/agent.yaml"
+	if os.Geteuid() == 0 {
+		return system
+	}
+	if _, err := os.Stat(system); err == nil {
+		return system
+	}
+	if dir, err := os.UserConfigDir(); err == nil {
+		return filepath.Join(dir, "northplane", "agent.yaml")
+	}
+	return system
+}
 
 // agentConfig is /etc/northplane/agent.yaml.
 type agentConfig struct {
@@ -58,7 +77,7 @@ type passiveResult struct {
 }
 
 func main() {
-	cfgPath := flag.String("config", "/etc/northplane/agent.yaml", "agent config")
+	cfgPath := flag.String("config", defaultAgentConfigPath(), "agent config")
 	showVersion := flag.Bool("version", false, "print version")
 	flag.Parse()
 	if *showVersion {
@@ -174,6 +193,19 @@ func collect(ctx context.Context, cfg agentConfig) []passiveResult {
 				load, runtime.NumCPU(), load, ncpu*2, ncpu*4)})
 	}
 
+	// memory usage
+	if usedPct, total, avail, ok := memUsage(); ok {
+		state := 0
+		if usedPct > 95 {
+			state = 2
+		} else if usedPct > 90 {
+			state = 1
+		}
+		out = append(out, passiveResult{Host: host, Service: "memory", State: state,
+			Output: fmt.Sprintf("RAM %.1f%% used, %.1f GB available of %.1f GB | used=%.1f%%;90;95;0;100 available=%dB;;;0;",
+				usedPct, float64(avail)/(1<<30), float64(total)/(1<<30), usedPct, avail)})
+	}
+
 	// disk usage
 	for _, mount := range cfg.Disk {
 		if usedPct, freeBytes, ok := diskUsage(mount); ok {
@@ -196,10 +228,20 @@ func collect(ctx context.Context, cfg agentConfig) []passiveResult {
 			timeout = 30 * time.Second
 		}
 		cctx, cancel := context.WithTimeout(ctx, timeout)
-		cmd := exec.CommandContext(cctx, chk.Command, chk.Args...)
-		cmd.Env = []string{"PATH=/usr/local/bin:/usr/bin:/bin", "LC_ALL=C"}
-		var stdout bytes.Buffer
+		plugPath := chk.Command
+		// A bare command name is resolved against the agent's own PATH
+		// (cmd.Env does NOT influence exec.LookPath), so resolve it
+		// ourselves against the plugin search path before exec.
+		if !strings.ContainsRune(plugPath, os.PathSeparator) {
+			if resolved, lerr := lookPath(plugPath); lerr == nil {
+				plugPath = resolved
+			}
+		}
+		cmd := exec.CommandContext(cctx, plugPath, chk.Args...)
+		cmd.Env = []string{"PATH=" + pluginPATH, "LC_ALL=C"}
+		var stdout, stderr bytes.Buffer
 		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
 		err := cmd.Run()
 		cancel()
 		state := 0
@@ -212,6 +254,11 @@ func collect(ctx context.Context, cfg agentConfig) []passiveResult {
 		}
 		output := strings.TrimSpace(stdout.String())
 		if output == "" {
+			// Many plugins (and the not-found case) write the reason to
+			// stderr; surface it instead of a useless "no output".
+			output = strings.TrimSpace(stderr.String())
+		}
+		if output == "" {
 			output = "UNKNOWN - no output"
 		}
 		if cctx.Err() == context.DeadlineExceeded {
@@ -221,6 +268,24 @@ func collect(ctx context.Context, cfg agentConfig) []passiveResult {
 			State: state, Output: output})
 	}
 	return out
+}
+
+// pluginPATH is the search path for bare plugin command names. It adds
+// the common Nagios plugin dirs and Homebrew's bin so check_* binaries
+// resolve under both Linux and macOS regardless of the agent's own env.
+const pluginPATH = "/usr/local/bin:/usr/bin:/bin:/usr/lib/nagios/plugins:" +
+	"/usr/lib64/nagios/plugins:/usr/local/libexec/nagios:/opt/homebrew/bin:/opt/homebrew/sbin"
+
+// lookPath resolves a bare command name against pluginPATH (not the
+// process environment, which exec.LookPath would use).
+func lookPath(name string) (string, error) {
+	for _, dir := range strings.Split(pluginPATH, ":") {
+		cand := filepath.Join(dir, name)
+		if fi, err := os.Stat(cand); err == nil && !fi.IsDir() && fi.Mode()&0o111 != 0 {
+			return cand, nil
+		}
+	}
+	return exec.LookPath(name) // fall back to the process PATH
 }
 
 var startTime = time.Now()

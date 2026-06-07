@@ -188,6 +188,15 @@ func (p *Pipeline) process(ctx context.Context, res *model.CheckResult) {
 	p.statProcessed++
 	p.mu.Unlock()
 
+	// On hard recovery the statemachine clears the sticky ack in the
+	// working copy; persist it via the column-scoped path (ack columns are
+	// no longer part of the batched SaveCheckStates write).
+	if tr.Recovered {
+		if err := p.store.ClearAck(ctx, obj.ID); err != nil {
+			p.log.Error("pipeline: clear ack failed", "err", err, "object", obj.ID)
+		}
+	}
+
 	// Retry cadence: soft problems reschedule at retryInterval
 	// (SPEC §6.3). The wheel runs at interval; fire a quicker recheck.
 	if tr.IsSoft && eff.RetryInterval > 0 && res.Source == "scheduler" {

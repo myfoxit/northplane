@@ -86,10 +86,14 @@ func (c *Catalog) LoadAll(ctx context.Context) error {
 func (c *Catalog) ReloadTenant(ctx context.Context, tenantID string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	// drop tenant's entries
+	// drop tenant's entries and their graph edges. children/parents must
+	// be cleared too, else loadTenantLocked re-appends and duplicates every
+	// edge on each config edit (inflating downtime depth / UNREACHABLE).
 	for id, e := range c.entries {
 		if e.Object.TenantID == tenantID {
 			delete(c.entries, id)
+			delete(c.children, id)
+			delete(c.parents, id)
 		}
 	}
 	for k := range c.byName {

@@ -76,8 +76,8 @@ func (a *API) registerAI() {
 		func(w http.ResponseWriter, r *http.Request, p *auth.Principal) {
 			var messages, title string
 			err := a.Store.DB().QueryRowContext(r.Context(), a.Store.Q(
-				`SELECT title, messages FROM ai_conversations WHERE tenant_id = ? AND id = ?`),
-				a.tenantOf(r, p), param(r, "id")).Scan(&title, &messages)
+				`SELECT title, messages FROM ai_conversations WHERE tenant_id = ? AND user_id = ? AND id = ?`),
+				a.tenantOf(r, p), p.ActorID, param(r, "id")).Scan(&title, &messages)
 			if err != nil {
 				a.problem(w, r, http.StatusNotFound, "np:not-found", "conversation not found", "")
 				return

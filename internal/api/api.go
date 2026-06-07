@@ -137,6 +137,18 @@ func (a *API) handle(pattern, summary string, perm model.Permission, req, resp a
 
 	wrapped := func(w http.ResponseWriter, r *http.Request) {
 		p := auth.From(r.Context())
+		// CSRF defense (SPEC §13.2): a session-cookie-authenticated request
+		// the browser marks cross-site cannot be a legitimate first-party
+		// call — the SPA is same-origin. This closes the SameSite=Lax gap
+		// where a top-level GET navigation (e.g. the cron beat endpoint) or
+		// form POST carries the ambient cookie. Token-authenticated clients
+		// carry no ambient credential and are unaffected.
+		if p != nil && p.SessionID != "" &&
+			strings.EqualFold(r.Header.Get("Sec-Fetch-Site"), "cross-site") {
+			a.problem(w, r, http.StatusForbidden, "np:auth/csrf",
+				"cross-site request blocked", "")
+			return
+		}
 		if perm != "" {
 			if p == nil {
 				a.problem(w, r, http.StatusUnauthorized, "np:auth/required",

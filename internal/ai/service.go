@@ -101,6 +101,13 @@ func (s *Service) RunTool(ctx context.Context, p *auth.Principal, name string,
 	if tool == nil {
 		return nil, false, fmt.Errorf("unknown tool %q", name)
 	}
+	// RBAC: the AI/MCP session is a privilegeless client — it may only do
+	// what the calling token's scopes permit (SPEC §10.3). Enforce the
+	// same permission the equivalent REST route requires.
+	if tool.Perm != "" && !p.Allow(tool.Perm) {
+		s.audit(ctx, p, "ai.denied."+name, "", input)
+		return nil, false, fmt.Errorf("permission denied: %s required", tool.Perm)
+	}
 	if tool.Mutating && !tool.AutoOK {
 		// propose: queue for human approval
 		action := &storage.AIAction{TenantID: p.TenantID, Tool: name, Args: input,
@@ -119,8 +126,12 @@ func (s *Service) RunTool(ctx context.Context, p *auth.Principal, name string,
 	if err != nil {
 		return nil, false, err
 	}
+	// Audit every tool invocation, not just mutations: bulk read access to
+	// monitoring data via an LLM agent must leave a trail (SPEC §13.6).
 	if tool.Mutating {
 		s.audit(ctx, p, "ai.execute."+name, "", input)
+	} else {
+		s.audit(ctx, p, "ai.read."+name, "", input)
 	}
 	return result, false, nil
 }
@@ -191,10 +202,29 @@ func (s *Service) Converse(ctx context.Context, p *auth.Principal,
 
 	var finalText string
 	for round := 0; round < 8; round++ {
+		// Re-check the token budget before every provider round: a single
+		// conversation can fan out up to 8 calls, so a one-shot pre-check
+		// is not a real cap (SPEC §10.2).
+		if err := s.checkBudget(ctx); err != nil {
+			if finalText == "" {
+				return nil, err
+			}
+			break // keep what we have; stop spending
+		}
 		redacted := make([]Message, len(msgs))
 		for i, m := range msgs {
 			rm := m
 			rm.Content = s.redactor.Redact(m.Content)
+			// Tool results carry the most sensitive, attacker-influenced
+			// data (check output, hostnames, IPs) — redact them too, on a
+			// copy so the persisted transcript is untouched.
+			if len(m.ToolResults) > 0 {
+				rm.ToolResults = make([]ToolResult, len(m.ToolResults))
+				for j, tr := range m.ToolResults {
+					tr.Content = s.redactor.Redact(tr.Content)
+					rm.ToolResults[j] = tr
+				}
+			}
 			redacted[i] = rm
 		}
 		comp, err := s.provider.Complete(ctx, system, redacted, defs, false)

@@ -40,8 +40,9 @@ func RefreshDowntimeDepths(ctx context.Context, a *API, tenantID string) {
 			}
 		}
 	}
-	// write deltas only
-	var dirty []*model.CheckState
+	// write deltas only, column-scoped (must not clobber pipeline-owned
+	// result columns nor acks)
+	deltas := map[string]int{}
 	for _, e := range a.Catalog.All() {
 		if e.Object.TenantID != tenantID {
 			continue
@@ -52,12 +53,11 @@ func RefreshDowntimeDepths(ctx context.Context, a *API, tenantID string) {
 			continue
 		}
 		if cs.DowntimeDepth != want {
-			cs.DowntimeDepth = want
-			dirty = append(dirty, cs)
+			deltas[e.Object.ID] = want
 		}
 	}
-	if len(dirty) > 0 {
-		if err := a.Store.SaveCheckStates(ctx, dirty); err != nil {
+	if len(deltas) > 0 {
+		if err := a.Store.SetDowntimeDepths(ctx, deltas); err != nil {
 			a.Log.Error("janitor: depth save", "err", err)
 		}
 	}

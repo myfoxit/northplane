@@ -1,7 +1,29 @@
+# Build artifacts
+/bin/
 /northplaned
 /np
 /np-agent
 *.test
+*.out
+coverage.txt
+
+# Frontend
 /web/node_modules/
 /web/dist/
+
+# Fuzz corpora
 testdata/fuzz/
+
+# Local runtime data / configs (never commit secrets)
+/data/
+*.db
+*.db-wal
+*.db-shm
+secret.key
+config.local.yaml
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp

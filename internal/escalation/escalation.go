@@ -85,8 +85,14 @@ func (e *Engine) fire(ctx context.Context, timer storage.EscalationTimer) {
 	// tenant-scoped; resolve via direct query through all tenants is
 	// wasteful, so alerts carry globally unique IDs: fetch via scan.
 	alert, err := e.findAlert(ctx, timer.AlertID)
-	if err != nil || alert == nil {
-		markDone()
+	if err == storage.ErrNotFound || alert == nil {
+		markDone() // alert genuinely gone
+		return
+	}
+	if err != nil {
+		// Transient DB error — leave the timer due and retry next tick
+		// rather than silently abandoning the escalation chain.
+		e.log.Error("escalation: alert lookup", "alert", timer.AlertID, "err", err)
 		return
 	}
 	if alert.Status == model.AlertResolved || alert.Status == model.AlertExpired {
@@ -101,10 +107,19 @@ func (e *Engine) fire(ctx context.Context, timer storage.EscalationTimer) {
 	}
 	step := policy.Steps[timer.StepIndex]
 
-	// unlessAcked: skip work but continue the schedule when acked.
-	skipped := step.UnlessAcked && alert.Status == model.AlertAcked
+	// Acknowledgement stops the chain (SPEC §9.4). A step's UnlessAcked
+	// flag governs only whether THIS already-due step still sends its
+	// notification; once acked we never arm the next step nor schedule
+	// another repeat — otherwise an acked alert keeps paging via repeats
+	// or a freshly-armed next step that races StopChain's cancel.
+	acked := alert.Status == model.AlertAcked
+	skipped := step.UnlessAcked && acked
 	if !skipped {
 		e.notifyStep(ctx, alert, policy, timer.StepIndex, step, timer.RepeatsDone)
+	}
+	if acked {
+		markDone()
+		return
 	}
 
 	// arm next step once (when this step fired its first time)
@@ -139,8 +154,12 @@ func (e *Engine) findAlert(ctx context.Context, alertID string) (*model.Alert, e
 		return nil, err
 	}
 	for _, t := range tenants {
-		if a, err := e.store.GetAlert(ctx, t.ID, alertID); err == nil {
+		a, err := e.store.GetAlert(ctx, t.ID, alertID)
+		if err == nil {
 			return a, nil
+		}
+		if err != storage.ErrNotFound {
+			return nil, err // transient: surface, don't treat as "not found"
 		}
 	}
 	return nil, storage.ErrNotFound

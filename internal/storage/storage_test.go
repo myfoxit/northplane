@@ -275,8 +275,14 @@ func TestCheckStateBatchAndProblems(t *testing.T) {
 		if err != nil || len(probs) != 1 || probs[0].Object.ID != host.ID {
 			t.Fatalf("problems: %v n=%d", err, len(probs))
 		}
-		// acked problems disappear from unhandled view
-		cs.AckedBy = "murat"
+		// acked problems disappear from unhandled view. Ack is written via
+		// the column-scoped SetAck (SaveCheckStates no longer owns ack
+		// columns, so the pipeline batch can't clobber an API ack).
+		if err := s.SetAck(ctx, host.ID, "murat", " on it"); err != nil {
+			t.Fatal(err)
+		}
+		// a subsequent pipeline-style batch save must NOT wipe the ack
+		cs.Output = "CRITICAL - still down"
 		if err := s.SaveCheckStates(ctx, []*model.CheckState{cs}); err != nil {
 			t.Fatal(err)
 		}

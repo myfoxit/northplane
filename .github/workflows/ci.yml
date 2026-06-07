@@ -1,0 +1,119 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+jobs:
+  # Build the embedded UI once and share it so the Go build/embed works
+  # on every matrix leg without each re-running npm.
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: cd web && npm ci && npm run build
+      - run: |
+          rm -rf internal/web/dist
+          cp -r web/dist internal/web/dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ui-dist
+          path: internal/web/dist
+          retention-days: 1
+
+  test:
+    needs: ui
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: ui-dist
+          path: internal/web/dist
+      - name: go vet
+        run: go vet ./...
+      - name: go test -race
+        run: go test -race ./...
+      - name: build binaries
+        run: |
+          go build -o bin/northplaned ./cmd/northplaned
+          go build -o bin/np ./cmd/np
+          go build -o bin/np-agent ./cmd/np-agent
+
+  # Run the storage suite against the real PostgreSQL backend too (the
+  # store is dual-backend; SQLite is always exercised in `test`).
+  postgres:
+    needs: ui
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: np
+          POSTGRES_PASSWORD: np
+          POSTGRES_DB: northplane
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U np"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: ui-dist
+          path: internal/web/dist
+      - name: storage tests (PostgreSQL matrix)
+        env:
+          NORTHPLANE_TEST_PG_DSN: postgres://np:np@localhost:5432/northplane?sslmode=disable
+        run: go test ./internal/storage/...
+
+  cross-build:
+    needs: ui
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: darwin, goarch: arm64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: ui-dist
+          path: internal/web/dist
+      - name: cross compile
+        env:
+          GOOS: ${{ matrix.target.goos }}
+          GOARCH: ${{ matrix.target.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          go build ./cmd/northplaned
+          go build ./cmd/np
+          go build ./cmd/np-agent

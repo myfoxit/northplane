@@ -135,6 +135,12 @@ func parsePerfToken(tok string) (Perf, error) {
 			return p, fmt.Errorf("bad value %q", valUOM)
 		}
 	}
+	// Reject non-finite values: "NaN"/"Inf" parse cleanly via ParseFloat
+	// and an overflowing literal normalizes to ±Inf — both would poison
+	// TSDB aggregation and break JSON encoding of the series.
+	if math.IsNaN(val) || math.IsInf(val, 0) {
+		return p, fmt.Errorf("non-finite value %q", valUOM)
+	}
 	p.Value = val
 	p.UOM = valUOM[numEnd:]
 
@@ -221,12 +227,15 @@ func ParseRange(s string) (Range, error) {
 	if body == "" {
 		return r, fmt.Errorf("empty range")
 	}
-	parse := func(v string, def float64) (float64, error) {
+	// tildeVal is the infinity "~" resolves to at this position: -Inf for a
+	// start bound, +Inf for an end bound. (The old code always returned
+	// -Inf, so "~:~" became [-Inf,-Inf] and alerted on every value.)
+	parse := func(v string, emptyDef, tildeVal float64) (float64, error) {
 		switch v {
 		case "":
-			return def, nil
+			return emptyDef, nil
 		case "~":
-			return math.Inf(-1), nil
+			return tildeVal, nil
 		}
 		f, err := strconv.ParseFloat(v, 64)
 		if err != nil {
@@ -244,17 +253,17 @@ func ParseRange(s string) (Range, error) {
 		return f, nil
 	}
 	if i := strings.IndexByte(body, ':'); i >= 0 {
-		start, err := parse(body[:i], 0)
+		start, err := parse(body[:i], 0, math.Inf(-1))
 		if err != nil {
 			return r, fmt.Errorf("bad start: %v", err)
 		}
-		end, err := parse(body[i+1:], math.Inf(1))
+		end, err := parse(body[i+1:], math.Inf(1), math.Inf(1))
 		if err != nil {
 			return r, fmt.Errorf("bad end: %v", err)
 		}
 		r.Start, r.End = start, end
 	} else {
-		end, err := parse(body, 0)
+		end, err := parse(body, 0, math.Inf(1))
 		if err != nil {
 			return r, fmt.Errorf("bad value: %v", err)
 		}

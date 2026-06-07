@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"time"
 
@@ -248,5 +249,6 @@ func decodeOptional(r *http.Request, dst any) error {
 	if r.Body == nil {
 		return nil
 	}
-	return json.NewDecoder(r.Body).Decode(dst)
+	// Cap the body so a huge optional payload can't exhaust memory.
+	return json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(dst)
 }

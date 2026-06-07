@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"syscall"
 
 	"github.com/northplane/northplane/internal/ai"
@@ -82,7 +81,7 @@ Flags for most commands: -config /etc/northplane/config.yaml
 }
 
 func loadConfig(fs *flag.FlagSet, args []string) config.Config {
-	cfgPath := fs.String("config", "/etc/northplane/config.yaml", "config file")
+	cfgPath := fs.String("config", config.DefaultConfigPath(), "config file")
 	_ = fs.Parse(args)
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
@@ -158,11 +157,14 @@ func serve(args []string) {
 
 func initCmd(args []string) {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
-	dir := fs.String("dir", "/etc/northplane", "config directory")
-	dataDir := fs.String("data", "/var/lib/northplane", "data directory")
+	dir := fs.String("dir", config.DefaultConfigDir(), "config directory")
+	dataDir := fs.String("data", config.DefaultDataDir(), "data directory")
 	_ = fs.Parse(args)
 
 	if err := os.MkdirAll(*dir, 0o750); err != nil {
+		fatal("%v", err)
+	}
+	if err := os.MkdirAll(*dataDir, 0o750); err != nil {
 		fatal("%v", err)
 	}
 	cfgPath := filepath.Join(*dir, "config.yaml")
@@ -173,9 +175,7 @@ func initCmd(args []string) {
 	if err := auth.GenerateMasterKey(keyPath); err != nil {
 		fatal("secret key: %v", err)
 	}
-	example := strings.Replace(config.Example(),
-		`dataDir: "/var/lib/northplane"`,
-		fmt.Sprintf("dataDir: %q\nsecretKeyFile: %q", *dataDir, keyPath), 1)
+	example := config.Example(*dataDir, keyPath)
 	if err := os.WriteFile(cfgPath, []byte(example), 0o640); err != nil {
 		fatal("%v", err)
 	}
@@ -226,7 +226,7 @@ func storageCmd(args []string) {
 	}
 	fs := flag.NewFlagSet("storage migrate", flag.ExitOnError)
 	to := fs.String("to", "", "target DSN (postgres://… or empty=sqlite path)")
-	cfgPath := fs.String("config", "/etc/northplane/config.yaml", "config file")
+	cfgPath := fs.String("config", config.DefaultConfigPath(), "config file")
 	_ = fs.Parse(args[1:])
 	if *to == "" {
 		fatal("--to required")

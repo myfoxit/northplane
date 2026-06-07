@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 )
 
 // Block file format (immutable, written once at window close):
@@ -30,6 +31,18 @@ var (
 	blockMagic = [8]byte{'N', 'P', 'B', 'L', 'O', 'C', 'K', '1'}
 	aggMagic   = [8]byte{'N', 'P', 'A', 'G', 'G', 'R', '1', 0}
 )
+
+// syncDir fsyncs the directory holding path so a rename into it is
+// durable across a crash (the file contents are already fsync'd, but the
+// new directory entry is not until the parent dir is synced).
+func syncDir(path string) error {
+	d, err := os.Open(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	return d.Sync()
+}
 
 func writeBlockFile(path string, ws, we int64, entries []blockEntry) error {
 	tmp := path + ".tmp"
@@ -62,7 +75,10 @@ func writeBlockFile(path string, ws, we int64, entries []blockEntry) error {
 		return err
 	}
 	f.Close()
-	return os.Rename(tmp, path)
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	return syncDir(path)
 }
 
 // blockIndexEntry locates a series inside a block.
@@ -79,6 +95,10 @@ func readBlockIndex(path string) (map[uint64]blockIndexEntry, int64, error) {
 		return nil, 0, err
 	}
 	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, 0, err
+	}
 	var head [28]byte
 	if _, err := io.ReadFull(f, head[:]); err != nil {
 		return nil, 0, err
@@ -88,8 +108,14 @@ func readBlockIndex(path string) (map[uint64]blockIndexEntry, int64, error) {
 	}
 	ws := int64(binary.BigEndian.Uint64(head[8:16]))
 	n := binary.BigEndian.Uint32(head[24:28])
+	// Reject a corrupt/forged count before allocating: 20 bytes per index
+	// entry must fit in what remains after the 28-byte header. int64 math
+	// avoids uint32 overflow.
+	if 28+int64(n)*20 > fi.Size() {
+		return nil, 0, fmt.Errorf("tsdb: %s: index count %d exceeds file size", path, n)
+	}
 	idx := make(map[uint64]blockIndexEntry, n)
-	buf := make([]byte, 20*n)
+	buf := make([]byte, 20*int64(n))
 	if _, err := io.ReadFull(f, buf); err != nil {
 		return nil, 0, err
 	}
@@ -115,6 +141,13 @@ func readBlockSeries(path string, idx map[uint64]blockIndexEntry, headerSize int
 		return nil, err
 	}
 	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if headerSize+int64(e.offset)+int64(e.length) > fi.Size() {
+		return nil, fmt.Errorf("tsdb: %s: series extent out of bounds", path)
+	}
 	payload := make([]byte, e.length)
 	if _, err := f.ReadAt(payload, headerSize+int64(e.offset)); err != nil {
 		return nil, err
@@ -174,7 +207,10 @@ func writeAggFile(path string, dayStart int64, bucketMS uint32, entries []aggEnt
 		return err
 	}
 	f.Close()
-	return os.Rename(tmp, path)
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	return syncDir(path)
 }
 
 type aggIndexEntry struct {
@@ -188,6 +224,10 @@ func readAggIndex(path string) (map[uint64]aggIndexEntry, int64, uint32, error) 
 		return nil, 0, 0, err
 	}
 	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, 0, 0, err
+	}
 	var head [24]byte
 	if _, err := io.ReadFull(f, head[:]); err != nil {
 		return nil, 0, 0, err
@@ -198,8 +238,11 @@ func readAggIndex(path string) (map[uint64]aggIndexEntry, int64, uint32, error) 
 	dayStart := int64(binary.BigEndian.Uint64(head[8:16]))
 	bucketMS := binary.BigEndian.Uint32(head[16:20])
 	n := binary.BigEndian.Uint32(head[20:24])
+	if 24+int64(n)*16 > fi.Size() {
+		return nil, 0, 0, fmt.Errorf("tsdb: %s: agg index count %d exceeds file size", path, n)
+	}
 	idx := make(map[uint64]aggIndexEntry, n)
-	buf := make([]byte, 16*n)
+	buf := make([]byte, 16*int64(n))
 	if _, err := io.ReadFull(f, buf); err != nil {
 		return nil, 0, 0, err
 	}
@@ -226,7 +269,14 @@ func readAggSeries(path string, idx map[uint64]aggIndexEntry, headerSize int64, 
 		return nil, err
 	}
 	defer f.Close()
-	buf := make([]byte, e.count*32)
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if headerSize+int64(e.offset)+int64(e.count)*32 > fi.Size() {
+		return nil, fmt.Errorf("tsdb: %s: agg series extent out of bounds", path)
+	}
+	buf := make([]byte, int64(e.count)*32)
 	if _, err := f.ReadAt(buf, headerSize+int64(e.offset)); err != nil {
 		return nil, err
 	}

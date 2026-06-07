@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"time"
 
@@ -58,7 +59,7 @@ func (a *API) registerRules() {
 				From       time.Time      `json:"from,omitempty"`
 				To         time.Time      `json:"to,omitempty"`
 			}
-			_ = json.NewDecoder(r.Body).Decode(&req)
+			_ = json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req)
 			if req.To.IsZero() {
 				req.To = time.Now().UTC()
 			}

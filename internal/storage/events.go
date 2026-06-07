@@ -291,6 +291,14 @@ func (s *Store) QueryEvents(ctx context.Context, f EventFilter) ([]*model.Event,
 		all = append(all, evs...)
 	}
 	sort.Slice(all, func(i, j int) bool {
+		// Break ts ties by id in the same direction as the SQL ORDER BY,
+		// so cursor pagination is stable across same-timestamp events.
+		if all[i].TS.Equal(all[j].TS) {
+			if f.Asc {
+				return all[i].ID < all[j].ID
+			}
+			return all[i].ID > all[j].ID
+		}
 		if f.Asc {
 			return all[i].TS.Before(all[j].TS)
 		}
@@ -362,8 +370,14 @@ func eventWhere(d Dialect, f EventFilter) (string, []any) {
 		args = append(args, d.TimeValue(f.To))
 	}
 	if f.Cursor != "" {
-		// UUIDv7 IDs are time-ordered: the ID itself is the cursor.
-		conds = append(conds, "id < ?")
+		// UUIDv7 IDs are time-ordered: the ID itself is the cursor. The
+		// direction must match the sort order, else ascending pagination
+		// (used by backend migration) re-reads or skips at page edges.
+		if f.Asc {
+			conds = append(conds, "id > ?")
+		} else {
+			conds = append(conds, "id < ?")
+		}
 		args = append(args, f.Cursor)
 	}
 	return "WHERE " + strings.Join(conds, " AND "), args

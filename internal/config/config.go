@@ -5,9 +5,12 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -21,6 +24,12 @@ type Config struct {
 	BaseURL string `yaml:"baseUrl"` // external URL for links/ack/OIDC redirect
 
 	DataDir string `yaml:"dataDir"` // /var/lib/northplane
+
+	// TrustProxy: when true, honour X-Forwarded-Proto/-For from a TLS-
+	// terminating reverse proxy (sets Secure cookies + HSTS + correct
+	// client IP even though the local listener is plaintext). Only enable
+	// when the proxy is trusted and strips inbound forwarded headers.
+	TrustProxy bool `yaml:"trustProxy"`
 
 	Storage StorageConfig `yaml:"storage"`
 	TLS     TLSConfig     `yaml:"tls"`
@@ -98,11 +107,69 @@ type BackupConfig struct {
 	Interval time.Duration `yaml:"interval"`
 }
 
+// DefaultDataDir returns the platform default data directory:
+// /var/lib/northplane when running as root (the systemd/production
+// case), otherwise a per-user directory so `northplaned` runs without
+// privileges (macOS: ~/Library/Application Support/northplane, Linux:
+// $XDG_DATA_HOME/northplane or ~/.local/share/northplane).
+func DefaultDataDir() string {
+	if os.Geteuid() == 0 {
+		return "/var/lib/northplane"
+	}
+	if runtime.GOOS != "darwin" {
+		if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
+			return filepath.Join(xdg, "northplane")
+		}
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, ".local", "share", "northplane")
+		}
+	}
+	if dir, err := os.UserConfigDir(); err == nil {
+		return filepath.Join(dir, "northplane")
+	}
+	return "/var/lib/northplane"
+}
+
+// DefaultConfigDir is where `northplaned init` writes config.yaml and
+// secret.key: /etc/northplane as root, the per-user config directory
+// otherwise (macOS: ~/Library/Application Support/northplane, Linux:
+// ~/.config/northplane).
+func DefaultConfigDir() string {
+	if os.Geteuid() == 0 {
+		return "/etc/northplane"
+	}
+	if dir, err := os.UserConfigDir(); err == nil {
+		return filepath.Join(dir, "northplane")
+	}
+	return "/etc/northplane"
+}
+
+// DefaultConfigPath resolves the bootstrap config file: the system path
+// when running as root or when it exists, the per-user path otherwise.
+func DefaultConfigPath() string { return defaultPath("config.yaml") }
+
+// DefaultAgentConfigPath is the np-agent equivalent of DefaultConfigPath.
+func DefaultAgentConfigPath() string { return defaultPath("agent.yaml") }
+
+func defaultPath(file string) string {
+	system := filepath.Join("/etc/northplane", file)
+	if os.Geteuid() == 0 {
+		return system
+	}
+	if _, err := os.Stat(system); err == nil {
+		return system
+	}
+	return filepath.Join(DefaultConfigDir(), file)
+}
+
 // Defaults returns the development-friendly default configuration.
+// Listen binds loopback only: plaintext HTTP is acceptable there, and
+// exposing the server requires an explicit listen + TLS decision
+// (A-15.10: no accidental plaintext in production).
 func Defaults() Config {
 	return Config{
-		Listen:          ":8443",
-		DataDir:         "/var/lib/northplane",
+		Listen:          "127.0.0.1:8443",
+		DataDir:         DefaultDataDir(),
 		LogLevel:        "info",
 		LogFormat:       "json",
 		DeadManInterval: time.Minute,
@@ -122,7 +189,9 @@ func Load(path string) (Config, error) {
 		case err == nil:
 			dec := yaml.NewDecoder(strings.NewReader(string(b)))
 			dec.KnownFields(true)
-			if err := dec.Decode(&cfg); err != nil {
+			if err := dec.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
+				// io.EOF = empty/comment-only file: keep defaults rather
+				// than refusing to start.
 				return cfg, fmt.Errorf("config %s: %w", path, err)
 			}
 		case os.IsNotExist(err):
@@ -167,6 +236,9 @@ func applyEnv(c *Config) {
 	if v, ok := os.LookupEnv("NORTHPLANE_TLS_INSECURE"); ok {
 		c.TLS.Insecure, _ = strconv.ParseBool(v)
 	}
+	if v, ok := os.LookupEnv("NORTHPLANE_TRUST_PROXY"); ok {
+		c.TrustProxy, _ = strconv.ParseBool(v)
+	}
 	str("NORTHPLANE_OIDC_ISSUER", &c.OIDC.Issuer)
 	str("NORTHPLANE_OIDC_CLIENT_ID", &c.OIDC.ClientID)
 	str("NORTHPLANE_OIDC_CLIENT_SECRET", &c.OIDC.ClientSecret)
@@ -202,16 +274,27 @@ func (c Config) UsePostgres() bool {
 		strings.HasPrefix(c.Storage.DSN, "postgresql://")
 }
 
-// Example renders the commented config file written by `northplaned init`.
-func Example() string {
+// Example renders the commented config file written by `northplaned
+// init`. dataDir and secretKeyFile are interpolated directly (no
+// post-hoc string replacement) so the generated file is always valid.
+func Example(dataDir, secretKeyFile string) string {
+	if dataDir == "" {
+		dataDir = DefaultDataDir()
+	}
+	keyLine := ""
+	if secretKeyFile != "" {
+		keyLine = fmt.Sprintf("secretKeyFile: %q\n", secretKeyFile)
+	}
 	return `# Northplane bootstrap configuration (SPEC §15.2).
 # Only pre-API settings live here — everything else is managed via API,
 # UI or config bundles. Environment overrides: NORTHPLANE_*.
 
-listen: ":8443"
+# Loopback default. To serve the network, set listen: ":8443" AND
+# configure TLS below (plaintext on non-loopback refuses to start).
+listen: "127.0.0.1:8443"
 #baseUrl: "https://monitoring.example.net"
-dataDir: "/var/lib/northplane"
-
+dataDir: ` + fmt.Sprintf("%q", dataDir) + `
+` + keyLine + `
 storage:
   # Empty dsn = embedded SQLite under dataDir (default).
   # PostgreSQL server mode: "postgres://np:secret@db:5432/northplane"

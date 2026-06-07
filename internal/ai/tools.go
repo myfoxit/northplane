@@ -22,6 +22,10 @@ type Tool struct {
 	Def      ToolDef
 	Mutating bool
 	AutoOK   bool // policy may set this to auto-execute (ack, short downtime)
+	// Perm is the RBAC permission the caller must hold — the same scope
+	// the equivalent REST route requires (SPEC §10.3: the AI/MCP session
+	// is a privilegeless client that inherits exactly the token's scopes).
+	Perm model.Permission
 	// Run executes the tool against the platform with the principal's RBAC.
 	Run func(ctx context.Context, s *Service, p *auth.Principal, input json.RawMessage) (any, error)
 }
@@ -34,6 +38,7 @@ func buildTools() []Tool {
 		{Def: ToolDef{Name: "get_overview",
 			Description: "State summary: problem counts, open incidents, on-call.",
 			Schema:      sch(`{"type":"object","properties":{}}`)},
+			Perm: model.Permission("events:read"),
 			Run: func(ctx context.Context, s *Service, p *auth.Principal, in json.RawMessage) (any, error) {
 				sum, err := s.store.Summary(ctx, p.TenantID)
 				if err != nil {
@@ -47,6 +52,7 @@ func buildTools() []Tool {
 		{Def: ToolDef{Name: "search_objects",
 			Description: "Find hosts/services by label selector or text query.",
 			Schema:      sch(`{"type":"object","properties":{"selector":{"type":"string"},"query":{"type":"string"},"kind":{"type":"string","enum":["host","service"]},"limit":{"type":"integer"}}}`)},
+			Perm: model.Permission("objects:read"),
 			Run: func(ctx context.Context, s *Service, p *auth.Principal, in json.RawMessage) (any, error) {
 				var args struct {
 					Selector, Query, Kind string
@@ -82,6 +88,7 @@ func buildTools() []Tool {
 		{Def: ToolDef{Name: "get_object",
 			Description: "Object detail incl. effective config, state and metric series.",
 			Schema:      sch(`{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}`)},
+			Perm: model.Permission("objects:read"),
 			Run: func(ctx context.Context, s *Service, p *auth.Principal, in json.RawMessage) (any, error) {
 				var args struct{ ID string }
 				_ = json.Unmarshal(in, &args)
@@ -103,6 +110,7 @@ func buildTools() []Tool {
 		{Def: ToolDef{Name: "query_metrics",
 			Description: "Aggregated, downsampled time-series for an object/metric.",
 			Schema:      sch(`{"type":"object","properties":{"objectId":{"type":"string"},"metric":{"type":"string"},"fromHoursAgo":{"type":"number"},"agg":{"type":"string"}},"required":["objectId"]}`)},
+			Perm: model.Permission("metrics:read"),
 			Run: func(ctx context.Context, s *Service, p *auth.Principal, in json.RawMessage) (any, error) {
 				var args struct {
 					ObjectID, Metric, Agg string
@@ -123,6 +131,7 @@ func buildTools() []Tool {
 		{Def: ToolDef{Name: "get_alerts",
 			Description: "List alerts filtered by status/severity.",
 			Schema:      sch(`{"type":"object","properties":{"status":{"type":"string"},"limit":{"type":"integer"}}}`)},
+			Perm: model.Permission("alerts:read"),
 			Run: func(ctx context.Context, s *Service, p *auth.Principal, in json.RawMessage) (any, error) {
 				var args struct {
 					Status string
@@ -141,6 +150,7 @@ func buildTools() []Tool {
 		{Def: ToolDef{Name: "get_incidents",
 			Description: "List incidents with their alerts.",
 			Schema:      sch(`{"type":"object","properties":{"open":{"type":"boolean"}}}`)},
+			Perm: model.Permission("incidents:read"),
 			Run: func(ctx context.Context, s *Service, p *auth.Principal, in json.RawMessage) (any, error) {
 				var args struct{ Open bool }
 				_ = json.Unmarshal(in, &args)
@@ -150,6 +160,7 @@ func buildTools() []Tool {
 		{Def: ToolDef{Name: "who_is_oncall",
 			Description: "Current on-call per schedule.",
 			Schema:      sch(`{"type":"object","properties":{"schedule":{"type":"string"}}}`)},
+			Perm: model.Permission("oncall:read"),
 			Run: func(ctx context.Context, s *Service, p *auth.Principal, in json.RawMessage) (any, error) {
 				var args struct{ Schedule string }
 				_ = json.Unmarshal(in, &args)
@@ -184,6 +195,7 @@ func buildTools() []Tool {
 		{Def: ToolDef{Name: "explain_alert",
 			Description: "Deterministic context for an alert: topology, recent config changes, similar past incidents. Structured data for grounding an explanation.",
 			Schema:      sch(`{"type":"object","properties":{"alertId":{"type":"string"}},"required":["alertId"]}`)},
+			Perm: model.Permission("alerts:read"),
 			Run: func(ctx context.Context, s *Service, p *auth.Principal, in json.RawMessage) (any, error) {
 				var args struct{ AlertID string }
 				_ = json.Unmarshal(in, &args)
@@ -193,6 +205,7 @@ func buildTools() []Tool {
 		{Def: ToolDef{Name: "run_check_now",
 			Description: "Trigger an immediate recheck.",
 			Schema:      sch(`{"type":"object","properties":{"objectId":{"type":"string"}},"required":["objectId"]}`)},
+			Perm:     model.Permission("checks:run"),
 			Mutating: true, AutoOK: true,
 			Run: func(ctx context.Context, s *Service, p *auth.Principal, in json.RawMessage) (any, error) {
 				var args struct{ ObjectID string }
@@ -207,6 +220,7 @@ func buildTools() []Tool {
 		{Def: ToolDef{Name: "acknowledge_alert",
 			Description: "Acknowledge an alert, stopping its escalation.",
 			Schema:      sch(`{"type":"object","properties":{"alertId":{"type":"string"},"comment":{"type":"string"}},"required":["alertId"]}`)},
+			Perm:     model.Permission("alerts:ack"),
 			Mutating: true, AutoOK: true,
 			Run: func(ctx context.Context, s *Service, p *auth.Principal, in json.RawMessage) (any, error) {
 				var args struct{ AlertID, Comment string }
@@ -222,6 +236,7 @@ func buildTools() []Tool {
 		{Def: ToolDef{Name: "create_downtime",
 			Description: "Schedule a downtime window (TTL-limited by policy).",
 			Schema:      sch(`{"type":"object","properties":{"objectId":{"type":"string"},"selector":{"type":"string"},"hours":{"type":"number"},"comment":{"type":"string"}},"required":["comment"]}`)},
+			Perm:     model.Permission("downtimes:write"),
 			Mutating: true,
 			Run: func(ctx context.Context, s *Service, p *auth.Principal, in json.RawMessage) (any, error) {
 				var args struct {
@@ -229,6 +244,11 @@ func buildTools() []Tool {
 					Hours                       float64
 				}
 				_ = json.Unmarshal(in, &args)
+				// Match the human REST path (maintenance.go): a downtime
+				// must target something — reject an unscoped window.
+				if args.ObjectID == "" && args.Selector == "" {
+					return nil, fmt.Errorf("create_downtime requires objectId or selector")
+				}
 				if args.Hours <= 0 {
 					args.Hours = 2
 				}
@@ -248,6 +268,7 @@ func buildTools() []Tool {
 		{Def: ToolDef{Name: "create_silence",
 			Description: "Silence matching alerts for a bounded TTL.",
 			Schema:      sch(`{"type":"object","properties":{"selector":{"type":"string"},"hours":{"type":"number"},"comment":{"type":"string"}},"required":["selector","comment"]}`)},
+			Perm:     model.Permission("silences:write"),
 			Mutating: true,
 			Run: func(ctx context.Context, s *Service, p *auth.Principal, in json.RawMessage) (any, error) {
 				var args struct {
@@ -270,6 +291,7 @@ func buildTools() []Tool {
 		{Def: ToolDef{Name: "propose_config_change",
 			Description: "Produce a validated bundle diff (dry-run). Always returns a plan for human approval — never applies.",
 			Schema:      sch(`{"type":"object","properties":{"bundleYaml":{"type":"string"}},"required":["bundleYaml"]}`)},
+			Perm:     model.Permission("config:write"),
 			Mutating: true,
 			Run: func(ctx context.Context, s *Service, p *auth.Principal, in json.RawMessage) (any, error) {
 				var args struct{ BundleYaml string }

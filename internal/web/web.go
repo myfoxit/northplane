@@ -5,12 +5,14 @@ package web
 
 import (
 	"context"
+	"crypto/subtle"
 	"embed"
 	"html/template"
 	"io/fs"
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/northplane/northplane/internal/auth"
@@ -72,6 +74,60 @@ func NewPages(store *storage.Store, authn *auth.Authenticator, oidc *auth.OIDC,
 	return &Pages{store: store, auth: authn, oidc: oidc, cfg: cfg, version: version}
 }
 
+// dummyPassHash is a real argon2id hash verified against unknown/non-local
+// accounts so failed logins take the same time regardless of whether the
+// account exists (anti-enumeration). Computed once at startup.
+var dummyPassHash = auth.HashSecret("northplane-nonexistent-account-placeholder")
+
+// loginLimiter throttles local-login attempts per client IP to blunt
+// online password brute-forcing of the break-glass admin accounts.
+type loginLimiter struct {
+	mu      sync.Mutex
+	buckets map[string]*loginBucket
+}
+
+type loginBucket struct {
+	tokens float64
+	last   time.Time
+}
+
+const (
+	loginBurst  = 8.0        // attempts before throttling kicks in
+	loginRefill = 1.0 / 15.0 // 1 token / 15s ⇒ ~4 attempts/min sustained
+)
+
+var logins = &loginLimiter{buckets: map[string]*loginBucket{}}
+
+// allow reports whether an attempt from ip may proceed, refilling the
+// token bucket based on elapsed time. now is injected for testability.
+func (l *loginLimiter) allow(ip string, now time.Time) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	b := l.buckets[ip]
+	if b == nil {
+		b = &loginBucket{tokens: loginBurst, last: now}
+		l.buckets[ip] = b
+	}
+	b.tokens += now.Sub(b.last).Seconds() * loginRefill
+	if b.tokens > loginBurst {
+		b.tokens = loginBurst
+	}
+	b.last = now
+	// opportunistic GC so the map can't grow without bound
+	if len(l.buckets) > 4096 {
+		for k, v := range l.buckets {
+			if now.Sub(v.last) > time.Hour {
+				delete(l.buckets, k)
+			}
+		}
+	}
+	if b.tokens < 1 {
+		return false
+	}
+	b.tokens--
+	return true
+}
+
 func (p *Pages) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Path == "/login" && r.Method == http.MethodGet:
@@ -100,11 +156,25 @@ func (p *Pages) localLogin(w http.ResponseWriter, r *http.Request) {
 		p.loginPage(w, r, "Ungültige Anfrage.")
 		return
 	}
+	if !logins.allow(remoteIP(r), time.Now()) {
+		w.Header().Set("Retry-After", "30")
+		p.loginPage(w, r, "Zu viele Anmeldeversuche. Bitte kurz warten.")
+		return
+	}
 	email := r.FormValue("email")
 	password := r.FormValue("password")
 	user, err := p.store.GetUserByEmail(r.Context(), email)
-	if err != nil || !user.Local || !auth.VerifySecret(password, user.PassHash) {
-		time.Sleep(300 * time.Millisecond) // uniform failure timing
+	// Always run the (expensive) argon2 verification — against the real
+	// hash when the user exists & is local, otherwise a fixed dummy — so
+	// login timing does not reveal whether an account exists (user
+	// enumeration). A plain short-circuit would skip argon2 for unknown
+	// users and make them measurably faster than wrong-password attempts.
+	hash := dummyPassHash
+	if err == nil && user.Local && user.PassHash != "" {
+		hash = user.PassHash
+	}
+	valid := auth.VerifySecret(password, hash)
+	if err != nil || !user.Local || !valid {
 		p.loginPage(w, r, "Anmeldung fehlgeschlagen.")
 		return
 	}
@@ -139,7 +209,7 @@ func (p *Pages) callback(w http.ResponseWriter, r *http.Request) {
 func (p *Pages) setSession(w http.ResponseWriter, r *http.Request, session string) {
 	http.SetCookie(w, &http.Cookie{
 		Name: "np_session", Value: session, Path: "/",
-		HttpOnly: true, Secure: r.TLS != nil, SameSite: http.SameSiteLaxMode,
+		HttpOnly: true, Secure: auth.RequestIsHTTPS(r, p.cfg.TrustProxy), SameSite: http.SameSiteLaxMode,
 		MaxAge: int((12 * time.Hour).Seconds()),
 	})
 }
@@ -252,9 +322,15 @@ func (p *Pages) statusPage(w http.ResponseWriter, r *http.Request) {
 		}
 		pageCfg.Tenant, pageCfg.Title, pageCfg.Public = model.DefaultTenant, "Service Status", true
 	}
-	if !pageCfg.Public && r.URL.Query().Get("token") != pageCfg.Token {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
+	if !pageCfg.Public {
+		// Fail closed: a private page with no configured token denies all
+		// (an empty == empty comparison would otherwise grant access).
+		// Constant-time compare avoids leaking the token via timing.
+		given := r.URL.Query().Get("token")
+		if pageCfg.Token == "" || subtle.ConstantTimeCompare([]byte(given), []byte(pageCfg.Token)) != 1 {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
 	}
 
 	rows, worst := p.statusRows(ctx, pageCfg.Tenant)

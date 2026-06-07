@@ -18,6 +18,25 @@ import (
 	"github.com/northplane/northplane/internal/storage"
 )
 
+// RequestIsHTTPS reports whether the request reached the client over TLS,
+// either directly (r.TLS) or via a trusted TLS-terminating reverse proxy
+// that set X-Forwarded-Proto: https. Behind such a proxy the local
+// listener is plaintext, so r.TLS alone would wrongly drop the Secure
+// cookie flag and HSTS. Only honour the header when trustProxy is set.
+func RequestIsHTTPS(r *http.Request, trustProxy bool) bool {
+	if r.TLS != nil {
+		return true
+	}
+	if trustProxy {
+		proto := r.Header.Get("X-Forwarded-Proto")
+		if i := strings.IndexByte(proto, ','); i >= 0 {
+			proto = proto[:i]
+		}
+		return strings.EqualFold(strings.TrimSpace(proto), "https")
+	}
+	return false
+}
+
 // Principal is the authenticated actor attached to each request.
 type Principal struct {
 	ActorType model.ActorType

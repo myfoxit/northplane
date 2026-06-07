@@ -2,7 +2,7 @@
 VERSION ?= 1.0.0-dev
 LDFLAGS  = -ldflags "-X main.version=$(VERSION)"
 
-.PHONY: all web build test clean
+.PHONY: all web build test race fmt docker clean
 
 all: web build
 
@@ -19,6 +19,16 @@ build:
 test:
 	go vet ./...
 	go test ./...
+
+# Race-enabled run of the whole suite (what CI runs).
+race:
+	go test -race ./...
+
+fmt:
+	gofmt -w cmd internal
+
+docker:
+	docker build --build-arg VERSION=$(VERSION) -t northplane:$(VERSION) .
 
 clean:
 	/bin/rm -rf bin web/dist internal/web/dist

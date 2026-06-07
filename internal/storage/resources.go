@@ -82,14 +82,41 @@ func (s *Store) PutResource(ctx context.Context, tenantID, kind, name string, do
 	}
 	env.Doc = raw
 
+	// The version/existence checks above are advisory (read before the
+	// write); enforce them atomically inside the transaction so two
+	// concurrent writers with the same If-Match cannot both succeed and
+	// lose an update (a plain upsert has no version guard).
+	vals := []any{env.ID, tenantID, kind, name, string(raw), env.Version, s.T(env.CreatedAt), s.T(now)}
+	base := `INSERT INTO resources (id, tenant_id, kind, name, doc, version, created_at, updated_at)
+			 VALUES (?,?,?,?,?,?,?,?)`
 	err = s.Write(ctx, func(tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, s.Q(
-			`INSERT INTO resources (id, tenant_id, kind, name, doc, version, created_at, updated_at)
-			 VALUES (?,?,?,?,?,?,?,?)
-			 ON CONFLICT (tenant_id, kind, name) DO UPDATE SET
-			 doc = excluded.doc, version = excluded.version, updated_at = excluded.updated_at`),
-			env.ID, tenantID, kind, name, string(raw), env.Version, s.T(env.CreatedAt), s.T(now))
-		return err
+		var q string
+		args := vals
+		switch {
+		case expectVersion == -1: // create-only
+			q = base + ` ON CONFLICT (tenant_id, kind, name) DO NOTHING`
+		case expectVersion > 0: // guarded update (optimistic concurrency)
+			q = base + ` ON CONFLICT (tenant_id, kind, name) DO UPDATE SET
+				 doc = excluded.doc, version = excluded.version, updated_at = excluded.updated_at
+				 WHERE resources.version = ?`
+			args = append(append([]any{}, vals...), expectVersion)
+		default: // unconditional upsert (expectVersion == 0)
+			q = base + ` ON CONFLICT (tenant_id, kind, name) DO UPDATE SET
+				 doc = excluded.doc, version = excluded.version, updated_at = excluded.updated_at`
+		}
+		res, err := tx.ExecContext(ctx, s.Q(q), args...)
+		if err != nil {
+			return err
+		}
+		if expectVersion == -1 || expectVersion > 0 {
+			if n, _ := res.RowsAffected(); n == 0 {
+				if expectVersion == -1 {
+					return fmt.Errorf("%w: %s %q", ErrDuplicate, kind, name)
+				}
+				return fmt.Errorf("%w: %s %q changed concurrently", ErrConflict, kind, name)
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err

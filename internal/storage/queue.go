@@ -117,6 +117,41 @@ func (s *Store) DueOutbox(ctx context.Context, now time.Time, limit int) ([]*Out
 	return scanOutbox(rows)
 }
 
+// ClaimOutbox atomically leases due deliveries: each returned item has
+// had its next_try pushed out by lease, so a concurrent notifier tick or
+// a second HA node will not pick it up again. A crash mid-send simply
+// lets the lease expire and the item becomes due again. This prevents the
+// double-send that a plain DueOutbox+send has under overlapping ticks.
+func (s *Store) ClaimOutbox(ctx context.Context, now time.Time, lease time.Duration, limit int) ([]*OutboxItem, error) {
+	candidates, err := s.DueOutbox(ctx, now, limit)
+	if err != nil {
+		return nil, err
+	}
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+	leaseUntil := s.T(now.Add(lease))
+	var claimed []*OutboxItem
+	err = s.Write(ctx, func(tx *sql.Tx) error {
+		for _, it := range candidates {
+			res, err := tx.ExecContext(ctx, s.Q(
+				`UPDATE outbox SET next_try = ? WHERE id = ? AND next_try <= ? AND dead = false`),
+				leaseUntil, it.ID, s.T(now))
+			if err != nil {
+				return err
+			}
+			if n, _ := res.RowsAffected(); n == 1 {
+				claimed = append(claimed, it)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return claimed, nil
+}
+
 func scanOutbox(rows *sql.Rows) ([]*OutboxItem, error) {
 	var out []*OutboxItem
 	for rows.Next() {
