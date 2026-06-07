@@ -40,14 +40,23 @@ type Service struct {
 	tools   []Tool
 	byName  map[string]*Tool
 	planner BundlePlanner
+	reports ReportRenderer
 
 	maxDowntimeHours float64
 }
 
 // BundlePlanner lets the service reuse the API's plan engine without an
-// import cycle.
+// import cycle. Apply is only reachable through the approval gate
+// (apply_config_change is a mutating, non-auto tool — SPEC §10.3).
 type BundlePlanner interface {
 	PlanBundleYAML(ctx context.Context, tenantID, yaml string) (any, error)
+	ApplyBundleYAML(ctx context.Context, tenantID, yaml string) (any, error)
+}
+
+// ReportRenderer renders a stored report's data model on demand
+// (render_report tool, SPEC §10.3).
+type ReportRenderer interface {
+	RenderReportJSON(ctx context.Context, tenantID, name string) (any, error)
 }
 
 // Deps wires the service.
@@ -61,6 +70,7 @@ type Deps struct {
 	TSDB    *tsdb.DB
 	BaseURL string
 	Planner BundlePlanner
+	Reports ReportRenderer
 	API     any // kept for wiring symmetry; unused directly
 	Log     *slog.Logger
 }
@@ -77,6 +87,7 @@ func New(d Deps) *Service {
 		store:    d.Store, cat: d.Catalog, sched: d.Sched, escal: d.Escal,
 		bus: d.Bus, tsdb: d.TSDB, log: d.Log, baseURL: d.BaseURL,
 		planner:          d.Planner,
+		reports:          d.Reports,
 		maxDowntimeHours: 4,
 	}
 	s.tools = buildTools()
@@ -531,4 +542,21 @@ func (s *Service) planBundle(ctx context.Context, p *auth.Principal, yaml string
 		return nil, fmt.Errorf("bundle planner not wired")
 	}
 	return s.planner.PlanBundleYAML(ctx, p.TenantID, yaml)
+}
+
+// applyBundle defers to the API's apply engine — reached only via the
+// approval gate (SPEC §10.3 apply_config_change).
+func (s *Service) applyBundle(ctx context.Context, p *auth.Principal, yaml string) (any, error) {
+	if s.planner == nil {
+		return nil, fmt.Errorf("bundle planner not wired")
+	}
+	return s.planner.ApplyBundleYAML(ctx, p.TenantID, yaml)
+}
+
+// renderReport defers to the API's report engine (render_report tool).
+func (s *Service) renderReport(ctx context.Context, p *auth.Principal, name string) (any, error) {
+	if s.reports == nil {
+		return nil, fmt.Errorf("report renderer not wired")
+	}
+	return s.reports.RenderReportJSON(ctx, p.TenantID, name)
 }

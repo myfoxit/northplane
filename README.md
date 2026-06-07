@@ -184,13 +184,49 @@ or use Streamable HTTP at `/mcp` with a normal API token. The MCP session
 inherits exactly the token's RBAC scopes; mutating tools land in the approval
 queue (`/api/v1/ai/actions`).
 
+### Connect Claude Code (copy-paste)
+
+```bash
+# remote server — Streamable HTTP with a normal API token:
+claude mcp add northplane --transport http https://your-server:8443/mcp \
+  --header "Authorization: Bearer np_…"
+
+# local server — stdio:
+claude mcp add northplane --env NORTHPLANE_TOKEN=np_… -- northplaned mcp
+```
+
+Or as a project-scoped `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "northplane": {
+      "type": "http",
+      "url": "https://your-server:8443/mcp",
+      "headers": { "Authorization": "Bearer np_…" }
+    }
+  }
+}
+```
+
+15 tools: `get_overview`, `search_objects`, `get_object`, `query_metrics`,
+`get_alerts`, `get_incidents`, `who_is_oncall`, `explain_alert`,
+`run_check_now`, `acknowledge_alert`, `create_downtime`, `create_silence`,
+`propose_config_change`, `apply_config_change`, `render_report`. Everything
+the UI can configure is also reachable via `apply_config_change` (YAML
+bundles, human-approved). What an MCP session may do is governed per token:
+scopes are `resource:action` strings (extensible — a new tool just declares
+its permission), denials are audited, and every mutation either
+auto-executes (ack, recheck — audited) or waits in the approval queue.
+
 ## Architecture
 
 ```
 cmd/northplaned   Server (+ init, migrate, storage migrate, import nagios,
                   backup, mcp, bootstrap-admin)
 cmd/np            CLI (apply/export, get, ack, downtime, oncall, audit verify…)
-cmd/np-agent      Host agent (passive metrics — load, memory, disk — + local plugins)
+cmd/np-agent      Host agent: passive push (load, memory, disk, local plugins)
+                  + optional NCPA-style active HTTPS listener (`agent` check)
 
 internal/
   model           Domain model (UUIDv7, objects, templates, states, on-call)
@@ -205,8 +241,10 @@ internal/
   pipeline        result → state machine → event → TSDB → SSE (batched commits)
   alerting        CEL rules (+ :test), heartbeats, suppression, correlation
   escalation      durable step timers, unlessAcked, repeats, on-call resolution
-  notify          email, webhook (HMAC), Teams, Slack, ntfy, SMS, Web Push;
-                  outbox with backoff + dead-letter queue
+  notify          email, webhook (HMAC), Teams, Slack, ntfy, SMS, Web Push,
+                  voice (Twilio TTS + DTMF ack), tickets (ServiceNow, Zendesk,
+                  Jira, generic HTTP — auto-close on resolve); pluggable sender
+                  registry; outbox with backoff + dead-letter queue
   api             REST + OpenAPI generated from code
   auth            np_ tokens (argon2id), RBAC, OIDC+PKCE, secret store (AES-GCM)
   ai / mcp        provider client, redaction, deterministic stats, approval gates;
@@ -235,9 +273,9 @@ go test -fuzz=FuzzParsePerfdata ./internal/nagios/
 
 ## Roadmap (deliberately not in v1)
 
-Satellite mTLS join (the agent uses token auth for now), SNMP-trap / email
-ingress, voice provider, ServiceNow action execution, PDF report rendering,
-SAML, and HA leader election. The interfaces for these already exist.
+Satellite mTLS join (the agent uses token auth for now), PDF report
+rendering, SAML, and HA leader election. The interfaces for these already
+exist.
 
 ## License
 

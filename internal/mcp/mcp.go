@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -95,8 +96,22 @@ func RunStdio(ctx context.Context, svc *ai.Service, principal *auth.Principal, v
 
 // HTTPHandler serves Streamable HTTP at /mcp. Authentication: standard
 // Northplane bearer tokens resolved per request (SPEC §10.3: tokens =
-// normale API-Tokens mit Scopes).
+// normale API-Tokens mit Scopes). One SHARED SDK handler holds the
+// session table — sessions span requests (initialize → tools/*), each
+// bound at creation to the authenticated principal. A session-id→actor
+// binding prevents one token riding another token's session.
 func HTTPHandler(svc *ai.Service, authn *auth.Authenticator, version string) http.Handler {
+	var sessions sync.Map // session id → actor id
+	handler := sdk.NewStreamableHTTPHandler(func(r *http.Request) *sdk.Server {
+		// Called for NEW sessions only; the session keeps this server
+		// (and its principal) for its lifetime.
+		principal, err := authn.Authenticate(r)
+		if err != nil || principal == nil {
+			return nil // SDK answers 400
+		}
+		return Build(svc, principal, version)
+	}, nil)
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		principal, err := authn.Authenticate(r)
 		if err != nil || principal == nil {
@@ -104,10 +119,19 @@ func HTTPHandler(svc *ai.Service, authn *auth.Authenticator, version string) htt
 			http.Error(w, "MCP requires a Northplane API token", http.StatusUnauthorized)
 			return
 		}
-		handler := sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server {
-			return Build(svc, principal, version)
-		}, nil)
+		if sid := r.Header.Get("Mcp-Session-Id"); sid != "" {
+			if actor, ok := sessions.Load(sid); ok && actor != principal.ActorID {
+				http.Error(w, "session belongs to another token", http.StatusForbidden)
+				return
+			}
+			if r.Method == http.MethodDelete {
+				sessions.Delete(sid)
+			}
+		}
 		handler.ServeHTTP(w, r)
+		if sid := w.Header().Get("Mcp-Session-Id"); sid != "" {
+			sessions.Store(sid, principal.ActorID)
+		}
 	})
 }
 

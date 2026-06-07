@@ -360,6 +360,14 @@ var migrations = []migration{
 		)`,
 		`CREATE INDEX report_archive_rep ON report_archive (tenant_id, report_name, created_at DESC)`,
 	}},
+	// External ticket linkage (F-04.05): a ticket created for an alert is
+	// remembered on the alert so resolution can auto-close it. ticket_meta
+	// is a model.TicketRef JSON ('{}' = no ticket). ALTER … ADD COLUMN with
+	// constant default is in the shared SQLite/Postgres subset.
+	{5, "alert_ticket", []string{
+		`ALTER TABLE alerts ADD COLUMN ticket_url TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE alerts ADD COLUMN ticket_meta {{JSON}} NOT NULL DEFAULT '{}'`,
+	}},
 }
 
 func (s *Store) migrate(ctx context.Context) error {

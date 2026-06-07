@@ -1,8 +1,9 @@
 // Package checks implements the builtin in-process checks (SPEC §7.4):
-// icmp, tcp, http(s), tls-cert, dns, smtp, imap, ntp, ssh-banner, snmp
-// and the multistep http-flow (SPEC §8.6). No fork — thousands run in
-// parallel. Flags follow monitoring-plugins conventions so Nagios users
-// feel at home (-H, -p, -w, -c, …).
+// icmp, tcp, http(s), tls-cert, dns, smtp, imap, ntp, ssh-banner, snmp,
+// nrpe, agent (np-agent active listener) and the multistep http-flow
+// (SPEC §8.6). No fork — thousands run in parallel. Flags follow
+// monitoring-plugins conventions so Nagios users feel at home
+// (-H, -p, -w, -c, …).
 package checks
 
 import (

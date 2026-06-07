@@ -240,6 +240,7 @@ function RuleDialog({ state, groups, policies, onClose }: {
 
         <div className="flex gap-6">
           <ToggleRow label="Bei OK schließen" checked={r.resolveOnOk ?? false} onChange={(v) => set({ resolveOnOk: v })} />
+          <ToggleRow label="Incident anlegen" checked={r.incident ?? false} onChange={(v) => set({ incident: v })} />
           <ToggleRow label={t('disabled')} checked={r.disabled ?? false} onChange={(v) => set({ disabled: v })} />
         </div>
 

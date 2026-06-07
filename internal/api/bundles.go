@@ -187,6 +187,41 @@ func (a *API) PlanBundleYAML(ctx context.Context, tenantID, yamlText string) (an
 	return res, nil
 }
 
+// ApplyBundleYAML implements the ai.BundlePlanner apply hook: the
+// apply_config_change MCP tool routes through the approval queue, so by
+// the time this runs a human has approved the diff (SPEC §10.3).
+func (a *API) ApplyBundleYAML(ctx context.Context, tenantID, yamlText string) (any, error) {
+	docs, err := bundle.ParseBytes([]byte(yamlText))
+	if err != nil {
+		return nil, err
+	}
+	if errs := bundle.Validate(docs); len(errs) > 0 {
+		return nil, fmt.Errorf("bundle invalid: %s", strings.Join(errs, "; "))
+	}
+	_, warnings, err := a.computePlan(ctx, tenantID, docs, false, "")
+	if err != nil {
+		return nil, err
+	}
+	ordered := make([]bundle.Doc, len(docs))
+	copy(ordered, docs)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return kindRankOf(ordered[i].Kind) < kindRankOf(ordered[j].Kind)
+	})
+	applied := []PlanAction{}
+	for _, doc := range ordered {
+		act, err := a.applyDoc(ctx, tenantID, doc)
+		if err != nil {
+			return nil, fmt.Errorf("apply failed at %s: %w", doc.Ident(), err)
+		}
+		if act != "" {
+			applied = append(applied, PlanAction{Action: act, Kind: doc.Kind,
+				Name: doc.Metadata.Name, Host: doc.Metadata.Host})
+		}
+	}
+	a.configChanged(ctx, tenantID, storage.KindAlertRule)
+	return PlanResult{Plan: applied, Warnings: warnings}, nil
+}
+
 func (a *API) readBundle(w http.ResponseWriter, r *http.Request) ([]bundle.Doc, bool) {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 8<<20))
 	if err != nil {

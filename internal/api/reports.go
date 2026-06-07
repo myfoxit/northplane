@@ -180,6 +180,17 @@ func (a *API) buildReport(r *http.Request, tenantID string, rep *model.Report) (
 	return a.buildReportData(r.Context(), tenantID, rep, r.URL.Query())
 }
 
+// RenderReportJSON implements the ai.ReportRenderer hook: the
+// render_report MCP tool renders a stored report's data model on demand
+// (SPEC §10.3) — structured JSON, the AI-friendly format.
+func (a *API) RenderReportJSON(ctx context.Context, tenantID, name string) (any, error) {
+	rep, err := storage.LoadOne[model.Report](ctx, a.Store, tenantID, storage.KindReport, name)
+	if err != nil {
+		return nil, err
+	}
+	return a.buildReportData(ctx, tenantID, rep, url.Values{})
+}
+
 // buildReportData renders a report's data model from its stored params.
 // It takes no *http.Request so scheduled runs (SPEC §9.8) and the HTTP
 // :render endpoint share one code path. q carries optional query overrides

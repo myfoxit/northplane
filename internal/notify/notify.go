@@ -106,7 +106,9 @@ func (m *Manager) deliver(ctx context.Context, item *storage.OutboxItem) {
 	case "webhook-sub":
 		providerID, err = m.deliverWebhookSub(ctx, item)
 	case "action":
-		err = fmt.Errorf("external actions (ServiceNow) need a configured integration — v2 backlog")
+		providerID, err = m.deliverAction(ctx, item)
+	case "ticket-close":
+		providerID, err = m.deliverTicketClose(ctx, item)
 	default:
 		err = fmt.Errorf("unknown outbox kind %q", item.Kind)
 	}
@@ -216,6 +218,125 @@ func (m *Manager) channelFor(ctx context.Context, tenantID string, typ model.Cha
 	return nil, fmt.Errorf("no enabled %s channel configured", typ)
 }
 
+// channelByName resolves a channel by its configured name (escalation
+// actions reference channels by name, not type).
+func (m *Manager) channelByName(ctx context.Context, tenantID, name string) (*model.NotificationChannel, error) {
+	ch, err := storage.LoadOne[model.NotificationChannel](ctx, m.store, tenantID, storage.KindChannel, name)
+	if err != nil {
+		return nil, fmt.Errorf("channel %q: %w", name, err)
+	}
+	if !ch.Enabled {
+		return nil, fmt.Errorf("channel %q is disabled", name)
+	}
+	return ch, nil
+}
+
+// deliverAction executes escalation-step side effects (F-04.05): ticket
+// creation (ServiceNow/Zendesk/Jira/generic) and action webhooks. Rides
+// the outbox so retries/backoff/DLQ apply like any delivery.
+func (m *Manager) deliverAction(ctx context.Context, item *storage.OutboxItem) (string, error) {
+	var job struct {
+		Action *model.EscalationAction `json:"action"`
+		Alert  *model.Alert            `json:"alert"`
+		Policy string                  `json:"policy"`
+		Step   int                     `json:"step"`
+	}
+	if err := json.Unmarshal(item.Payload, &job); err != nil {
+		return "", fmt.Errorf("bad payload: %w", err)
+	}
+	if job.Action == nil || job.Alert == nil {
+		return "", nil
+	}
+	// Skip side effects for alerts that resolved while queued; a closed
+	// alert must not open a fresh ticket.
+	if current, err := m.store.GetAlert(ctx, job.Alert.TenantID, job.Alert.ID); err == nil {
+		if current.Status == model.AlertResolved || current.Status == model.AlertExpired {
+			return "", nil
+		}
+		if current.Ticket != nil && current.Ticket.Ref != "" {
+			return current.Ticket.Ref, nil // already ticketed (repeat step)
+		}
+		job.Alert = current
+	}
+
+	// normalise: the legacy servicenow shorthand is a ticket action against
+	// the tenant's servicenow channel.
+	ticketAct := job.Action.Ticket
+	if ticketAct == nil && job.Action.ServiceNow != nil {
+		ch, err := m.channelFor(ctx, job.Alert.TenantID, model.ChannelServiceNow)
+		if err != nil {
+			return "", err
+		}
+		ticketAct = &model.TicketAction{Channel: ch.Name,
+			AutoClose: job.Action.ServiceNow.AutoClose,
+			Params:    map[string]string{"assignmentGroup": job.Action.ServiceNow.AssignmentGroup}}
+	}
+
+	var providerID string
+	if ticketAct != nil {
+		ch, err := m.channelByName(ctx, job.Alert.TenantID, ticketAct.Channel)
+		if err != nil {
+			return "", err
+		}
+		rc := m.renderContext(job.Alert, &model.Contact{}, notifyJob{
+			AlertID: job.Alert.ID, TenantID: job.Alert.TenantID,
+			StepIndex: job.Step, Policy: job.Policy})
+		subject, body, err := m.render(ch, rc)
+		if err != nil {
+			return "", fmt.Errorf("template: %w", err)
+		}
+		if m.SendHook != nil { // tests intercept transports
+			providerID, err = m.SendHook(ch, "ticket", subject, body)
+			if err == nil {
+				m.attachTicket(ctx, rc, &model.TicketRef{Channel: ch.Name,
+					Type: string(ch.Type), Ref: providerID, AutoClose: ticketAct.AutoClose})
+			}
+		} else {
+			providerID, err = m.sendTicket(ctx, ch, subject, body, rc, ticketAct)
+		}
+		if err != nil {
+			return "", err
+		}
+		m.recordActionEvent(ctx, job.Alert, ch, providerID, job.Step)
+	}
+	if job.Action.Webhook != "" {
+		ch, err := m.channelByName(ctx, job.Alert.TenantID, job.Action.Webhook)
+		if err != nil {
+			return providerID, err
+		}
+		rc := m.renderContext(job.Alert, &model.Contact{}, notifyJob{
+			AlertID: job.Alert.ID, TenantID: job.Alert.TenantID,
+			StepIndex: job.Step, Policy: job.Policy})
+		_, body, err := m.render(ch, rc)
+		if err != nil {
+			return providerID, fmt.Errorf("template: %w", err)
+		}
+		if m.SendHook != nil {
+			_, err = m.SendHook(ch, ch.Config["url"], "", body)
+		} else {
+			_, err = m.sendWebhook(ctx, ch, body)
+		}
+		if err != nil {
+			return providerID, err
+		}
+	}
+	return providerID, nil
+}
+
+// recordActionEvent leaves the immutable trail for executed actions.
+func (m *Manager) recordActionEvent(ctx context.Context, alert *model.Alert,
+	ch *model.NotificationChannel, providerID string, step int) {
+	rec := model.NotificationRecord{AlertID: alert.ID, StepIndex: step,
+		Channel: ch.Type, ChannelID: ch.ID, Status: model.NotifySent,
+		ProviderID: providerID}
+	raw, _ := json.Marshal(rec)
+	ev := &model.Event{ID: model.NewID(), TenantID: alert.TenantID, TS: time.Now().UTC(),
+		Type: model.EventNotification, ObjectID: alert.ObjectID,
+		Severity: model.SevInfo, Payload: raw}
+	_ = m.store.InsertEvents(ctx, []*model.Event{ev})
+	m.bus.FanoutOnly(ev)
+}
+
 // RenderContext is the template context (documented for F-04.09
 // per-channel templates).
 type RenderContext struct {
@@ -316,7 +437,21 @@ Acknowledge: {{.AckURL}}`,
 	model.ChannelTeams: `{"type":"message","attachments":[{"contentType":"application/vnd.microsoft.card.adaptive","content":{"type":"AdaptiveCard","$schema":"http://adaptivecards.io/schemas/adaptive-card.json","version":"1.4","body":[{"type":"TextBlock","size":"Medium","weight":"Bolder","text":"[{{.Severity}}] {{.Title}}"},{"type":"TextBlock","text":"Step {{.Step}} · Policy {{.Policy}}","wrap":true}],"actions":[{"type":"Action.OpenUrl","title":"Acknowledge","url":"{{.AckURL}}"},{"type":"Action.OpenUrl","title":"Open","url":"{{.AlertURL}}"}]}}]}`,
 	model.ChannelWebhook: `{"version":1,"alert":{{json .Alert}},"severity":"{{.Severity}}","title":{{json .Title}},"labels":{{json .Labels}},"step":{{.Step}},"policy":{{json .Policy}},"ackUrl":{{json .AckURL}},"alertUrl":{{json .AlertURL}}}`,
 	model.ChannelVoice: `Northplane alert. Severity {{.Severity}}. {{.Title}}. Press 4 to acknowledge.`,
+	// Ticket descriptions (ServiceNow/Zendesk/Jira share the text shape;
+	// the generic gateway posts JSON like a webhook).
+	model.ChannelServiceNow: ticketDescriptionTemplate,
+	model.ChannelZendesk:    ticketDescriptionTemplate,
+	model.ChannelJira:       ticketDescriptionTemplate,
+	model.ChannelTicket:     `{"subject":{{json .Title}},"severity":"{{.Severity}}","body":{{json .Title}},"labels":{{json .Labels}},"alertUrl":{{json .AlertURL}},"alertId":{{json .Alert.ID}}}`,
 }
+
+const ticketDescriptionTemplate = `{{.Severity}}: {{.Title}}
+
+Alert:  {{.AlertURL}}
+Opened: {{.Alert.OpenedAt}}
+Labels: {{range $k,$v := .Labels}}{{$k}}={{$v}} {{end}}
+
+Acknowledge: {{.AckURL}}`
 
 // render produces subject (e-mail) and body. The first line of the
 // e-mail template carries "Subject: …".
