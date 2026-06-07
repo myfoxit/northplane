@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -15,14 +16,15 @@ import (
 // --- users ---
 
 const userCols = `id, name, email, subject, local, pass_hash, disabled, last_seen_at,
-	version, created_at, updated_at`
+	version, created_at, updated_at, roles`
 
 func scanUser(sc interface{ Scan(...any) error }) (*model.User, error) {
 	var u model.User
 	var subject NullStr
+	var roles string
 	var lastSeen, created, updated ScanTime
 	if err := sc.Scan(&u.ID, &u.Name, &u.Email, &subject, &u.Local, &u.PassHash,
-		&u.Disabled, &lastSeen, &u.Version, &created, &updated); err != nil {
+		&u.Disabled, &lastSeen, &u.Version, &created, &updated, &roles); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrNotFound
 		}
@@ -31,10 +33,19 @@ func scanUser(sc interface{ Scan(...any) error }) (*model.User, error) {
 	u.Subject = string(subject)
 	u.LastSeenAt = lastSeen.Ptr()
 	u.CreatedAt, u.UpdatedAt = created.T, updated.T
+	_ = json.Unmarshal([]byte(roles), &u.Roles)
 	return &u, nil
 }
 
+// ErrDisabled signals that a matched principal is administratively
+// disabled and must not be (re-)provisioned or logged in (SPEC §11.2).
+var ErrDisabled = errors.New("account disabled")
+
 // UpsertUserBySubject provisions SSO users on first login (SPEC §11.2).
+// A disabled account is never resurrected: JIT-provisioning must not
+// re-enable it, and the OIDC login is rejected (ErrDisabled) so a disabled
+// user cannot get in via SSO either — the disabled flag is the single
+// authority regardless of the login path.
 func (s *Store) UpsertUserBySubject(ctx context.Context, subject, name, email string) (*model.User, error) {
 	now := time.Now().UTC()
 	existing, err := s.GetUserBySubject(ctx, subject)
@@ -42,6 +53,9 @@ func (s *Store) UpsertUserBySubject(ctx context.Context, subject, name, email st
 		return nil, err
 	}
 	if existing != nil {
+		if existing.Disabled {
+			return nil, ErrDisabled
+		}
 		err := s.Write(ctx, func(tx *sql.Tx) error {
 			_, err := tx.ExecContext(ctx, s.Q(
 				`UPDATE users SET name = ?, email = ?, last_seen_at = ?, updated_at = ? WHERE id = ?`),
@@ -66,16 +80,46 @@ func (s *Store) UpsertUserBySubject(ctx context.Context, subject, name, email st
 	return u, err
 }
 
-// CreateLocalUser for break-glass accounts.
+// adminRoleName is the built-in role whose holders the last-admin guard
+// protects (model.BuiltinRoles[0]).
+const adminRoleName = "admin"
+
+// CreateLocalUser for the first-run break-glass admin (web /setup). Local
+// accounts get the admin role so the bootstrap operator can do anything;
+// local login expands these stored roles into the session.
 func (s *Store) CreateLocalUser(ctx context.Context, name, email, passHash string) (*model.User, error) {
+	return s.CreateUser(ctx, &model.User{
+		Name: name, Email: email, Local: true, PassHash: passHash,
+		Roles: []string{adminRoleName},
+	})
+}
+
+// CreateUser inserts a user (local or, in principle, pre-provisioned SSO).
+// Email must be unique across all accounts — enforced here (no DB
+// constraint) so the API can answer 409 instead of leaking a 500. ID,
+// Version and timestamps are assigned; Roles default to none.
+func (s *Store) CreateUser(ctx context.Context, u *model.User) (*model.User, error) {
 	now := time.Now().UTC()
-	u := &model.User{ID: model.NewID(), Name: name, Email: email, Local: true,
-		PassHash: passHash, Version: 1, CreatedAt: now, UpdatedAt: now}
+	if u.ID == "" {
+		u.ID = model.NewID()
+	}
+	u.Version, u.CreatedAt, u.UpdatedAt = 1, now, now
+	roles, _ := jsonMarshal(orSlice(u.Roles))
 	err := s.Write(ctx, func(tx *sql.Tx) error {
+		var n int
+		if err := tx.QueryRowContext(ctx, s.Q(
+			`SELECT COUNT(*) FROM users WHERE email = ?`), u.Email).Scan(&n); err != nil {
+			return err
+		}
+		if n > 0 {
+			return ErrDuplicate
+		}
 		_, err := tx.ExecContext(ctx, s.Q(
-			`INSERT INTO users (id, name, email, local, pass_hash, version, created_at, updated_at)
-			 VALUES (?,?,?,true,?,1,?,?)`),
-			u.ID, u.Name, u.Email, u.PassHash, s.T(now), s.T(now))
+			`INSERT INTO users (id, name, email, subject, local, pass_hash, disabled, roles,
+			 version, created_at, updated_at)
+			 VALUES (?,?,?,?,?,?,?,?,1,?,?)`),
+			u.ID, u.Name, u.Email, S(u.Subject), u.Local, u.PassHash, u.Disabled, roles,
+			s.T(now), s.T(now))
 		return err
 	})
 	return u, err
@@ -117,6 +161,99 @@ func (s *Store) ListUsers(ctx context.Context) ([]*model.User, error) {
 		out = append(out, u)
 	}
 	return out, rows.Err()
+}
+
+// UpdateUser writes name/email/roles/disabled. Email uniqueness is
+// re-checked (a 409, not a 500) excluding the row itself; version is
+// bumped. The caller owns the last-admin guard (DeleteUser / the API)
+// since "would this leave zero admins?" depends on the new role set.
+func (s *Store) UpdateUser(ctx context.Context, u *model.User) error {
+	now := time.Now().UTC()
+	roles, _ := jsonMarshal(orSlice(u.Roles))
+	return s.Write(ctx, func(tx *sql.Tx) error {
+		var n int
+		if err := tx.QueryRowContext(ctx, s.Q(
+			`SELECT COUNT(*) FROM users WHERE email = ? AND id <> ?`), u.Email, u.ID).Scan(&n); err != nil {
+			return err
+		}
+		if n > 0 {
+			return ErrDuplicate
+		}
+		res, err := tx.ExecContext(ctx, s.Q(
+			`UPDATE users SET name = ?, email = ?, roles = ?, disabled = ?,
+			 version = version + 1, updated_at = ? WHERE id = ?`),
+			u.Name, u.Email, roles, u.Disabled, s.T(now), u.ID)
+		if err != nil {
+			return err
+		}
+		if k, _ := res.RowsAffected(); k == 0 {
+			return ErrNotFound
+		}
+		return nil
+	})
+}
+
+// SetPassword stores a new argon2id hash (admin reset or self-service).
+// An empty hash clears the password (OIDC-only account).
+func (s *Store) SetPassword(ctx context.Context, id, passHash string) error {
+	now := time.Now().UTC()
+	return s.Write(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, s.Q(
+			`UPDATE users SET pass_hash = ?, version = version + 1, updated_at = ? WHERE id = ?`),
+			passHash, s.T(now), id)
+		if err != nil {
+			return err
+		}
+		if k, _ := res.RowsAffected(); k == 0 {
+			return ErrNotFound
+		}
+		return nil
+	})
+}
+
+// DeleteUser removes a user.
+func (s *Store) DeleteUser(ctx context.Context, id string) error {
+	return s.Write(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, s.Q(`DELETE FROM users WHERE id = ?`), id)
+		if err != nil {
+			return err
+		}
+		if k, _ := res.RowsAffected(); k == 0 {
+			return ErrNotFound
+		}
+		return nil
+	})
+}
+
+// CountEnabledAdmins returns how many enabled local users hold the admin
+// role — the last-admin guard's source of truth (SPEC §11.2: an install
+// must never be locked out of its own administration). Local only: SSO
+// admins derive their role from IdP groups at login and could be revoked
+// upstream, so they don't count as a durable break-glass admin. Membership
+// is evaluated in Go to stay free of backend-specific JSON operators.
+func (s *Store) CountEnabledAdmins(ctx context.Context) (int, error) {
+	rows, err := s.db.QueryContext(ctx, s.Q(
+		`SELECT roles FROM users WHERE local = true AND disabled = false`))
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	n := 0
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return 0, err
+		}
+		var roles []string
+		_ = json.Unmarshal([]byte(raw), &roles)
+		for _, r := range roles {
+			if r == adminRoleName {
+				n++
+				break
+			}
+		}
+	}
+	return n, rows.Err()
 }
 
 // --- API tokens ---

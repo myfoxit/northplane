@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -63,16 +64,10 @@ func (a *API) registerAdmin() {
 			a.writeJSON(w, http.StatusCreated, map[string]string{"id": id})
 		})
 
-	// users
-	a.handle("GET /api/v1/users", "List users", "admin:users", nil, listResponse{},
-		func(w http.ResponseWriter, r *http.Request, p *auth.Principal) {
-			users, err := a.Store.ListUsers(r.Context())
-			if err != nil {
-				a.fail(w, r, err)
-				return
-			}
-			a.writeList(w, users, "")
-		})
+	// users (SPEC §11.2 / §13.2). Local accounts are break-glass: created,
+	// reset and deleted here; the last enabled local admin is protected so
+	// an install can never lock itself out of its own administration.
+	a.registerUsers()
 
 	// roles
 	a.resourceCRUD("roles", storage.KindRole, "admin", model.Role{})
@@ -353,4 +348,261 @@ func (a *API) registerAdmin() {
 			}
 			w.WriteHeader(http.StatusCreated)
 		})
+}
+
+// minPasswordLen mirrors the first-run /setup minimum (web.minSetupPasswordLen):
+// local passwords are ≥ 12 characters everywhere they are set (SPEC §13.2).
+const minPasswordLen = 12
+
+// adminRole is the built-in role the last-admin guard protects.
+const adminRole = "admin"
+
+// hasRole reports membership in a role-name slice.
+func hasRole(roles []string, name string) bool {
+	for _, r := range roles {
+		if r == name {
+			return true
+		}
+	}
+	return false
+}
+
+// registerUsers wires the user-management surface (SPEC §11.2 / §13.2).
+// All mutations require admin:users and are audited; password hashes are
+// never returned (model.User.PassHash has json:"-"). The last enabled
+// local admin cannot be deleted, disabled or stripped of the admin role —
+// that 409 (np:users/last-admin) keeps an install administrable.
+func (a *API) registerUsers() {
+	a.handle("GET /api/v1/users", "List users", "admin:users", nil, listResponse{},
+		func(w http.ResponseWriter, r *http.Request, p *auth.Principal) {
+			users, err := a.Store.ListUsers(r.Context())
+			if err != nil {
+				a.fail(w, r, err)
+				return
+			}
+			a.writeList(w, users, "")
+		})
+
+	a.handle("GET /api/v1/users/{id}", "Get a user", "admin:users", nil, model.User{},
+		func(w http.ResponseWriter, r *http.Request, p *auth.Principal) {
+			user, err := a.Store.GetUser(r.Context(), param(r, "id"))
+			if err != nil {
+				a.fail(w, r, err)
+				return
+			}
+			a.writeJSON(w, http.StatusOK, user) // PassHash elided by json:"-"
+		})
+
+	// Create a local user. password is optional: omit it and the account
+	// can only authenticate via OIDC until an admin sets one (:set-password).
+	type createUser struct {
+		Name     string   `json:"name"`
+		Email    string   `json:"email"`
+		Password string   `json:"password,omitempty"`
+		Roles    []string `json:"roles,omitempty"`
+		Disabled bool     `json:"disabled,omitempty"`
+	}
+	a.handle("POST /api/v1/users", "Create a local user", "admin:users", createUser{}, model.User{},
+		func(w http.ResponseWriter, r *http.Request, p *auth.Principal) {
+			var req createUser
+			if !a.decode(w, r, &req) {
+				return
+			}
+			req.Name, req.Email = strings.TrimSpace(req.Name), strings.TrimSpace(req.Email)
+			if req.Name == "" || req.Email == "" {
+				a.validationError(w, r, "user", "name and email required")
+				return
+			}
+			var hash string
+			if req.Password != "" {
+				if len([]rune(req.Password)) < minPasswordLen {
+					a.validationError(w, r, "password", "password must be at least 12 characters")
+					return
+				}
+				hash = auth.HashSecret(req.Password)
+			}
+			user, err := a.Store.CreateUser(r.Context(), &model.User{
+				Name: req.Name, Email: req.Email, Local: true,
+				PassHash: hash, Roles: req.Roles, Disabled: req.Disabled,
+			})
+			if err != nil {
+				a.failUser(w, r, err) // ErrDuplicate → friendly 409 email-in-use
+				return
+			}
+			a.audit(r, p, "user.create", user.ID, nil, map[string]any{
+				"name": user.Name, "email": user.Email, "roles": user.Roles, "disabled": user.Disabled})
+			a.writeJSON(w, http.StatusCreated, user)
+		})
+
+	// Update name/email/roles/disabled. Absent fields (nil) are left as-is.
+	type updateUser struct {
+		Name     *string   `json:"name,omitempty"`
+		Email    *string   `json:"email,omitempty"`
+		Roles    *[]string `json:"roles,omitempty"`
+		Disabled *bool     `json:"disabled,omitempty"`
+	}
+	a.handle("PUT /api/v1/users/{id}", "Update a user", "admin:users", updateUser{}, model.User{},
+		func(w http.ResponseWriter, r *http.Request, p *auth.Principal) {
+			var req updateUser
+			if !a.decode(w, r, &req) {
+				return
+			}
+			before, err := a.Store.GetUser(r.Context(), param(r, "id"))
+			if err != nil {
+				a.fail(w, r, err)
+				return
+			}
+			after := *before
+			if req.Name != nil {
+				after.Name = strings.TrimSpace(*req.Name)
+			}
+			if req.Email != nil {
+				after.Email = strings.TrimSpace(*req.Email)
+			}
+			if req.Roles != nil {
+				after.Roles = *req.Roles
+			}
+			if req.Disabled != nil {
+				after.Disabled = *req.Disabled
+			}
+			if after.Name == "" || after.Email == "" {
+				a.validationError(w, r, "user", "name and email must not be empty")
+				return
+			}
+			// Last-admin guard: refuse a change that strips the final enabled
+			// local admin of its admin status (disable or de-role).
+			lostAdmin := before.Local && !before.Disabled && hasRole(before.Roles, adminRole) &&
+				(after.Disabled || !hasRole(after.Roles, adminRole))
+			if lostAdmin && a.wouldOrphanAdmins(w, r) {
+				return
+			}
+			if err := a.Store.UpdateUser(r.Context(), &after); err != nil {
+				a.failUser(w, r, err)
+				return
+			}
+			updated, _ := a.Store.GetUser(r.Context(), after.ID)
+			a.audit(r, p, "user.update", after.ID,
+				map[string]any{"name": before.Name, "email": before.Email,
+					"roles": before.Roles, "disabled": before.Disabled},
+				map[string]any{"name": after.Name, "email": after.Email,
+					"roles": after.Roles, "disabled": after.Disabled})
+			a.writeJSON(w, http.StatusOK, updated)
+		})
+
+	// Admin password reset. An empty password clears it (OIDC-only login).
+	type setPassword struct {
+		Password string `json:"password"`
+	}
+	a.handle("POST /api/v1/users/{id}:set-password", "Set a user's password (admin reset)",
+		"admin:users", setPassword{}, nil,
+		func(w http.ResponseWriter, r *http.Request, p *auth.Principal) {
+			var req setPassword
+			if !a.decode(w, r, &req) {
+				return
+			}
+			if _, err := a.Store.GetUser(r.Context(), param(r, "id")); err != nil {
+				a.fail(w, r, err)
+				return
+			}
+			var hash string
+			if req.Password != "" {
+				if len([]rune(req.Password)) < minPasswordLen {
+					a.validationError(w, r, "password", "password must be at least 12 characters")
+					return
+				}
+				hash = auth.HashSecret(req.Password)
+			}
+			if err := a.Store.SetPassword(r.Context(), param(r, "id"), hash); err != nil {
+				a.fail(w, r, err)
+				return
+			}
+			a.audit(r, p, "user.set-password", param(r, "id"), nil, nil) // password never logged
+			w.WriteHeader(http.StatusNoContent)
+		})
+
+	// Self-service password change for the logged-in user principal.
+	type changePassword struct {
+		OldPassword string `json:"oldPassword"`
+		NewPassword string `json:"newPassword"`
+	}
+	a.handle("POST /api/v1/users/me:change-password", "Change your own password",
+		"", changePassword{}, nil,
+		func(w http.ResponseWriter, r *http.Request, p *auth.Principal) {
+			if p == nil || p.ActorType != model.ActorUser {
+				a.problem(w, r, http.StatusUnauthorized, "np:auth/required", "login required", "")
+				return
+			}
+			var req changePassword
+			if !a.decode(w, r, &req) {
+				return
+			}
+			user, err := a.Store.GetUser(r.Context(), p.ActorID)
+			if err != nil {
+				a.fail(w, r, err)
+				return
+			}
+			// Verify the current password. An account without a local
+			// password (OIDC-only) cannot self-serve a change here.
+			if user.PassHash == "" || !auth.VerifySecret(req.OldPassword, user.PassHash) {
+				a.problem(w, r, http.StatusForbidden, "np:auth/bad-password",
+					"current password is incorrect", "")
+				return
+			}
+			if len([]rune(req.NewPassword)) < minPasswordLen {
+				a.validationError(w, r, "password", "password must be at least 12 characters")
+				return
+			}
+			if err := a.Store.SetPassword(r.Context(), user.ID, auth.HashSecret(req.NewPassword)); err != nil {
+				a.fail(w, r, err)
+				return
+			}
+			a.audit(r, p, "user.change-password", user.ID, nil, nil)
+			w.WriteHeader(http.StatusNoContent)
+		})
+
+	a.handle("DELETE /api/v1/users/{id}", "Delete a user", "admin:users", nil, nil,
+		func(w http.ResponseWriter, r *http.Request, p *auth.Principal) {
+			before, err := a.Store.GetUser(r.Context(), param(r, "id"))
+			if err != nil {
+				a.fail(w, r, err)
+				return
+			}
+			if before.Local && !before.Disabled && hasRole(before.Roles, adminRole) &&
+				a.wouldOrphanAdmins(w, r) {
+				return
+			}
+			if err := a.Store.DeleteUser(r.Context(), before.ID); err != nil {
+				a.fail(w, r, err)
+				return
+			}
+			a.audit(r, p, "user.delete", before.ID,
+				map[string]any{"name": before.Name, "email": before.Email}, nil)
+			w.WriteHeader(http.StatusNoContent)
+		})
+}
+
+// wouldOrphanAdmins reports (and answers 409 np:users/last-admin) when the
+// install currently has only one enabled local admin — i.e. removing that
+// one would leave none. Callers gate on "is the target the last admin?"
+// before invoking, so a count of ≤ 1 means this very change is the orphaning
+// one. Fails closed (treats a count error as "would orphan").
+func (a *API) wouldOrphanAdmins(w http.ResponseWriter, r *http.Request) bool {
+	n, err := a.Store.CountEnabledAdmins(r.Context())
+	if err != nil || n <= 1 {
+		a.problem(w, r, http.StatusConflict, "np:users/last-admin",
+			"cannot remove the last enabled local administrator", "")
+		return true
+	}
+	return false
+}
+
+// failUser maps the email-uniqueness conflict onto a user-friendly 409
+// before delegating the rest to fail (404/422/500 as usual).
+func (a *API) failUser(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, storage.ErrDuplicate) {
+		a.problem(w, r, http.StatusConflict, "np:users/email-in-use",
+			"a user with this email already exists", "")
+		return
+	}
+	a.fail(w, r, err)
 }

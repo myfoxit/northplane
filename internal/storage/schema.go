@@ -313,15 +313,20 @@ var migrations = []migration{
 			keys       {{JSON}} NOT NULL,
 			created_at {{TIMESTAMP}} NOT NULL
 		)`,
+		// Scheduled-report archive (SPEC §9.8, CMP-Reports parity): each
+		// rendered slot is stored as a BLOB. slot is the schedule slot key
+		// ("2026-06-07" | "2026-W23" | "2026-06") and dedups one render per
+		// (report, slot, format); Keep-based retention prunes the oldest.
 		`CREATE TABLE report_archive (
 			id          TEXT PRIMARY KEY,
 			tenant_id   TEXT NOT NULL,
-			report_id   TEXT NOT NULL,
+			report_name TEXT NOT NULL,
+			slot        TEXT NOT NULL DEFAULT '',
 			format      TEXT NOT NULL,
 			content     {{BLOB}} NOT NULL,
-			rendered_at {{TIMESTAMP}} NOT NULL
+			created_at  {{TIMESTAMP}} NOT NULL
 		)`,
-		`CREATE INDEX report_archive_rep ON report_archive (report_id, rendered_at)`,
+		`CREATE INDEX report_archive_rep ON report_archive (tenant_id, report_name, created_at DESC)`,
 		// Misc durable state (adaptive baselines, satellite leases, …).
 		`CREATE TABLE kv (
 			k TEXT PRIMARY KEY,
@@ -330,6 +335,31 @@ var migrations = []migration{
 		)`,
 	}},
 	{2, "seed", nil}, // handled in code: default tenant + builtin roles
+	// User-bound roles (SPEC §11.2). Sessions still carry the effective
+	// role set, but local (break-glass) users now persist their roles so an
+	// admin can manage them via the API and so the last-admin guard has a
+	// durable source of truth. JSON array, NOT NULL DEFAULT '[]' on both
+	// dialects (ALTER ... ADD COLUMN is in the shared subset).
+	{3, "user_roles", []string{
+		`ALTER TABLE users ADD COLUMN roles {{JSON}} NOT NULL DEFAULT '[]'`,
+	}},
+	// Scheduled reports: the v1 report_archive shape (report_id/rendered_at,
+	// no slot column) was never written to. Recreate it with the slot-keyed
+	// dedup shape the scheduler needs (SPEC §9.8). DROP+CREATE is in the
+	// shared subset and safe because no rows ever existed.
+	{4, "report_archive_slot", []string{
+		`DROP TABLE IF EXISTS report_archive`,
+		`CREATE TABLE report_archive (
+			id          TEXT PRIMARY KEY,
+			tenant_id   TEXT NOT NULL,
+			report_name TEXT NOT NULL,
+			slot        TEXT NOT NULL DEFAULT '',
+			format      TEXT NOT NULL,
+			content     {{BLOB}} NOT NULL,
+			created_at  {{TIMESTAMP}} NOT NULL
+		)`,
+		`CREATE INDEX report_archive_rep ON report_archive (tenant_id, report_name, created_at DESC)`,
+	}},
 }
 
 func (s *Store) migrate(ctx context.Context) error {

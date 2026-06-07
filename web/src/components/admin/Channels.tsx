@@ -1,0 +1,208 @@
+// Notification channels: full ETag-versioned management via
+// resourceApi<Channel>('channels'). Each channel type renders a tailored
+// config form (the key→Field mapping below); secret-bearing fields carry
+// the $SECRET:name$ hint. Anything the typed form does not cover is always
+// reachable through a "Weitere Einstellungen" KVEditor fallback so no
+// config key is ever unreachable. Each row can fire a test notification
+// (POST /channels/{name}:test-notification {target?}).
+import { useState } from 'react'
+import { useQuery, useMutation } from '@tanstack/react-query'
+import { resourceApi, post } from '../../api'
+import type { Channel, ChannelType } from '../../types'
+import { Button, Table, Empty, Dialog, Input, Badge } from '../ui'
+import { Field, FormError, SubmitRow, useSave, DeleteButton, Select, Toggle, KVEditor } from '../forms'
+import { t } from '../../i18n'
+import { TypeBadge, StatusBadge, TableActions, RowActions, secretHint } from './common'
+
+const channelsApi = resourceApi<Channel>('channels')
+
+const CHANNEL_TYPES: ChannelType[] = ['email', 'webhook', 'slack', 'teams', 'ntfy', 'sms', 'push', 'voice']
+
+// Field spec per config key. secret → render the $SECRET hint.
+type FieldSpec = { key: string; label: string; secret?: boolean; hint?: string; type?: 'number' }
+// Per-channel-type key sets (SPEC §12.3). "push"/"voice" need no config
+// here (VAPID / provider are server-side) — only the KVEditor fallback.
+const CONFIG_FIELDS: Record<string, FieldSpec[]> = {
+  email: [
+    { key: 'host', label: 'SMTP-Host' },
+    { key: 'port', label: 'Port', type: 'number' },
+    { key: 'from', label: 'Absender (From)' },
+    { key: 'username', label: 'Benutzername' },
+    { key: 'password', label: 'Passwort', secret: true },
+    { key: 'starttls', label: 'STARTTLS (true/false)' },
+  ],
+  webhook: [
+    { key: 'url', label: 'URL' },
+    { key: 'secret', label: 'HMAC-Secret', secret: true },
+    { key: 'method', label: 'HTTP-Methode', hint: 'POST (Standard)' },
+  ],
+  slack: [{ key: 'url', label: 'Webhook-URL', secret: true }],
+  teams: [{ key: 'url', label: 'Webhook-URL', secret: true }],
+  ntfy: [
+    { key: 'url', label: 'Server-URL', hint: 'z.B. https://ntfy.sh' },
+    { key: 'topic', label: 'Topic' },
+    { key: 'token', label: 'Access-Token', secret: true },
+  ],
+  // sms is provider-driven; we surface the common twilio + generic-http keys.
+  sms: [
+    { key: 'provider', label: 'Provider', hint: 'twilio | generic-http' },
+    { key: 'accountSid', label: 'Account SID (twilio)', secret: true },
+    { key: 'authToken', label: 'Auth-Token (twilio)', secret: true },
+    { key: 'from', label: 'Absender-Nummer (twilio)' },
+    { key: 'url', label: 'URL (generic-http)', secret: true },
+  ],
+  push: [],
+  voice: [],
+}
+
+export function ChannelsTab() {
+  const { data, isLoading } = useQuery({ queryKey: channelsApi.queryKey, queryFn: channelsApi.list })
+  const [editing, setEditing] = useState<Channel | 'new' | null>(null)
+  return (
+    <div className="space-y-4">
+      <TableActions onCreate={() => setEditing('new')} label={t('create')} />
+      <Table head={[t('type'), t('name'), t('status'), 'Template', '']}>
+        {(data ?? []).map((ch) => (
+          <tr key={ch.name}>
+            <td className="px-3 py-2 w-24"><TypeBadge>{ch.type}</TypeBadge></td>
+            <td className="px-3 py-2 text-slate-200">{ch.name}</td>
+            <td className="px-3 py-2">{ch.enabled ? <StatusBadge kind="enabled" /> : <StatusBadge kind="disabled" />}</td>
+            <td className="px-3 py-2 text-xs text-slate-500 font-mono">{ch.template || '—'}</td>
+            <td className="px-3 py-2">
+              <RowActions>
+                <TestButton name={ch.name} />
+                <Button size="sm" variant="ghost" onClick={() => setEditing(ch)}>{t('edit')}</Button>
+                <ChannelDelete channel={ch} />
+              </RowActions>
+            </td>
+          </tr>
+        ))}
+      </Table>
+      {!isLoading && (data?.length ?? 0) === 0 && <Empty text={t('empty')} />}
+      {editing && (
+        <ChannelDialog name={editing === 'new' ? null : editing.name} onClose={() => setEditing(null)} />
+      )}
+    </div>
+  )
+}
+
+function TestButton({ name }: { name: string }) {
+  const [result, setResult] = useState('')
+  const test = useMutation({
+    mutationFn: (target?: string) =>
+      post<{ result: string; detail?: string }>(`/channels/${encodeURIComponent(name)}:test-notification`,
+        target ? { target } : {}),
+    onSuccess: (r) => setResult(`✓ ${r.result}${r.detail ? ` — ${r.detail}` : ''}`),
+    onError: (e: unknown) => setResult(`✕ ${e instanceof Error ? e.message : String(e)}`),
+  })
+  return (
+    <span className="inline-flex items-center gap-2">
+      <Button size="sm" variant="ghost" onClick={() => test.mutate(undefined)} disabled={test.isPending}>
+        {t('testSend')}
+      </Button>
+      {result && <span className={`text-xs ${result.startsWith('✓') ? 'text-emerald-400' : 'text-red-400'}`}>{result}</span>}
+    </span>
+  )
+}
+
+function ChannelDelete({ channel }: { channel: Channel }) {
+  const save = useSave(() => channelsApi.remove(channel.name), { invalidate: [[...channelsApi.queryKey]] })
+  return (
+    <>
+      <DeleteButton onDelete={() => save.mutate(undefined)} />
+      {save.isError && <FormError error={save.error} />}
+    </>
+  )
+}
+
+function ChannelDialog({ name, onClose }: { name: string | null; onClose: () => void }) {
+  const isNew = !name
+  const { data: loaded, isLoading } = useQuery({
+    queryKey: [...channelsApi.queryKey, name],
+    queryFn: () => channelsApi.get(name!),
+    enabled: !isNew,
+  })
+  if (!isNew && isLoading) {
+    return <Dialog open onClose={onClose} title={t('loading')} size="lg"><div className="text-slate-500 text-sm">…</div></Dialog>
+  }
+  return (
+    <ChannelForm
+      doc={loaded?.data ?? { name: '', type: 'email', enabled: true, config: {} }}
+      etag={loaded?.etag ?? 0}
+      isNew={isNew}
+      onClose={onClose}
+    />
+  )
+}
+
+function ChannelForm({ doc, etag, isNew, onClose }: {
+  doc: Channel; etag: number; isNew: boolean; onClose: () => void
+}) {
+  const [name, setName] = useState(doc.name)
+  const [type, setType] = useState<ChannelType>(doc.type)
+  const [enabled, setEnabled] = useState(doc.enabled)
+  const [config, setConfig] = useState<Record<string, string>>(doc.config ?? {})
+  const [template, setTemplate] = useState(doc.template ?? '')
+
+  const known = CONFIG_FIELDS[type] ?? []
+  const knownKeys = new Set(known.map((f) => f.key))
+  const extra = Object.fromEntries(Object.entries(config).filter(([k]) => !knownKeys.has(k)))
+
+  const setField = (k: string, v: string) =>
+    setConfig((c) => { const next = { ...c }; if (v === '') delete next[k]; else next[k] = v; return next })
+  const setExtra = (next: Record<string, string>) =>
+    setConfig({ ...Object.fromEntries(Object.entries(config).filter(([k]) => knownKeys.has(k))), ...next })
+
+  const build = (): Channel => ({ ...doc, name, type, enabled, config, template: template || undefined })
+  const save = useSave(
+    () => isNew ? channelsApi.create(build()) : channelsApi.update(doc.name, build(), etag),
+    { invalidate: [[...channelsApi.queryKey]], onDone: onClose },
+  )
+  return (
+    <Dialog open onClose={onClose} title={isNew ? t('create') : `${t('edit')}: ${doc.name}`} size="lg">
+      <form onSubmit={(e) => { e.preventDefault(); save.mutate(undefined) }} className="space-y-3">
+        <div className="grid grid-cols-2 gap-2">
+          <Field label={t('name')} required>
+            <Input value={name} onChange={(e) => setName(e.target.value)} required disabled={!isNew} />
+          </Field>
+          <Field label={t('type')}>
+            <Select value={type} onChange={(e) => setType(e.target.value as ChannelType)}>
+              {CHANNEL_TYPES.map((ty) => <option key={ty} value={ty}>{ty}</option>)}
+            </Select>
+          </Field>
+        </div>
+        <Toggle checked={enabled} onChange={setEnabled} label={t('enabled')} />
+
+        {known.length > 0 && (
+          <div className="border border-slate-800 rounded-lg p-3 space-y-2">
+            <div className="text-xs text-slate-400 font-medium">Konfiguration ({type})</div>
+            {known.map((f) => (
+              <Field key={f.key} label={f.label} hint={f.secret ? secretHint : f.hint}>
+                <Input
+                  type={f.type === 'number' ? 'number' : (f.secret ? 'text' : 'text')}
+                  value={config[f.key] ?? ''}
+                  onChange={(e) => setField(f.key, e.target.value)}
+                />
+              </Field>
+            ))}
+          </div>
+        )}
+
+        <Field label="Weitere Einstellungen" hint="Beliebige zusätzliche Config-Schlüssel">
+          <KVEditor value={extra} onChange={setExtra} />
+        </Field>
+
+        <Field label="Template" hint="optional — überschreibt das Standard-Template">
+          <Input value={template} onChange={(e) => setTemplate(e.target.value)} placeholder="(Standard)" />
+        </Field>
+
+        {type === 'push' && (
+          <Badge className="bg-slate-800 text-slate-400 border-slate-700">VAPID serverseitig — keine Config nötig</Badge>
+        )}
+
+        <FormError error={save.error} />
+        <SubmitRow onCancel={onClose} saving={save.isPending} disabled={!name} />
+      </form>
+    </Dialog>
+  )
+}

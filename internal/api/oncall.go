@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/northplane/northplane/internal/auth"
@@ -120,6 +121,26 @@ func (a *API) registerOnCall() {
 			}
 			a.audit(r, p, "override.create", ov.ID, nil, ov)
 			a.writeJSON(w, http.StatusCreated, ov)
+		})
+
+	a.handle("GET /api/v1/schedules/{name}/overrides", "List overrides of a schedule",
+		"oncall:read", nil, listResponse{},
+		func(w http.ResponseWriter, r *http.Request, p *auth.Principal) {
+			tenant := a.tenantOf(r, p)
+			overrides, err := storage.LoadAll[model.Override](r.Context(), a.Store, tenant, storage.KindOverride)
+			if err != nil {
+				a.fail(w, r, err)
+				return
+			}
+			name := param(r, "name")
+			out := make([]*model.Override, 0, len(overrides))
+			for _, ov := range overrides {
+				if ov.ScheduleID == name {
+					out = append(out, ov)
+				}
+			}
+			sort.Slice(out, func(i, j int) bool { return out[i].Start.Before(out[j].Start) })
+			a.writeList(w, out, "")
 		})
 
 	a.handle("DELETE /api/v1/schedules/{name}/overrides/{id}", "Delete override",

@@ -18,6 +18,20 @@ import (
 	"github.com/northplane/northplane/internal/storage"
 )
 
+// SendDirect dispatches a single message through a channel outside the
+// alert/outbox path (SPEC §9.8 scheduled-report e-mail; any "send this
+// exact body now" use). It reuses the private transport dispatch, so
+// behaviour is identical to a notification delivery — only the trigger
+// differs. An HTML body (starts with "<!doctype" or "<html") is sent as
+// text/html by the e-mail transport; everything else as text/plain.
+func (m *Manager) SendDirect(ctx context.Context, ch *model.NotificationChannel,
+	target, subject, body string) (string, error) {
+	if m.SendHook != nil {
+		return m.SendHook(ch, target, subject, body)
+	}
+	return m.send(ctx, ch, target, subject, body, &RenderContext{Title: subject})
+}
+
 // send dispatches to the concrete transport (SPEC §9.6).
 func (m *Manager) send(ctx context.Context, ch *model.NotificationChannel,
 	target, subject, body string, rc *RenderContext) (string, error) {
@@ -60,13 +74,20 @@ func (m *Manager) sendEmail(ctx context.Context, ch *model.NotificationChannel,
 	user := ch.Config["username"]
 	pass := m.resolveSecret(ch.TenantID, ch.Config["password"])
 
+	// HTML bodies (scheduled-report mail, §9.8) are detected by their
+	// leading tag and sent as text/html; alert bodies stay text/plain.
+	contentType := "text/plain; charset=utf-8"
+	if isHTMLBody(body) {
+		contentType = "text/html; charset=utf-8"
+	}
+
 	msg := &bytes.Buffer{}
 	fmt.Fprintf(msg, "From: %s\r\n", from)
 	fmt.Fprintf(msg, "To: %s\r\n", to)
 	fmt.Fprintf(msg, "Subject: %s\r\n", mimeHeader(subject))
 	fmt.Fprintf(msg, "Date: %s\r\n", time.Now().Format(time.RFC1123Z))
 	fmt.Fprintf(msg, "Message-ID: <%d.northplane@%s>\r\n", time.Now().UnixNano(), host)
-	msg.WriteString("MIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n")
+	fmt.Fprintf(msg, "MIME-Version: 1.0\r\nContent-Type: %s\r\n\r\n", contentType)
 	msg.WriteString(body)
 
 	addr := net.JoinHostPort(host, port)
@@ -143,6 +164,17 @@ func isASCII(s string) bool {
 		}
 	}
 	return true
+}
+
+// isHTMLBody reports whether a body should be sent as text/html, by its
+// leading tag (case-insensitive, after whitespace).
+func isHTMLBody(body string) bool {
+	t := strings.TrimSpace(body)
+	if len(t) > 16 {
+		t = t[:16]
+	}
+	t = strings.ToLower(t)
+	return strings.HasPrefix(t, "<!doctype html") || strings.HasPrefix(t, "<html")
 }
 
 // --- webhook: templated payload + HMAC + retry (handled by outbox) ---

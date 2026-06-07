@@ -59,6 +59,39 @@ export interface ListResponse<T> {
   nextCursor?: string
 }
 
+// Named-resource documents (templates, rules, channels, dashboards, …)
+// carry their version in the ETag response header — GET must capture it
+// so the subsequent PUT can send If-Match (SPEC §11.1 optimistic locking).
+export interface Versioned<T> {
+  data: T
+  etag: number
+}
+
+export async function getWithEtag<T>(path: string): Promise<Versioned<T>> {
+  const res = await fetch(`/api/v1${path}`, { credentials: 'same-origin' })
+  if (res.status === 401) {
+    window.location.href = '/login'
+    throw new APIError(401, 'auth', 'login required', '')
+  }
+  if (!res.ok) throw await parseError(res)
+  const etag = parseInt(res.headers.get('ETag')?.replaceAll('"', '') ?? '0', 10)
+  return { data: await res.json(), etag: Number.isNaN(etag) ? 0 : etag }
+}
+
+// CRUD facade for the uniform named-resource endpoints
+// (GET/POST /api/v1/<path>, GET/PUT/DELETE /api/v1/<path>/{name}).
+export function resourceApi<T extends { name: string }>(base: string) {
+  return {
+    queryKey: ['resources', base] as const,
+    list: () => get<ListResponse<T>>(`/${base}?limit=500`).then((r) => r.items ?? []),
+    get: (name: string) => getWithEtag<T>(`/${base}/${encodeURIComponent(name)}`),
+    create: (doc: T) => post<T>(`/${base}`, doc),
+    update: (name: string, doc: T, etag: number) =>
+      put<T>(`/${base}/${encodeURIComponent(name)}`, doc, etag),
+    remove: (name: string) => del(`/${base}/${encodeURIComponent(name)}`),
+  }
+}
+
 // Live updates: one EventSource per tab; events invalidate the matching
 // query keys. Visibility throttling per SPEC §12.2.
 const invalidations: Record<string, string[][]> = {

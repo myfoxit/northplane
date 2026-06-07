@@ -1,11 +1,15 @@
 package api
 
 import (
+	"bytes"
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"time"
@@ -64,6 +68,81 @@ func (a *API) registerReportsDashboards() {
 				}
 			}
 		})
+
+	// Scheduled-report archive (SPEC §9.8): list past renders and download
+	// one. Listing is read-only (objects:read, the report-read baseline).
+	a.handle("GET /api/v1/reports/{name}/archive", "List archived report renders",
+		"objects:read", nil, listResponse{},
+		func(w http.ResponseWriter, r *http.Request, p *auth.Principal) {
+			tenant := a.tenantOf(r, p)
+			// validate the report exists so a typo'd name 404s, not [].
+			if _, err := storage.LoadOne[model.Report](r.Context(), a.Store, tenant,
+				storage.KindReport, param(r, "name")); err != nil {
+				a.fail(w, r, err)
+				return
+			}
+			entries, err := a.Store.ListReportArchive(r.Context(), tenant,
+				param(r, "name"), queryInt(r, "limit", 100))
+			if err != nil {
+				a.fail(w, r, err)
+				return
+			}
+			a.writeList(w, entries, "")
+		})
+
+	a.handle("GET /api/v1/reports/{name}/archive/{id}", "Download an archived report render",
+		"objects:read", nil, nil,
+		func(w http.ResponseWriter, r *http.Request, p *auth.Principal) {
+			tenant := a.tenantOf(r, p)
+			e, err := a.Store.GetReportArchive(r.Context(), tenant, param(r, "id"))
+			if err != nil {
+				a.fail(w, r, err)
+				return
+			}
+			// guard cross-report id access: the path name must match.
+			if e.ReportName != param(r, "name") {
+				a.problem(w, r, http.StatusNotFound, "np:not-found", "resource not found", "")
+				return
+			}
+			ct, ext := "application/octet-stream", "bin"
+			switch e.Format {
+			case "html":
+				ct, ext = "text/html; charset=utf-8", "html"
+			case "csv":
+				ct, ext = "text/csv; charset=utf-8", "csv"
+			case "json":
+				ct, ext = "application/json; charset=utf-8", "json"
+			}
+			w.Header().Set("Content-Type", ct)
+			w.Header().Set("Content-Disposition",
+				fmt.Sprintf(`attachment; filename=%q`, e.ReportName+"-"+e.Slot+"."+ext))
+			_, _ = w.Write(e.Content)
+		})
+
+	// Force an immediate render+archive+send, independent of the schedule
+	// (CMP "jetzt erzeugen"). A configuration action ⇒ config:write + audit.
+	a.handle("POST /api/v1/reports/{name}:run", "Render, archive and e-mail a report now",
+		"config:write", nil, nil,
+		func(w http.ResponseWriter, r *http.Request, p *auth.Principal) {
+			tenant := a.tenantOf(r, p)
+			rep, err := storage.LoadOne[model.Report](r.Context(), a.Store, tenant,
+				storage.KindReport, param(r, "name"))
+			if err != nil {
+				a.fail(w, r, err)
+				return
+			}
+			now := time.Now()
+			// a manual run is its own slot so it never collides with the
+			// scheduled slot's dedup gate.
+			slot := "manual-" + now.UTC().Format("2006-01-02T15:04:05")
+			res, err := a.runReportOnce(r.Context(), tenant, rep, slot, now)
+			if err != nil {
+				a.fail(w, r, err)
+				return
+			}
+			a.audit(r, p, "report.run", rep.Name, nil, res)
+			a.writeJSON(w, http.StatusOK, res)
+		})
 }
 
 // ReportData is the render model for all report types.
@@ -84,13 +163,29 @@ type ReportRow struct {
 }
 
 type reportParams struct {
-	Selector   string  `json:"selector,omitempty"`
-	WindowDays int     `json:"windowDays,omitempty"`
-	Target     float64 `json:"target,omitempty"`
-	IncludeDowntimes bool `json:"includeDowntimes,omitempty"`
+	Selector         string  `json:"selector,omitempty"`
+	WindowDays       int     `json:"windowDays,omitempty"`
+	Target           float64 `json:"target,omitempty"`
+	IncludeDowntimes bool    `json:"includeDowntimes,omitempty"`
+	// Channel optionally names the e-mail NotificationChannel scheduled
+	// delivery uses (SPEC §9.8); empty = first enabled e-mail channel.
+	Channel string `json:"channel,omitempty"`
 }
 
+// buildReport is the thin HTTP wrapper: it forwards the request context
+// and query values to the request-independent core. Query overrides are a
+// future extension point (CMP-Reports allow interactive parameter
+// tweaks); scheduled runs call buildReportData with rep.Params only.
 func (a *API) buildReport(r *http.Request, tenantID string, rep *model.Report) (*ReportData, error) {
+	return a.buildReportData(r.Context(), tenantID, rep, r.URL.Query())
+}
+
+// buildReportData renders a report's data model from its stored params.
+// It takes no *http.Request so scheduled runs (SPEC §9.8) and the HTTP
+// :render endpoint share one code path. q carries optional query overrides
+// for the interactive endpoint; an empty url.Values yields the stored
+// definition unchanged.
+func (a *API) buildReportData(ctx context.Context, tenantID string, rep *model.Report, q url.Values) (*ReportData, error) {
 	var params reportParams
 	if len(rep.Params) > 0 {
 		_ = json.Unmarshal(rep.Params, &params)
@@ -116,7 +211,7 @@ func (a *API) buildReport(r *http.Request, tenantID string, rep *model.Report) (
 		}
 		var sumAvail float64
 		for _, e := range entries {
-			down, err := ObjectDowntime(r.Context(), a.Store, tenantID, e.Object.ID, from, to)
+			down, err := ObjectDowntime(ctx, a.Store, tenantID, e.Object.ID, from, to)
 			if err != nil {
 				return nil, err
 			}
@@ -144,7 +239,7 @@ func (a *API) buildReport(r *http.Request, tenantID string, rep *model.Report) (
 			data.Totals["avgAvailability"] = fmt.Sprintf("%.3f%%", sumAvail/float64(len(entries)))
 		}
 	case model.ReportAlertStats:
-		alerts, err := a.Store.ListAlerts(r.Context(), storage.AlertFilter{
+		alerts, err := a.Store.ListAlerts(ctx, storage.AlertFilter{
 			TenantID: tenantID, Since: from, Limit: 1000})
 		if err != nil {
 			return nil, err
@@ -188,7 +283,7 @@ func (a *API) buildReport(r *http.Request, tenantID string, rep *model.Report) (
 		}
 	case model.ReportAudit:
 		// permission report (A-15.07): roles and their members/tokens
-		roles, err := storage.LoadAll[model.Role](r.Context(), a.Store, tenantID, storage.KindRole)
+		roles, err := storage.LoadAll[model.Role](ctx, a.Store, tenantID, storage.KindRole)
 		if err != nil {
 			return nil, err
 		}
@@ -202,11 +297,11 @@ func (a *API) buildReport(r *http.Request, tenantID string, rep *model.Report) (
 				}})
 		}
 	case model.ReportOnCall:
-		schedules, err := storage.LoadAll[model.Schedule](r.Context(), a.Store, tenantID, storage.KindSchedule)
+		schedules, err := storage.LoadAll[model.Schedule](ctx, a.Store, tenantID, storage.KindSchedule)
 		if err != nil {
 			return nil, err
 		}
-		overrides, _ := storage.LoadAll[model.Override](r.Context(), a.Store, tenantID, storage.KindOverride)
+		overrides, _ := storage.LoadAll[model.Override](ctx, a.Store, tenantID, storage.KindOverride)
 		for _, s := range schedules {
 			tl := model.ScheduleTimeline(s, filterOverrides(overrides, s), from, to)
 			hours := map[string]float64{}
@@ -215,7 +310,7 @@ func (a *API) buildReport(r *http.Request, tenantID string, rep *model.Report) (
 			}
 			for contactID, h := range hours {
 				data.Rows = append(data.Rows, ReportRow{
-					Name: s.Name + " / " + a.contactName(r, tenantID, contactID),
+					Name:   s.Name + " / " + a.contactNameCtx(ctx, tenantID, contactID),
 					Values: map[string]string{"hours": fmt.Sprintf("%.1f", h)},
 				})
 			}
@@ -226,7 +321,34 @@ func (a *API) buildReport(r *http.Request, tenantID string, rep *model.Report) (
 	return data, nil
 }
 
-func writeReportCSV(w http.ResponseWriter, data *ReportData) {
+// contactNameCtx resolves a contact's display name from a bare context
+// (the request-independent report core, vs. the request-bound contactName
+// used by interactive handlers).
+func (a *API) contactNameCtx(ctx context.Context, tenantID, ref string) string {
+	c, err := storage.LoadOne[model.Contact](ctx, a.Store, tenantID, storage.KindContact, ref)
+	if err != nil {
+		return ref
+	}
+	return c.Name
+}
+
+// renderReportHTML renders the report's print-optimised HTML to bytes.
+func renderReportHTML(data *ReportData) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := reportHTML.Execute(&buf, data); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// renderReportCSV renders the report's CSV to bytes.
+func renderReportCSV(data *ReportData) []byte {
+	var buf bytes.Buffer
+	writeReportCSV(&buf, data)
+	return buf.Bytes()
+}
+
+func writeReportCSV(w io.Writer, data *ReportData) {
 	cw := csv.NewWriter(w)
 	// stable column order
 	cols := map[string]bool{}

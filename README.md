@@ -26,6 +26,17 @@ versioned REST API that the web UI, CLI, and LLM agents all use equally.
   macros are fully supported; `check_disk`, `check_http`, your own scripts —
   they all just run. There's also a built-in suite (icmp, tcp, http(s),
   tls-cert, dns, smtp, imap, ntp, ssh-banner, snmp, nrpe, multi-step http-flow).
+- **An Alarmserver built in.** External events flow through the same pipeline
+  as check results: webhook + Alertmanager ingress, an **SNMP-trap receiver**
+  (v1/v2c/v3) and an **IMAP e-mail ingress** — each an API-managed event source
+  with CEL classification, grouping, escalation chains, on-call rotations and
+  delivery via e-mail, webhook, Teams, Slack, ntfy, Web Push or SMS.
+- **Management UI for everything.** Hosts/services (incl. per-object check
+  intervals), templates, users/roles, contacts, channels, event sources,
+  alert rules with live test, escalation simulation, on-call schedules,
+  silences/downtimes, dashboards + wallboard, scheduled e-mail reports with
+  archive, business-service trees with SLA budgets, and network discovery —
+  all UI flows go through the public API.
 - **API-first.** Every feature is a versioned REST endpoint with generated
   OpenAPI. Configuration is a database transaction, not a file plus a daemon
   restart.
@@ -106,6 +117,23 @@ docker run -p 8443:8443 -v northplane-data:/var/lib/northplane \
 The image is distroless and runs as a non-root user. For real HTTPS use the
 Compose setup above (Caddy terminates TLS), or mount a cert and set
 `NORTHPLANE_TLS_CERT_FILE`/`NORTHPLANE_TLS_KEY_FILE`.
+
+### Live demo environment
+
+```bash
+northplaned serve --demo \
+  --demo-snmp 127.0.0.1:161 \      # any reachable SNMP agent (v2c "public")
+  --demo-traps udp://:9162         # trap-receiver listen address
+```
+
+`--demo` idempotently seeds a complete showcase: hosts/services with real
+checks (ICMP, HTTPS, DNS, TLS-cert, SNMP get/walk) on varied intervals,
+templates, CEL alert rules, an escalation chain, an on-call rotation,
+a business-service tree with SLA, a dashboard, a scheduled report and the
+demo users `operator@demo.local` / `viewer@demo.local` (passwords are
+printed once at startup). Trap and IMAP event sources are pre-configured —
+send a test trap with
+`snmptrap -v 2c -c public 127.0.0.1:9162 '' 1.3.6.1.6.3.1.1.5.3 ifIndex i 7`.
 
 ## Configuration
 

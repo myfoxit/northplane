@@ -18,6 +18,7 @@ import (
 	"github.com/northplane/northplane/internal/bundle"
 	"github.com/northplane/northplane/internal/catalog"
 	"github.com/northplane/northplane/internal/config"
+	"github.com/northplane/northplane/internal/demo"
 	"github.com/northplane/northplane/internal/mcp"
 	"github.com/northplane/northplane/internal/model"
 	"github.com/northplane/northplane/internal/nagios"
@@ -67,6 +68,8 @@ func usage() {
 
 Usage:
   northplaned [serve]                      run the server (default)
+  northplaned serve --demo                 …and seed a live demo environment
+                    [--demo-snmp host:161] [--demo-traps udp://:9162]
   northplaned init [--dir /etc/northplane] write config.yaml, secret key, systemd unit
   northplaned migrate    [-config …]       apply pending schema migrations and exit
   northplaned storage migrate --to <dsn>   copy relational data between backends (offline)
@@ -132,6 +135,9 @@ func openStore(ctx context.Context, cfg config.Config, log *slog.Logger) *storag
 
 func serve(args []string) {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
+	demoSeed := fs.Bool("demo", false, "seed an idempotent demo environment at startup")
+	demoSNMP := fs.String("demo-snmp", "127.0.0.1:161", "SNMP get/walk target for the demo checks")
+	demoTraps := fs.String("demo-traps", "udp://:9162", "trap-receiver listen address for the demo event source")
 	cfg := loadConfig(fs, args)
 	log := newLogger(cfg)
 
@@ -146,6 +152,10 @@ func serve(args []string) {
 	}
 	defer ts.Close()
 
+	if *demoSeed {
+		seedDemo(ctx, store, log, *demoSNMP, *demoTraps)
+	}
+
 	srv, err := server.New(ctx, cfg, store, ts, log, version)
 	if err != nil {
 		fatal("server: %v", err)
@@ -153,6 +163,35 @@ func serve(args []string) {
 	if err := srv.Run(ctx); err != nil {
 		fatal("serve: %v", err)
 	}
+}
+
+// seedDemo provisions the demo environment (SPEC-Showcase): real checks
+// against localhost/public targets, alerting chain, BPI tree, dashboard,
+// report, demo users. Idempotent — safe on every start with --demo.
+func seedDemo(ctx context.Context, store *storage.Store, log *slog.Logger, snmpTarget, trapListen string) {
+	sum, err := demo.Seed(ctx, store, demo.Options{
+		SNMPTarget: snmpTarget,
+		TrapListen: trapListen,
+		Log:        log,
+		CreateUser: func(ctx context.Context, name, email, password string, roles []string) error {
+			_, err := store.CreateUser(ctx, &model.User{
+				Name: name, Email: email, Local: true,
+				PassHash: auth.HashSecret(password), Roles: roles,
+			})
+			return err
+		},
+	})
+	if err != nil {
+		fatal("demo seed: %v", err)
+	}
+	for _, u := range sum.Users {
+		log.Info("demo: user ready", "name", u.Name, "email", u.Email,
+			"password", u.Password, "role", u.Role)
+	}
+	for _, h := range sum.Hints {
+		log.Info("demo: hint", "msg", h)
+	}
+	log.Info("demo: environment seeded", "counts", fmt.Sprintf("%v", sum.Counts))
 }
 
 func initCmd(args []string) {
