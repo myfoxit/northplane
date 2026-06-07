@@ -44,14 +44,14 @@ versioned REST API that the web UI, CLI, and LLM agents all use equally.
 **One-liner (Linux/macOS):**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/northplane/northplane/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/myfoxit/northplane/main/install.sh | sh
 northplaned serve        # prints the /setup URL — open it in the browser, done
 ```
 
 **Docker Compose (automatic HTTPS via bundled Caddy):**
 
 ```bash
-git clone https://github.com/northplane/northplane && cd northplane
+git clone https://github.com/myfoxit/northplane && cd northplane
 docker compose up -d     # → https://localhost  (self-signed cert)
 # production: DOMAIN=monitoring.example.net docker compose up -d   → Let's Encrypt
 ```
@@ -100,7 +100,7 @@ The server refuses to start plaintext on a non-loopback address. Either set
 ```bash
 docker run -p 8443:8443 -v northplane-data:/var/lib/northplane \
   -e NORTHPLANE_TLS_INSECURE=true \
-  ghcr.io/northplane/northplane:latest    # dev only — plaintext HTTP
+  ghcr.io/myfoxit/northplane:latest    # dev only — plaintext HTTP
 ```
 
 The image is distroless and runs as a non-root user. For real HTTPS use the

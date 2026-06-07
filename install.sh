@@ -1,14 +1,14 @@
 #!/bin/sh
 # Northplane installer — downloads the latest release binaries.
 #
-#   curl -fsSL https://raw.githubusercontent.com/northplane/northplane/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/myfoxit/northplane/main/install.sh | sh
 #
 # Installs northplaned, np, and np-agent to /usr/local/bin (with sudo when
 # needed) or ~/.local/bin as a fallback. Safe to re-run; existing binaries
 # are replaced. Linux and macOS, amd64 and arm64.
 set -eu
 
-REPO="northplane/northplane"
+REPO="myfoxit/northplane"
 BINARIES="northplaned np np-agent"
 API="https://api.github.com/repos/${REPO}/releases/latest"
 

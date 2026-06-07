@@ -13,14 +13,14 @@ eingebautem MCP-Server und einem AI-Assistenten als auditiertem API-Client.
 **Einzeiler (Linux/macOS):**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/northplane/northplane/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/myfoxit/northplane/main/install.sh | sh
 northplaned serve        # gibt die /setup-URL aus — im Browser öffnen, fertig
 ```
 
 **Docker Compose (automatisches HTTPS via Caddy):**
 
 ```bash
-git clone https://github.com/northplane/northplane && cd northplane
+git clone https://github.com/myfoxit/northplane && cd northplane
 docker compose up -d     # → https://localhost  (selbstsigniertes Zertifikat)
 # Produktion: DOMAIN=monitoring.example.net docker compose up -d   → Let's Encrypt
 ```
