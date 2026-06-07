@@ -1,0 +1,226 @@
+// np-agent is the host agent (SPEC §7.1/§8.4): collects basic system
+// metrics, runs local Nagios plugins on schedule and pushes everything
+// as passive results over HTTPS — no inbound ports on the target.
+//
+// v1 scope note: transport is token-authenticated HTTPS against
+// /api/v1/results; the mTLS join/CA flow is the satellite roadmap item
+// (SPEC §7.7, M4).
+package main
+
+import (
+	"bytes"
+	"context"
+	"crypto/tls"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/exec"
+	"os/signal"
+	"runtime"
+	"strings"
+	"syscall"
+	"time"
+
+	"gopkg.in/yaml.v3"
+)
+
+var version = "1.0.0-dev"
+
+// agentConfig is /etc/northplane/agent.yaml.
+type agentConfig struct {
+	Server   string `yaml:"server"`   // https://northplane.example.net
+	Token    string `yaml:"token"`    // np_… (objects:write scope)
+	Hostname string `yaml:"hostname"` // defaults to os.Hostname
+	Insecure bool   `yaml:"insecure"`
+	Interval time.Duration `yaml:"interval"` // default 60s
+
+	// Checks: local plugin executions submitted as passive services.
+	Checks []agentCheck `yaml:"checks"`
+	// Builtin metric collection toggles.
+	Disk []string `yaml:"disk"` // mount points, default ["/"]
+}
+
+type agentCheck struct {
+	Service string   `yaml:"service"`
+	Command string   `yaml:"command"`
+	Args    []string `yaml:"args"`
+	Timeout time.Duration `yaml:"timeout"`
+}
+
+type passiveResult struct {
+	Host    string `json:"host"`
+	Service string `json:"service,omitempty"`
+	State   int    `json:"state"`
+	Output  string `json:"output"`
+}
+
+func main() {
+	cfgPath := flag.String("config", "/etc/northplane/agent.yaml", "agent config")
+	showVersion := flag.Bool("version", false, "print version")
+	flag.Parse()
+	if *showVersion {
+		fmt.Println("np-agent", version)
+		return
+	}
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+
+	raw, err := os.ReadFile(*cfgPath)
+	if err != nil {
+		log.Error("config", "err", err)
+		os.Exit(1)
+	}
+	cfg := agentConfig{Interval: 60 * time.Second, Disk: []string{"/"}}
+	if err := yaml.Unmarshal(raw, &cfg); err != nil {
+		log.Error("config parse", "err", err)
+		os.Exit(1)
+	}
+	if v := os.Getenv("NORTHPLANE_TOKEN"); v != "" {
+		cfg.Token = v
+	}
+	if cfg.Server == "" || cfg.Token == "" {
+		log.Error("config: server and token required")
+		os.Exit(1)
+	}
+	if cfg.Hostname == "" {
+		cfg.Hostname, _ = os.Hostname()
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	if cfg.Insecure {
+		client.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	log.Info("np-agent: started", "host", cfg.Hostname, "server", cfg.Server,
+		"interval", cfg.Interval, "checks", len(cfg.Checks))
+
+	// store-and-forward buffer: results survive server outages in memory
+	// (bounded; oldest dropped beyond 10k)
+	var buffer []passiveResult
+
+	ticker := time.NewTicker(cfg.Interval)
+	defer ticker.Stop()
+	run := func() {
+		results := collect(ctx, cfg)
+		buffer = append(buffer, results...)
+		if len(buffer) > 10000 {
+			buffer = buffer[len(buffer)-10000:]
+		}
+		if err := submit(ctx, client, cfg, buffer); err != nil {
+			log.Warn("submit failed, buffering", "buffered", len(buffer), "err", err)
+			return
+		}
+		buffer = buffer[:0]
+	}
+	run()
+	for {
+		select {
+		case <-ctx.Done():
+			log.Info("np-agent: stopping")
+			return
+		case <-ticker.C:
+			run()
+		}
+	}
+}
+
+func submit(ctx context.Context, client *http.Client, cfg agentConfig, results []passiveResult) error {
+	if len(results) == 0 {
+		return nil
+	}
+	payload, _ := json.Marshal(map[string]any{"results": results})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		strings.TrimSuffix(cfg.Server, "/")+"/api/v1/results", bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+cfg.Token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func collect(ctx context.Context, cfg agentConfig) []passiveResult {
+	var out []passiveResult
+	host := cfg.Hostname
+
+	// host alive heartbeat
+	out = append(out, passiveResult{Host: host, State: 0,
+		Output: fmt.Sprintf("np-agent %s alive on %s/%s | uptime=%ds;;;;",
+			version, runtime.GOOS, runtime.GOARCH, int(time.Since(startTime).Seconds()))})
+
+	// load average (unix)
+	if load, ok := loadAvg(); ok {
+		state := 0
+		ncpu := float64(runtime.NumCPU())
+		if load > ncpu*4 {
+			state = 2
+		} else if load > ncpu*2 {
+			state = 1
+		}
+		out = append(out, passiveResult{Host: host, Service: "load", State: state,
+			Output: fmt.Sprintf("load average %.2f (%d cpus) | load1=%.2f;%.0f;%.0f;0;",
+				load, runtime.NumCPU(), load, ncpu*2, ncpu*4)})
+	}
+
+	// disk usage
+	for _, mount := range cfg.Disk {
+		if usedPct, freeBytes, ok := diskUsage(mount); ok {
+			state := 0
+			if usedPct > 95 {
+				state = 2
+			} else if usedPct > 85 {
+				state = 1
+			}
+			out = append(out, passiveResult{Host: host, Service: "disk " + mount, State: state,
+				Output: fmt.Sprintf("%s %.1f%% used, %.1f GB free | used=%.1f%%;85;95;0;100 free=%dB;;;0;",
+					mount, usedPct, float64(freeBytes)/(1<<30), usedPct, freeBytes)})
+		}
+	}
+
+	// configured plugin checks
+	for _, chk := range cfg.Checks {
+		timeout := chk.Timeout
+		if timeout <= 0 {
+			timeout = 30 * time.Second
+		}
+		cctx, cancel := context.WithTimeout(ctx, timeout)
+		cmd := exec.CommandContext(cctx, chk.Command, chk.Args...)
+		cmd.Env = []string{"PATH=/usr/local/bin:/usr/bin:/bin", "LC_ALL=C"}
+		var stdout bytes.Buffer
+		cmd.Stdout = &stdout
+		err := cmd.Run()
+		cancel()
+		state := 0
+		if err != nil {
+			if ee, ok := err.(*exec.ExitError); ok && ee.ExitCode() >= 0 && ee.ExitCode() <= 3 {
+				state = ee.ExitCode()
+			} else {
+				state = 3
+			}
+		}
+		output := strings.TrimSpace(stdout.String())
+		if output == "" {
+			output = "UNKNOWN - no output"
+		}
+		if cctx.Err() == context.DeadlineExceeded {
+			state, output = 3, "UNKNOWN - plugin timed out after "+timeout.String()
+		}
+		out = append(out, passiveResult{Host: host, Service: chk.Service,
+			State: state, Output: output})
+	}
+	return out
+}
+
+var startTime = time.Now()
