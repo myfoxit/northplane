@@ -41,26 +41,31 @@ versioned REST API that the web UI, CLI, and LLM agents all use equally.
 
 ## Quickstart
 
+**One-liner (Linux/macOS):**
+
 ```bash
-make            # build the UI + all three binaries into ./bin
+curl -fsSL https://raw.githubusercontent.com/northplane/northplane/main/install.sh | sh
+northplaned serve        # prints the /setup URL — open it in the browser, done
 ```
 
-Dev mode needs no setup or root — SQLite under a per-user data dir, plain HTTP on
-loopback:
+**Docker Compose (automatic HTTPS via bundled Caddy):**
 
 ```bash
-./bin/northplaned serve &                      # listens on 127.0.0.1:8443
-./bin/northplaned bootstrap-admin              # prints an admin token (once)
-
-export NP_SERVER=http://127.0.0.1:8443
-export NP_TOKEN=np_…                           # from the line above
-
-./bin/np get hosts
+git clone https://github.com/northplane/northplane && cd northplane
+docker compose up -d     # → https://localhost  (self-signed cert)
+# production: DOMAIN=monitoring.example.net docker compose up -d   → Let's Encrypt
 ```
 
-Create your first host:
+Either way, the first browser visit lands on a one-shot **/setup** page —
+create the admin account and you're monitoring. Headless instead?
+`northplaned bootstrap-admin` mints an admin API token (and retires the
+setup page).
+
+Create your first host (CLI uses an API token — from the UI or `bootstrap-admin`):
 
 ```bash
+export NP_SERVER=http://127.0.0.1:8443 NP_TOKEN=np_…
+
 cat > first.yaml <<'EOF'
 kind: Host
 metadata: { name: web01, labels: { env: prod } }
@@ -69,8 +74,8 @@ spec:
   checkCommand: builtin:icmp
   interval: 60s
 EOF
-./bin/np apply -f first.yaml
-./bin/np get hosts
+np apply -f first.yaml
+np get hosts
 ```
 
 UI: <http://127.0.0.1:8443> · API docs: `/api/docs` · OpenAPI: `/api/openapi.json`
@@ -79,24 +84,28 @@ UI: <http://127.0.0.1:8443> · API docs: `/api/docs` · OpenAPI: `/api/openapi.j
 ### Production install (Linux, systemd)
 
 ```bash
-sudo ./bin/northplaned init     # writes /etc/northplane/config.yaml + secret.key + a unit
+sudo northplaned init           # writes /etc/northplane/config.yaml + secret.key + a unit
 # review the config (TLS cert/key, storage backend, OIDC), then:
-sudo northplaned bootstrap-admin
 sudo systemctl enable --now northplaned
+# open /setup in the browser — or headless: sudo northplaned bootstrap-admin
 ```
 
-The server refuses to serve plaintext on a non-loopback address. Either set
+The server refuses to start plaintext on a non-loopback address. Either set
 `tls.certFile`/`tls.keyFile`, or terminate TLS at a reverse proxy and set
-`trustProxy: true` so secure cookies and HSTS are derived from `X-Forwarded-Proto`.
+`trustProxy: true` so secure cookies and HSTS are derived from `X-Forwarded-Proto`
+(the bundled Compose setup does exactly that with Caddy).
 
-### Docker
+### Docker (single container)
 
 ```bash
-docker build -t northplane .
-docker run -p 8443:8443 -v northplane-data:/var/lib/northplane northplane
+docker run -p 8443:8443 -v northplane-data:/var/lib/northplane \
+  -e NORTHPLANE_TLS_INSECURE=true \
+  ghcr.io/northplane/northplane:latest    # dev only — plaintext HTTP
 ```
 
-The image is distroless and runs as a non-root user.
+The image is distroless and runs as a non-root user. For real HTTPS use the
+Compose setup above (Caddy terminates TLS), or mount a cert and set
+`NORTHPLANE_TLS_CERT_FILE`/`NORTHPLANE_TLS_KEY_FILE`.
 
 ## Configuration
 
@@ -182,6 +191,9 @@ web/              React 19 + TypeScript + Vite + Tailwind
 ## Development
 
 ```bash
+make                      # build the UI + all three binaries into ./bin
+./bin/northplaned serve   # dev mode: SQLite per-user data dir, HTTP on loopback
+
 make test                 # go vet + all suites (SQLite)
 go test -race ./...       # race detector
 NORTHPLANE_TEST_PG_DSN=postgres://np:np@localhost:5432/northplane?sslmode=disable \

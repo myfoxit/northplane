@@ -21,10 +21,14 @@ Until a `1.0.0` tag is cut, only the latest `main`/`master` commit is supported.
 
 Northplane is built to be operated safely by default:
 
-- **No plaintext in production.** The server refuses to serve plaintext HTTP on
-  a non-loopback listener unless `tls.insecure` is explicitly set. Behind a
-  TLS-terminating reverse proxy, set `trustProxy: true` so `Secure` cookies and
-  HSTS are emitted from the forwarded scheme.
+- **No plaintext in production.** The server refuses to start with plaintext
+  HTTP on a non-loopback listener unless `tls.insecure` is explicitly set or
+  `trustProxy: true` declares a TLS-terminating reverse proxy in front (which
+  also derives `Secure` cookies and HSTS from the forwarded scheme).
+- **First-run setup is one-shot.** The `/setup` page only exists while the
+  install is completely fresh (no local user, no API token); it closes
+  permanently after the first admin is created and fails closed on storage
+  errors. Creation attempts are rate-limited per IP and audit-logged.
 - **Secrets at rest** are encrypted with AES-256-GCM (fresh nonce per record)
   under a master key file (`0600`). API tokens are stored as argon2id hashes;
   the plaintext token is shown once.

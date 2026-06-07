@@ -420,3 +420,62 @@ func testLogger() *slog.Logger {
 }
 
 func netListen(addr string) (net.Listener, error) { return net.Listen("tcp", addr) }
+
+// TestTLSPolicy locks in the plaintext policy (A-15.10): loopback, explicit
+// insecure, and trustProxy (TLS terminated upstream) serve plaintext; a
+// non-loopback listener without any opt-in must refuse to start.
+func TestTLSPolicy(t *testing.T) {
+	cases := []struct {
+		name       string
+		listen     string
+		insecure   bool
+		trustProxy bool
+		wantErr    bool
+	}{
+		{"loopback plaintext ok", "127.0.0.1:0", false, false, false},
+		{"non-loopback refused", "0.0.0.0:0", false, false, true},
+		{"non-loopback insecure ok", "0.0.0.0:0", true, false, false},
+		{"non-loopback trustProxy ok", "0.0.0.0:0", false, true, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ln, err := net.Listen("tcp", tc.listen)
+			if err != nil {
+				t.Skipf("bind %s: %v", tc.listen, err)
+			}
+			defer ln.Close()
+			cfg := config.Defaults()
+			cfg.TLS.Insecure = tc.insecure
+			cfg.TrustProxy = tc.trustProxy
+			s := &Server{Cfg: cfg, Log: testLogger()}
+			tlsCfg, useTLS, err := s.tlsConfig(ln)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected refusal error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if useTLS || tlsCfg != nil {
+				t.Fatal("plaintext case must not enable TLS")
+			}
+		})
+	}
+	// cert configured but unloadable → hard error, never plaintext fallback
+	t.Run("bad cert refuses", func(t *testing.T) {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer ln.Close()
+		cfg := config.Defaults()
+		cfg.TLS.CertFile = "/nonexistent/cert.pem"
+		cfg.TLS.KeyFile = "/nonexistent/key.pem"
+		s := &Server{Cfg: cfg, Log: testLogger()}
+		if _, _, err := s.tlsConfig(ln); err == nil {
+			t.Fatal("expected cert load error, got nil")
+		}
+	})
+}

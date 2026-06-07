@@ -98,6 +98,38 @@ const (
 
 var logins = &loginLimiter{buckets: map[string]*loginBucket{}}
 
+// setupMu serialises the first-run gate check + admin creation so two
+// concurrent POST /setup cannot both pass the zero-users check and create
+// duplicate admin accounts. Single process ⇒ a plain Mutex suffices.
+var setupMu sync.Mutex
+
+// minSetupPasswordLen is the minimum length for the initial admin password.
+const minSetupPasswordLen = 12
+
+// FirstRunOpen reports whether the install is fresh enough to expose the
+// /setup page: no local (break-glass) user and no API token exists yet.
+// SSO-provisioned users do not close the gate — an OIDC install may still
+// need a local break-glass admin. Fails closed on storage errors so a
+// transient DB problem never exposes account creation.
+func FirstRunOpen(ctx context.Context, store *storage.Store) bool {
+	users, err := store.ListUsers(ctx)
+	if err != nil {
+		return false
+	}
+	for _, u := range users {
+		if u.Local {
+			return false
+		}
+	}
+	toks, err := store.ListAPITokens(ctx, model.DefaultTenant)
+	if err != nil || len(toks) > 0 {
+		return false
+	}
+	return true
+}
+
+func (p *Pages) firstRunOpen(ctx context.Context) bool { return FirstRunOpen(ctx, p.store) }
+
 // allow reports whether an attempt from ip may proceed, refilling the
 // token bucket based on elapsed time. now is injected for testability.
 func (l *loginLimiter) allow(ip string, now time.Time) bool {
@@ -131,9 +163,18 @@ func (l *loginLimiter) allow(ip string, now time.Time) bool {
 func (p *Pages) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Path == "/login" && r.Method == http.MethodGet:
+		// fresh install → every login entry path lands on first-run setup
+		if p.firstRunOpen(r.Context()) {
+			http.Redirect(w, r, "/setup", http.StatusFound)
+			return
+		}
 		p.loginPage(w, r, "")
 	case r.URL.Path == "/login" && r.Method == http.MethodPost:
 		p.localLogin(w, r)
+	case r.URL.Path == "/setup" && r.Method == http.MethodGet:
+		p.setupPage(w, r, "")
+	case r.URL.Path == "/setup" && r.Method == http.MethodPost:
+		p.setupSubmit(w, r)
 	case r.URL.Path == "/auth/oidc":
 		if p.oidc == nil {
 			http.Error(w, "SSO not configured", http.StatusNotImplemented)
@@ -268,6 +309,112 @@ func (p *Pages) loginPage(w http.ResponseWriter, r *http.Request, errMsg string)
 	_ = loginTpl.Execute(w, map[string]any{
 		"Error": errMsg, "SSO": p.oidc != nil, "Version": p.version,
 	})
+}
+
+// --- first-run setup (one-shot initial admin account) ---
+
+var setupTpl = template.Must(template.New("setup").Parse(`<!doctype html>
+<html lang="de"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Northplane — Einrichtung</title>
+<style>
+:root{color-scheme:dark}
+body{font-family:system-ui,-apple-system,sans-serif;background:#0b1220;color:#e2e8f0;display:grid;place-items:center;min-height:100vh;margin:0}
+.card{background:#111a2e;border:1px solid #1e293b;border-radius:12px;padding:2.2rem;width:20rem}
+h1{font-size:1.15rem;margin:0 0 .4rem;display:flex;align-items:center;gap:.5rem}
+h1 b{color:#60a5fa}
+p.hint{font-size:.8rem;color:#94a3b8;margin:0 0 1.2rem}
+label{display:block;font-size:.8rem;color:#94a3b8;margin:.8rem 0 .25rem}
+input{width:100%;box-sizing:border-box;background:#0b1220;border:1px solid #334155;border-radius:8px;color:#e2e8f0;padding:.55rem .7rem;font-size:.9rem}
+button{width:100%;margin-top:1.2rem;background:#2563eb;border:0;border-radius:8px;color:#fff;padding:.6rem;font-size:.9rem;cursor:pointer}
+button:hover{background:#1d4ed8}
+.sso{background:#1e293b;margin-top:.6rem}
+.err{background:#7f1d1d;border-radius:8px;padding:.55rem .7rem;font-size:.82rem;margin-bottom:1rem}
+.v{color:#475569;font-size:.7rem;text-align:center;margin-top:1.2rem}
+</style></head><body>
+<form class="card" method="post" action="/setup">
+  <h1><b>▲</b> Northplane</h1>
+  <p class="hint">Erstkonfiguration — Administrator-Konto anlegen</p>
+  {{if .Error}}<div class="err">{{.Error}}</div>{{end}}
+  <label for="name">Name</label>
+  <input id="name" name="name" type="text" autocomplete="name" required>
+  <label for="email">E-Mail</label>
+  <input id="email" name="email" type="email" autocomplete="username" required>
+  <label for="password">Passwort (mind. 12 Zeichen)</label>
+  <input id="password" name="password" type="password" autocomplete="new-password" minlength="12" required>
+  <label for="confirm">Passwort bestätigen</label>
+  <input id="confirm" name="confirm" type="password" autocomplete="new-password" minlength="12" required>
+  <button type="submit">Konto erstellen</button>
+  {{if .SSO}}<button type="button" class="sso" onclick="location.href='/auth/oidc'">Single Sign-On</button>{{end}}
+  <div class="v">{{.Version}}</div>
+</form></body></html>`))
+
+func (p *Pages) setupPage(w http.ResponseWriter, r *http.Request, errMsg string) {
+	if !p.firstRunOpen(r.Context()) {
+		http.Redirect(w, r, "/login", http.StatusFound)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if errMsg != "" {
+		w.WriteHeader(http.StatusBadRequest)
+	}
+	_ = setupTpl.Execute(w, map[string]any{
+		"Error": errMsg, "SSO": p.oidc != nil, "Version": p.version,
+	})
+}
+
+// setupSubmit creates the initial admin account. Mirrors localLogin:
+// shared rate limiter, German messages, audit entry, session cookie.
+// No CSRF token — deliberately symmetric with the login POST (SameSite=Lax
+// cookie; there is no ambient session to ride during first-run).
+func (p *Pages) setupSubmit(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		p.setupPage(w, r, "Ungültige Anfrage.")
+		return
+	}
+	if !logins.allow(remoteIP(r), time.Now()) {
+		w.Header().Set("Retry-After", "30")
+		p.setupPage(w, r, "Zu viele Versuche. Bitte kurz warten.")
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	email := strings.TrimSpace(r.FormValue("email"))
+	password, confirm := r.FormValue("password"), r.FormValue("confirm")
+	switch {
+	case name == "" || email == "":
+		p.setupPage(w, r, "Name und E-Mail sind erforderlich.")
+		return
+	case password != confirm:
+		p.setupPage(w, r, "Passwörter stimmen nicht überein.")
+		return
+	case len([]rune(password)) < minSetupPasswordLen:
+		p.setupPage(w, r, "Passwort muss mindestens 12 Zeichen haben.")
+		return
+	}
+
+	setupMu.Lock()
+	defer setupMu.Unlock()
+	if !p.firstRunOpen(r.Context()) { // re-check inside the lock (double-POST race)
+		http.Error(w, "setup already completed", http.StatusConflict)
+		return
+	}
+	user, err := p.store.CreateLocalUser(r.Context(), name, email, auth.HashSecret(password))
+	if err != nil {
+		p.setupPage(w, r, "Konto konnte nicht angelegt werden.")
+		return
+	}
+	roles := []string{"admin"} // break-glass local accounts are admins
+	session, err := p.auth.NewSession(r.Context(), user.ID, model.DefaultTenant, roles, nil, 12*time.Hour)
+	if err != nil {
+		p.setupPage(w, r, "Interner Fehler.")
+		return
+	}
+	p.setSession(w, r, session)
+	_, _ = p.store.AppendAudit(r.Context(), &model.AuditEntry{
+		TenantID: model.DefaultTenant, ActorType: model.ActorUser, ActorID: user.ID,
+		Action: "setup.admin", SourceIP: remoteIP(r),
+	})
+	http.Redirect(w, r, "/", http.StatusFound)
 }
 
 // --- public status page (SPEC §12.4: server-rendered, JS-free) ---

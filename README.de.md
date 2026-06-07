@@ -8,24 +8,31 @@ Zeitreihen-Engine (NP-TSDB), vollständiger Nagios-Plugin-Kompatibilität,
 CEL-basierter Alarmierung mit Eskalationsketten und Bereitschaftsplänen,
 eingebautem MCP-Server und einem AI-Assistenten als auditiertem API-Client.
 
-## Quickstart (15 Minuten, SPEC §3.1)
+## Quickstart
+
+**Einzeiler (Linux/macOS):**
 
 ```bash
-make            # baut UI + alle drei Binaries nach bin/
+curl -fsSL https://raw.githubusercontent.com/northplane/northplane/main/install.sh | sh
+northplaned serve        # gibt die /setup-URL aus — im Browser öffnen, fertig
+```
 
-# Initialisieren (Config, Secret-Key, systemd-Unit)
-sudo bin/northplaned init --dir /etc/northplane --data /var/lib/northplane
+**Docker Compose (automatisches HTTPS via Caddy):**
 
-# Dev-Modus ohne Setup: SQLite unter ./data, HTTP auf Loopback
-cat > config.yaml <<EOF
-listen: "127.0.0.1:8443"
-dataDir: "./data"
-tls: { insecure: true }
-EOF
-bin/northplaned serve -config config.yaml &
+```bash
+git clone https://github.com/northplane/northplane && cd northplane
+docker compose up -d     # → https://localhost  (selbstsigniertes Zertifikat)
+# Produktion: DOMAIN=monitoring.example.net docker compose up -d   → Let's Encrypt
+```
 
-# Admin-Token erzeugen, ersten Host anlegen
-bin/northplaned bootstrap-admin -config config.yaml
+Der erste Browser-Besuch landet auf der einmaligen **/setup**-Seite —
+Administrator-Konto anlegen, fertig. Headless stattdessen:
+`northplaned bootstrap-admin` erzeugt ein Admin-API-Token (und deaktiviert
+die Setup-Seite).
+
+Ersten Host anlegen (CLI nutzt ein API-Token — aus der UI oder `bootstrap-admin`):
+
+```bash
 export NP_SERVER=http://127.0.0.1:8443 NP_TOKEN=np_…
 
 cat > first.yaml <<EOF
@@ -36,9 +43,13 @@ spec:
   checkCommand: builtin:icmp
   interval: 60s
 EOF
-bin/np apply -f first.yaml
-bin/np get hosts
+np apply -f first.yaml
+np get hosts
 ```
+
+Produktion (Linux, systemd): `sudo northplaned init` schreibt Config,
+Secret-Key und eine systemd-Unit. Aus dem Quellcode bauen: `make` (baut UI +
+alle drei Binaries nach `bin/`).
 
 UI: <http://127.0.0.1:8443> · API-Doku: `/api/docs` · OpenAPI: `/api/openapi.json`
 · Status-Page: `/status/default` · Metrics: `/metrics`
