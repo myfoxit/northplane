@@ -40,8 +40,10 @@ func (s *Store) CreateObject(ctx context.Context, o *model.Object) error {
 		if err := writeLabels(ctx, tx, s, o.ID, o.Labels); err != nil {
 			return err
 		}
+		// Seed as OK/hard with no last_check (= PENDING in the UI): the
+		// first problem result then walks the soft phase correctly.
 		_, err = tx.ExecContext(ctx, s.Q(
-			`INSERT INTO check_state (object_id, state, state_type, attempt) VALUES (?,3,'hard',1)`), o.ID)
+			`INSERT INTO check_state (object_id, state, state_type, attempt) VALUES (?,0,'hard',1)`), o.ID)
 		return err
 	})
 }
