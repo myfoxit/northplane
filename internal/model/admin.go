@@ -23,13 +23,19 @@ const DefaultTenant = "00000000-0000-7000-8000-000000000001"
 
 // User is a human principal. SSO users are provisioned on first login
 // (OIDC claims); local users exist for break-glass only (§13.2).
+//
+// Roles are the role names bound to the account (§11.2). For local users
+// they are authoritative — local login expands them into the session. For
+// SSO users the effective roles are derived from IdP groups at login
+// (oidc.mapGroups), so Roles is normally empty on those rows.
 type User struct {
 	ID         string    `json:"id"`
 	Name       string    `json:"name"`
 	Email      string    `json:"email"`
 	Subject    string    `json:"subject,omitempty"` // OIDC iss+sub
 	Local      bool      `json:"local,omitempty"`
-	PassHash   string    `json:"-"` // argon2id, local users only
+	PassHash   string    `json:"-"` // argon2id, local users only — never serialised
+	Roles      []string  `json:"roles,omitempty"`
 	Disabled   bool      `json:"disabled,omitempty"`
 	LastSeenAt *time.Time `json:"lastSeenAt,omitempty"`
 	Version    int64     `json:"version"`

@@ -24,6 +24,7 @@ import (
 	"github.com/northplane/northplane/internal/escalation"
 	"github.com/northplane/northplane/internal/eventbus"
 	"github.com/northplane/northplane/internal/executor"
+	"github.com/northplane/northplane/internal/mailin"
 	mcpserver "github.com/northplane/northplane/internal/mcp"
 	"github.com/northplane/northplane/internal/metrics"
 	"github.com/northplane/northplane/internal/notify"
@@ -31,6 +32,7 @@ import (
 	"github.com/northplane/northplane/internal/scheduler"
 	"github.com/northplane/northplane/internal/sse"
 	"github.com/northplane/northplane/internal/storage"
+	"github.com/northplane/northplane/internal/traps"
 	"github.com/northplane/northplane/internal/tsdb"
 	"github.com/northplane/northplane/internal/web"
 )
@@ -52,6 +54,8 @@ type Server struct {
 	correl  *alerting.Correlator
 	escal   *escalation.Engine
 	notify  *notify.Manager
+	traps   *traps.Manager
+	mail    *mailin.Manager
 	hub     *sse.Hub
 	metrics *metrics.Registry
 	httpSrv *http.Server
@@ -102,6 +106,18 @@ func New(ctx context.Context, cfg config.Config, store *storage.Store, ts *tsdb.
 	s.notify.Secrets = secrets
 	s.notify.AckSecret = ackSecret(ctx, store)
 	s.initVAPID(ctx)
+
+	// Ingress-Adapter beyond HTTP (SPEC §7.5): SNMP traps + IMAP poller.
+	// Both reconcile against event-source definitions at runtime.
+	secretFn := func(_ context.Context, tenantID, name string) (string, error) {
+		v, ok := secrets(tenantID, name)
+		if !ok {
+			return "", fmt.Errorf("secret %q not resolvable (no secret store key?)", name)
+		}
+		return v, nil
+	}
+	s.traps = traps.New(store, s.bus, secretFn, log)
+	s.mail = mailin.New(store, s.bus, secretFn, log)
 
 	s.hub = &sse.Hub{Bus: s.bus, Store: store}
 
@@ -173,8 +189,11 @@ func (s *Server) Run(ctx context.Context) error {
 	go s.correl.Run(ctx)
 	go s.escal.Run(ctx)
 	go s.notify.Run(ctx)
+	go s.traps.Run(ctx)
+	go s.mail.Run(ctx)
 	go s.api.Janitor(ctx)
 	go s.api.WebhookDispatcher(ctx)
+	go s.api.ReportScheduler(ctx)
 	go s.deadManLoop(ctx)
 	if svc, ok := s.api.AI.(interface{ Run(context.Context) }); ok {
 		go svc.Run(ctx)

@@ -82,8 +82,8 @@ export function Tile({ label, value, tone = 'default' }:
   )
 }
 
-export function Dialog({ open, onClose, title, children }:
-  { open: boolean; onClose: () => void; title: string; children: ReactNode }) {
+export function Dialog({ open, onClose, title, children, size = 'md' }:
+  { open: boolean; onClose: () => void; title: string; children: ReactNode; size?: 'md' | 'lg' | 'xl' }) {
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -91,16 +91,37 @@ export function Dialog({ open, onClose, title, children }:
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])
   if (!open) return null
+  const widths = { md: 'max-w-md', lg: 'max-w-2xl', xl: 'max-w-4xl' }
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
       <div
         role="dialog" aria-modal="true" aria-label={title}
-        className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-md shadow-2xl"
+        className={cx('bg-slate-900 border border-slate-700 rounded-xl w-full shadow-2xl',
+          'max-h-[90vh] overflow-y-auto', widths[size])}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold text-slate-200">{title}</div>
+        <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold text-slate-200 sticky top-0 bg-slate-900 rounded-t-xl">{title}</div>
         <div className="p-4">{children}</div>
       </div>
+    </div>
+  )
+}
+
+// Tabs: shared underline-style tab bar (Admin, Maintenance, Templates …).
+export function TabBar<T extends string>({ tabs, value, onChange, labels }:
+  { tabs: readonly T[]; value: T; onChange: (t: T) => void; labels: (t: T) => string }) {
+  return (
+    <div className="flex gap-1 border-b border-slate-800 mb-4 overflow-x-auto">
+      {tabs.map((tb) => (
+        <button
+          key={tb} onClick={() => onChange(tb)}
+          className={cx('px-3 py-2 text-sm whitespace-nowrap cursor-pointer transition-colors border-b-2 -mb-px',
+            value === tb ? 'text-blue-400 border-blue-400'
+              : 'text-slate-400 border-transparent hover:text-slate-200')}
+        >
+          {labels(tb)}
+        </button>
+      ))}
     </div>
   )
 }

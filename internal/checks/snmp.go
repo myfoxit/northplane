@@ -3,6 +3,7 @@ package checks
 import (
 	"context"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -23,9 +24,20 @@ func snmpClient(t Target, a Args, timeout time.Duration) (*gosnmp.GoSNMP, error)
 	if host == "" {
 		return nil, fmt.Errorf("snmp: no host")
 	}
+	port := a.Int(161, "p", "port")
+	// Accept Nagios-style "host:port" addresses: an explicit -p wins,
+	// otherwise the port embedded in the address applies.
+	if h, p, err := net.SplitHostPort(host); err == nil {
+		if n, perr := strconv.Atoi(p); perr == nil && n > 0 && n < 65536 {
+			host = h
+			if a.Get("p", "port") == "" {
+				port = n
+			}
+		}
+	}
 	g := &gosnmp.GoSNMP{
 		Target:  host,
-		Port:    uint16(a.Int(161, "p", "port")),
+		Port:    uint16(port),
 		Timeout: timeout,
 		Retries: a.Int(1, "retries"),
 	}

@@ -107,6 +107,10 @@ type EventSource struct {
 	// raw payload (SPEC §9.2). Empty mapping = identity for JSON in
 	// normal form already.
 	Mapping   map[string]string `json:"mapping,omitempty"`
+	// Config: transport-specific settings (mirrors NotificationChannel.Config).
+	// snmp-trap: listen ("udp://:9162"), community, severity, v3 user/auth/priv.
+	// imap: host, port, tls, username, passwordSecretRef, folder, pollInterval.
+	Config    map[string]string `json:"config,omitempty"`
 	RateLimit float64           `json:"rateLimit,omitempty"` // events/s, 0 = default
 	Burst     int               `json:"burst,omitempty"`
 	Labels    Labels            `json:"labels,omitempty"` // merged into events

@@ -216,10 +216,19 @@ func (p *Pages) localLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	valid := auth.VerifySecret(password, hash)
 	if err != nil || !user.Local || !valid {
+		// Generic message for wrong password, unknown account AND disabled
+		// account (GetUserByEmail already filters disabled = false) so login
+		// never reveals which case it was — no user enumeration (SPEC §13.2).
 		p.loginPage(w, r, "Anmeldung fehlgeschlagen.")
 		return
 	}
-	roles := []string{"admin"} // break-glass local accounts are admins
+	// Authoritative roles live on the account now; fall back to admin only
+	// for legacy rows provisioned before user-bound roles existed (so a
+	// pre-migration break-glass admin never loses access).
+	roles := user.Roles
+	if len(roles) == 0 {
+		roles = []string{"admin"}
+	}
 	session, err := p.auth.NewSession(r.Context(), user.ID, model.DefaultTenant, roles, nil, 12*time.Hour)
 	if err != nil {
 		p.loginPage(w, r, "Interner Fehler.")

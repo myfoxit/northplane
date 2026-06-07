@@ -14,7 +14,14 @@ const nav = [
   { to: '/alerts', label: t('alerts'), icon: '◉' },
   { to: '/incidents', label: t('incidents'), icon: '☄' },
   { to: '/events', label: t('events'), icon: '≋' },
+  { to: '/dashboards', label: t('dashboards'), icon: '◫' },
+  { to: '/business', label: t('business'), icon: '⬡' },
+  { to: '/reports', label: t('reports'), icon: '▤' },
+  { to: '/alerting', label: t('rules'), icon: '⚡' },
   { to: '/oncall', label: t('oncall'), icon: '☎' },
+  { to: '/maintenance', label: t('maintenance'), icon: '⏸' },
+  { to: '/templates', label: t('templates'), icon: '⧉' },
+  { to: '/discovery', label: t('discovery'), icon: '◎' },
   { to: '/admin', label: t('admin'), icon: '⚙' },
 ]
 
