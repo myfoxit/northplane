@@ -126,6 +126,16 @@ oder Streamable HTTP auf `/mcp` mit normalem API-Token. Mutierende Tools
 landen in der Approval-Queue (`/api/v1/ai/actions`); ohne Provider bleiben
 alle deterministischen Features aktiv.
 
+## Entwicklung (Hot Reload)
+
+```bash
+make dev    # UI mit HMR auf :5173, Go-Backend mit Auto-Rebuild/Restart auf :8443
+```
+
+Vite proxyt alle Backend-Routen zum lokalen `northplaned`; Dev-Zustand
+liegt in `.dev/` (git-ignoriert), Demo-Daten werden idempotent geseedet
+(`NP_DEV_DEMO=0` deaktiviert). `make dev-reset` setzt den Dev-Zustand zurück.
+
 ## Tests
 
 ```bash

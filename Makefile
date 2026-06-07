@@ -2,9 +2,19 @@
 VERSION ?= 1.0.0-dev
 LDFLAGS  = -ldflags "-X main.version=$(VERSION)"
 
-.PHONY: all web build test race fmt docker clean
+.PHONY: all web build test race fmt docker clean dev dev-reset
 
 all: web build
+
+# Dev pipeline (hot reload): Vite HMR on :5173 + Go auto-rebuild/restart
+# on :8443. State in .dev/ (git-ignored); demo data seeded on first run
+# (NP_DEV_DEMO=0 to skip). Ctrl-C stops both processes.
+dev:
+	./scripts/dev.sh
+
+# Wipe the dev state (SQLite, config, key) for a fresh start.
+dev-reset:
+	/bin/rm -rf .dev
 
 web:
 	cd web && npm ci --silent && npm run build

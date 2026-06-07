@@ -27,3 +27,6 @@ config.local.yaml
 .idea/
 .vscode/
 *.swp
+
+# Dev pipeline state (make dev)
+/.dev/
