@@ -29,6 +29,9 @@ function defaultWidget(type: DashboardWidget['type']): DashboardWidget {
   switch (type) {
     case 'counters': return { ...base, w: 12, h: 1 }
     case 'metric': return { ...base, w: 6, h: 2, range: '3h' }
+    case 'gauge': return { ...base, w: 3, h: 2 }
+    case 'donut': return { ...base, w: 4, h: 2, scope: 'services' }
+    case 'bar': return { ...base, w: 6, h: 2, limit: 8 }
     case 'problems': return { ...base, w: 6, h: 2, limit: 10 }
     case 'alerts': return { ...base, w: 6, h: 2, limit: 10 }
     case 'bpi': return { ...base, w: 6, h: 2 }
@@ -301,6 +304,46 @@ function WidgetConfigFields({ widget, onChange }: {
           </Field>
         </div>
       )
+    case 'gauge':
+      return (
+        <div className="space-y-2">
+          <Field label="Objekt">
+            <ObjectPicker value={widget.object} onChange={(object) => onChange({ object, metric: '' })} />
+          </Field>
+          <Field label="Metrik">
+            <MetricPicker objectId={widget.object} value={widget.metric} onChange={(metric) => onChange({ metric })} />
+          </Field>
+          <Field label="Skalen-Maximum (leer = auto/crit)">
+            <Input type="number" min={1} value={widget.max ?? ''}
+              onChange={(e) => onChange({ max: e.target.value ? Number(e.target.value) : undefined })} />
+          </Field>
+        </div>
+      )
+    case 'donut':
+      return (
+        <Field label="Bereich">
+          <Select value={widget.scope ?? 'services'}
+            onChange={(e) => onChange({ scope: e.target.value as 'services' | 'hosts' })}>
+            <option value="services">Services</option>
+            <option value="hosts">Hosts</option>
+          </Select>
+        </Field>
+      )
+    case 'bar':
+      return (
+        <div className="space-y-2">
+          <Field label="Objekt">
+            <ObjectPicker value={widget.object} onChange={(object) => onChange({ object, metric: '' })} />
+          </Field>
+          <Field label="Metrik-Filter (optional)">
+            <MetricPicker objectId={widget.object} value={widget.metric} onChange={(metric) => onChange({ metric })} />
+          </Field>
+          <Field label="Limit">
+            <Input type="number" min={1} max={20} value={widget.limit ?? 8}
+              onChange={(e) => onChange({ limit: Number(e.target.value) })} />
+          </Field>
+        </div>
+      )
     case 'problems':
     case 'alerts':
       return (
@@ -337,7 +380,9 @@ function WidgetConfigFields({ widget, onChange }: {
 
 // ——— add-widget dialog: pick a type, configure, append ———
 
-const WIDGET_TYPES: DashboardWidget['type'][] = ['counters', 'problems', 'alerts', 'metric', 'bpi', 'markdown']
+const WIDGET_TYPES: DashboardWidget['type'][] = [
+  'counters', 'problems', 'alerts', 'metric', 'gauge', 'donut', 'bar', 'bpi', 'markdown',
+]
 
 // Rendered only while open (mounted fresh each time) so its working state
 // resets without an effect.

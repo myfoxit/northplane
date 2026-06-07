@@ -84,6 +84,7 @@ func (a *API) registerAlerts() {
 				return
 			}
 			_ = a.Escal.StopChain(r.Context(), alert.ID)
+			a.Alert.MaybeResolveIncident(r.Context(), alert)
 			a.audit(r, p, "alert.resolve", alert.ID, nil, alert)
 			a.alertLifecycleEvent(r, tenant, alert, model.EventAlertResolved)
 			a.writeJSON(w, http.StatusOK, alert)
@@ -149,6 +150,55 @@ func (a *API) registerAlerts() {
 			}
 		}
 		http.Error(w, "alert not found", http.StatusNotFound)
+	})
+
+	// Voice DTMF gather callback (SPEC §9.6): Twilio POSTs the pressed
+	// digit; 4 acknowledges. Same signed one-shot token as the ack link.
+	a.mux.HandleFunc("POST /api/v1/voice/gather/{token}", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/xml; charset=utf-8")
+		say := func(msg string) {
+			_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?><Response><Say>` +
+				msg + `</Say></Response>`))
+		}
+		alertID, contactID, err := notify.VerifyAckToken(a.Notify.AckSecret, param(r, "token"))
+		if err != nil {
+			say("This acknowledgement link is invalid or expired. Goodbye.")
+			return
+		}
+		if err := r.ParseForm(); err != nil || r.PostFormValue("Digits") != "4" {
+			say("Not acknowledged. Goodbye.")
+			return
+		}
+		tenants, err := a.Store.Tenants(r.Context())
+		if err != nil {
+			say("Internal error. Goodbye.")
+			return
+		}
+		for _, t := range tenants {
+			alert, err := a.Store.GetAlert(r.Context(), t.ID, alertID)
+			if err != nil {
+				continue
+			}
+			if alert.Status == model.AlertOpen {
+				contact, _ := storage.LoadOne[model.Contact](r.Context(), a.Store, t.ID, storage.KindContact, contactID)
+				by := contactID
+				if contact != nil {
+					by = contact.Name
+				}
+				if _, err := a.Store.AckAlert(r.Context(), t.ID, alertID, by); err == nil {
+					_ = a.Escal.StopChain(r.Context(), alertID)
+					_, _ = a.Store.AppendAudit(r.Context(), &model.AuditEntry{
+						TenantID: t.ID, ActorType: model.ActorUser, ActorID: by,
+						Action: "alert.ack", Resource: alertID,
+						AfterJSON: `{"via":"voice-dtmf"}`, SourceIP: remoteHost(r),
+					})
+					a.alertLifecycleEventTenant(r, t.ID, alertID)
+				}
+			}
+			say("Alert acknowledged. The escalation chain is stopped. Goodbye.")
+			return
+		}
+		say("Alert not found. Goodbye.")
 	})
 
 	// incidents

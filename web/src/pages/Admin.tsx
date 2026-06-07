@@ -17,12 +17,13 @@ import { ContactsTab } from '../components/admin/Contacts'
 import { GroupsTab } from '../components/admin/Groups'
 import { ChannelsTab } from '../components/admin/Channels'
 import { SourcesTab } from '../components/admin/Sources'
+import { WebhooksTab, HeartbeatsTab } from '../components/admin/Integrations'
 import { TenantsTab } from '../components/admin/Tenants'
 import { SecretsTab } from '../components/admin/Secrets'
 
 const tabs = [
   'users', 'roles', 'contacts', 'contactGroups', 'channels', 'eventSources',
-  'tenants', 'secrets', 'tokens', 'audit', 'aiQueue', 'health',
+  'webhooks', 'heartbeats', 'tenants', 'secrets', 'tokens', 'audit', 'aiQueue', 'health',
 ] as const
 type Tab = typeof tabs[number]
 
@@ -38,6 +39,8 @@ export function AdminPage() {
       {tab === 'contactGroups' && <GroupsTab />}
       {tab === 'channels' && <ChannelsTab />}
       {tab === 'eventSources' && <SourcesTab />}
+      {tab === 'webhooks' && <WebhooksTab />}
+      {tab === 'heartbeats' && <HeartbeatsTab />}
       {tab === 'tenants' && <TenantsTab />}
       {tab === 'secrets' && <SecretsTab />}
       {tab === 'tokens' && <TokensTab />}

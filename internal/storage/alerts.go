@@ -12,16 +12,18 @@ import (
 )
 
 const alertCols = `id, tenant_id, rule_id, object_id, incident_id, status, severity, title,
-	dedup_key, labels, event_ids, opened_at, acked_at, acked_by, resolved_at, payload`
+	dedup_key, labels, event_ids, opened_at, acked_at, acked_by, resolved_at, payload,
+	ticket_url, ticket_meta`
 
 func scanAlert(sc interface{ Scan(...any) error }) (*model.Alert, error) {
 	var a model.Alert
 	var ruleID, objectID, incidentID, dedup NullStr
-	var labels, eventIDs, payload string
+	var labels, eventIDs, payload, ticketURL, ticketMeta string
 	var opened, acked, resolved ScanTime
 	if err := sc.Scan(&a.ID, &a.TenantID, &ruleID, &objectID, &incidentID,
 		(*string)(&a.Status), (*string)(&a.Severity), &a.Title, &dedup,
-		&labels, &eventIDs, &opened, &acked, &a.AckedBy, &resolved, &payload); err != nil {
+		&labels, &eventIDs, &opened, &acked, &a.AckedBy, &resolved, &payload,
+		&ticketURL, &ticketMeta); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrNotFound
 		}
@@ -33,6 +35,13 @@ func scanAlert(sc interface{ Scan(...any) error }) (*model.Alert, error) {
 	_ = json.Unmarshal([]byte(labels), &a.Labels)
 	_ = json.Unmarshal([]byte(eventIDs), &a.EventIDs)
 	a.Payload = json.RawMessage(payload)
+	if ticketMeta != "" && ticketMeta != "{}" {
+		var t model.TicketRef
+		if json.Unmarshal([]byte(ticketMeta), &t) == nil && t.Ref != "" {
+			t.URL = ticketURL
+			a.Ticket = &t
+		}
+	}
 	return &a, nil
 }
 
@@ -81,10 +90,11 @@ func (s *Store) UpsertAlert(ctx context.Context, a *model.Alert) (*model.Alert, 
 	a.Status = model.AlertOpen
 	err := s.Write(ctx, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, s.Q(
-			`INSERT INTO alerts (`+alertCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`),
+			`INSERT INTO alerts (`+alertCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`),
 			a.ID, a.TenantID, S(a.RuleID), S(a.ObjectID), S(a.IncidentID),
 			string(a.Status), string(a.Severity), a.Title, S(a.DedupKey),
-			labels, eventIDs, s.T(a.OpenedAt), nil, "", nil, string(orEmptyJSON(a.Payload)))
+			labels, eventIDs, s.T(a.OpenedAt), nil, "", nil, string(orEmptyJSON(a.Payload)),
+			"", "{}")
 		return err
 	})
 	if err != nil {
@@ -215,7 +225,10 @@ func (s *Store) AckAlert(ctx context.Context, tenantID, id, by string) (*model.A
 	return s.GetAlert(ctx, tenantID, id)
 }
 
-// ResolveAlert closes the alert (status resolved|expired).
+// ResolveAlert closes the alert (status resolved|expired). When the
+// alert carries an auto-close ticket (F-04.05), a durable ticket-close
+// job is enqueued — central here so every resolve path (engine, API,
+// AI tool, ack-link) closes the external ticket.
 func (s *Store) ResolveAlert(ctx context.Context, tenantID, id string, status model.AlertStatus) (*model.Alert, error) {
 	now := time.Now().UTC()
 	err := s.Write(ctx, func(tx *sql.Tx) error {
@@ -234,7 +247,48 @@ func (s *Store) ResolveAlert(ctx context.Context, tenantID, id string, status mo
 	if err != nil {
 		return nil, err
 	}
-	return s.GetAlert(ctx, tenantID, id)
+	alert, err := s.GetAlert(ctx, tenantID, id)
+	if err == nil && alert.Ticket != nil && alert.Ticket.AutoClose {
+		s.enqueueTicketClose(ctx, alert)
+	}
+	return alert, err
+}
+
+// enqueueTicketClose schedules the external ticket close in the outbox
+// (retry semantics identical to notifications).
+func (s *Store) enqueueTicketClose(ctx context.Context, a *model.Alert) {
+	payload, _ := json.Marshal(map[string]any{
+		"tenantId": a.TenantID, "alertId": a.ID, "title": a.Title, "ticket": a.Ticket})
+	_ = s.EnqueueOutbox(ctx, &OutboxItem{
+		TenantID: a.TenantID, Kind: "ticket-close", Payload: payload})
+}
+
+// SetAlertTicket records the external ticket created for an alert.
+func (s *Store) SetAlertTicket(ctx context.Context, tenantID, alertID string, t *model.TicketRef) error {
+	meta, _ := json.Marshal(t)
+	return s.Write(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, s.Q(
+			`UPDATE alerts SET ticket_url = ?, ticket_meta = ? WHERE tenant_id = ? AND id = ?`),
+			t.URL, string(meta), tenantID, alertID)
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return ErrNotFound
+		}
+		return nil
+	})
+}
+
+// CountActiveAlertsByIncident counts open/acked alerts in an incident
+// (auto-resolve gate for rule-created incidents).
+func (s *Store) CountActiveAlertsByIncident(ctx context.Context, tenantID, incidentID string) (int64, error) {
+	var n int64
+	err := s.db.QueryRowContext(ctx, s.Q(
+		`SELECT COUNT(*) FROM alerts
+		 WHERE tenant_id = ? AND incident_id = ? AND status IN ('open','acked')`),
+		tenantID, incidentID).Scan(&n)
+	return n, err
 }
 
 // AssignAlertIncident links/unlinks an alert to an incident.
@@ -254,8 +308,12 @@ func (s *Store) AssignAlertIncident(ctx context.Context, tenantID, alertID, inci
 }
 
 // ExpireStaleAlerts closes open alerts past their auto-close horizon —
-// called by the janitor with rule-resolved cutoffs.
+// called by the janitor with rule-resolved cutoffs. Ticketed alerts with
+// autoClose get their external ticket closed too.
 func (s *Store) ExpireStaleAlerts(ctx context.Context, tenantID, ruleID string, before time.Time) (int64, error) {
+	// collect auto-close tickets before the bulk flip
+	ticketed, _ := s.ListAlerts(ctx, AlertFilter{TenantID: tenantID, RuleID: ruleID,
+		Status: []model.AlertStatus{model.AlertOpen, model.AlertAcked}, Limit: 1000})
 	var n int64
 	err := s.Write(ctx, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(ctx, s.Q(
@@ -268,6 +326,13 @@ func (s *Store) ExpireStaleAlerts(ctx context.Context, tenantID, ruleID string, 
 		n, _ = res.RowsAffected()
 		return nil
 	})
+	if err == nil && n > 0 {
+		for _, a := range ticketed {
+			if a.Ticket != nil && a.Ticket.AutoClose && a.OpenedAt.Before(before) {
+				s.enqueueTicketClose(ctx, a)
+			}
+		}
+	}
 	return n, err
 }
 

@@ -60,6 +60,14 @@ type agentConfig struct {
 	Checks []agentCheck `yaml:"checks"`
 	// Builtin metric collection toggles.
 	Disk []string `yaml:"disk"` // mount points, default ["/"]
+
+	// Active listener mode (NCPA-style, SPEC §8.4): the server queries the
+	// agent over HTTPS instead of (or in addition to) passive pushes.
+	// Empty = passive-only (default, no inbound ports).
+	Listen      string `yaml:"listen"`      // e.g. ":5693"
+	ListenToken string `yaml:"listenToken"` // bearer token, required with listen
+	TLSCert     string `yaml:"tlsCert"`     // PEM path; empty = self-signed
+	TLSKey      string `yaml:"tlsKey"`
 }
 
 type agentCheck struct {
@@ -116,6 +124,20 @@ func main() {
 
 	log.Info("np-agent: started", "host", cfg.Hostname, "server", cfg.Server,
 		"interval", cfg.Interval, "checks", len(cfg.Checks))
+
+	// active listener (optional): serve metrics/checks to the server
+	if cfg.Listen != "" {
+		if cfg.ListenToken == "" {
+			log.Error("config: listenToken required with listen")
+			os.Exit(1)
+		}
+		go func() {
+			if err := serveListener(ctx, cfg, log); err != nil {
+				log.Error("listener", "err", err)
+				os.Exit(1)
+			}
+		}()
+	}
 
 	// store-and-forward buffer: results survive server outages in memory
 	// (bounded; oldest dropped beyond 10k)
@@ -223,51 +245,57 @@ func collect(ctx context.Context, cfg agentConfig) []passiveResult {
 
 	// configured plugin checks
 	for _, chk := range cfg.Checks {
-		timeout := chk.Timeout
-		if timeout <= 0 {
-			timeout = 30 * time.Second
-		}
-		cctx, cancel := context.WithTimeout(ctx, timeout)
-		plugPath := chk.Command
-		// A bare command name is resolved against the agent's own PATH
-		// (cmd.Env does NOT influence exec.LookPath), so resolve it
-		// ourselves against the plugin search path before exec.
-		if !strings.ContainsRune(plugPath, os.PathSeparator) {
-			if resolved, lerr := lookPath(plugPath); lerr == nil {
-				plugPath = resolved
-			}
-		}
-		cmd := exec.CommandContext(cctx, plugPath, chk.Args...)
-		cmd.Env = []string{"PATH=" + pluginPATH, "LC_ALL=C"}
-		var stdout, stderr bytes.Buffer
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stderr
-		err := cmd.Run()
-		cancel()
-		state := 0
-		if err != nil {
-			if ee, ok := err.(*exec.ExitError); ok && ee.ExitCode() >= 0 && ee.ExitCode() <= 3 {
-				state = ee.ExitCode()
-			} else {
-				state = 3
-			}
-		}
-		output := strings.TrimSpace(stdout.String())
-		if output == "" {
-			// Many plugins (and the not-found case) write the reason to
-			// stderr; surface it instead of a useless "no output".
-			output = strings.TrimSpace(stderr.String())
-		}
-		if output == "" {
-			output = "UNKNOWN - no output"
-		}
-		if cctx.Err() == context.DeadlineExceeded {
-			state, output = 3, "UNKNOWN - plugin timed out after "+timeout.String()
-		}
+		state, output := runPluginCheck(ctx, chk)
 		out = append(out, passiveResult{Host: host, Service: chk.Service,
 			State: state, Output: output})
 	}
 	return out
+}
+
+// runPluginCheck executes one configured plugin check — shared by the
+// passive collection loop and the active listener's /v1/run endpoint.
+func runPluginCheck(ctx context.Context, chk agentCheck) (state int, output string) {
+	timeout := chk.Timeout
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	cctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	plugPath := chk.Command
+	// A bare command name is resolved against the agent's own PATH
+	// (cmd.Env does NOT influence exec.LookPath), so resolve it
+	// ourselves against the plugin search path before exec.
+	if !strings.ContainsRune(plugPath, os.PathSeparator) {
+		if resolved, lerr := lookPath(plugPath); lerr == nil {
+			plugPath = resolved
+		}
+	}
+	cmd := exec.CommandContext(cctx, plugPath, chk.Args...)
+	cmd.Env = []string{"PATH=" + pluginPATH, "LC_ALL=C"}
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if err != nil {
+		if ee, ok := err.(*exec.ExitError); ok && ee.ExitCode() >= 0 && ee.ExitCode() <= 3 {
+			state = ee.ExitCode()
+		} else {
+			state = 3
+		}
+	}
+	output = strings.TrimSpace(stdout.String())
+	if output == "" {
+		// Many plugins (and the not-found case) write the reason to
+		// stderr; surface it instead of a useless "no output".
+		output = strings.TrimSpace(stderr.String())
+	}
+	if output == "" {
+		output = "UNKNOWN - no output"
+	}
+	if cctx.Err() == context.DeadlineExceeded {
+		state, output = 3, "UNKNOWN - plugin timed out after "+timeout.String()
+	}
+	return state, output
 }
 
 // pluginPATH is the search path for bare plugin command names. It adds

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"strings"
 	"sync"
 	"text/template"
 	"time"
@@ -297,6 +298,12 @@ func (en *Engine) open(ctx context.Context, r *model.AlertRule, draft *model.Ale
 		Severity: stored.Severity, Payload: raw,
 	})
 
+	// rule-driven incident (F-04.05): every fresh alert opens its own
+	// incident; resolution closes it once all bundled alerts resolved.
+	if r.Incident {
+		en.openIncident(ctx, r, stored)
+	}
+
 	// Suppression gate (SPEC §9.1): downtime, silence, flapping,
 	// unreachable — alert exists, the chain does not start.
 	suppressed, reason := en.Suppressed(ctx, stored)
@@ -403,6 +410,63 @@ func (en *Engine) resolveByDedup(ctx context.Context, tenantID, dedup string, r 
 	en.persistAndFanout(ctx, &model.Event{
 		ID: model.NewID(), TenantID: tenantID, TS: time.Now().UTC(),
 		Type: model.EventAlertResolved, ObjectID: resolved.ObjectID,
+		Severity: model.SevOK, Payload: raw,
+	})
+	en.MaybeResolveIncident(ctx, resolved)
+}
+
+// openIncident creates the rule-driven incident and bundles the alert.
+func (en *Engine) openIncident(ctx context.Context, r *model.AlertRule, alert *model.Alert) {
+	inc := &model.Incident{TenantID: alert.TenantID, Status: model.IncidentOpen,
+		Severity: alert.Severity, Title: alert.Title,
+		TicketURL: "", CreatedBy: "rule:" + r.Name, OpenedAt: alert.OpenedAt}
+	if err := en.store.CreateIncident(ctx, inc); err != nil {
+		en.log.Error("alerting: incident create", "alert", alert.ID, "err", err)
+		return
+	}
+	if err := en.store.AssignAlertIncident(ctx, alert.TenantID, alert.ID, inc.ID); err != nil {
+		en.log.Error("alerting: incident assign", "alert", alert.ID, "err", err)
+		return
+	}
+	alert.IncidentID = inc.ID
+	raw, _ := json.Marshal(map[string]any{
+		"incidentId": inc.ID, "alertId": alert.ID, "title": inc.Title,
+		"createdBy": inc.CreatedBy, "status": inc.Status})
+	en.persistAndFanout(ctx, &model.Event{
+		ID: model.NewID(), TenantID: alert.TenantID, TS: time.Now().UTC(),
+		Type: model.EventIncidentUpdate, ObjectID: alert.ObjectID,
+		Severity: alert.Severity, Payload: raw,
+	})
+}
+
+// MaybeResolveIncident closes a rule-created incident once its last
+// active alert resolved. Human/AI-created incidents stay open — closing
+// those is an explicit decision (SPEC §6.4). Exported: the API's manual
+// resolve path shares the gate.
+func (en *Engine) MaybeResolveIncident(ctx context.Context, alert *model.Alert) {
+	if alert == nil || alert.IncidentID == "" {
+		return
+	}
+	inc, err := en.store.GetIncident(ctx, alert.TenantID, alert.IncidentID)
+	if err != nil || inc.Status != model.IncidentOpen ||
+		!strings.HasPrefix(inc.CreatedBy, "rule:") {
+		return
+	}
+	n, err := en.store.CountActiveAlertsByIncident(ctx, alert.TenantID, inc.ID)
+	if err != nil || n > 0 {
+		return
+	}
+	now := time.Now().UTC()
+	inc.Status, inc.ResolvedAt = model.IncidentResolved, &now
+	if err := en.store.UpdateIncident(ctx, inc, 0); err != nil {
+		en.log.Error("alerting: incident resolve", "incident", inc.ID, "err", err)
+		return
+	}
+	raw, _ := json.Marshal(map[string]any{
+		"incidentId": inc.ID, "title": inc.Title, "status": inc.Status})
+	en.persistAndFanout(ctx, &model.Event{
+		ID: model.NewID(), TenantID: alert.TenantID, TS: now,
+		Type: model.EventIncidentUpdate, ObjectID: alert.ObjectID,
 		Severity: model.SevOK, Payload: raw,
 	})
 }

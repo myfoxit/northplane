@@ -32,27 +32,63 @@ func (m *Manager) SendDirect(ctx context.Context, ch *model.NotificationChannel,
 	return m.send(ctx, ch, target, subject, body, &RenderContext{Title: subject})
 }
 
+// SenderFunc is one transport implementation. Register new channel
+// types via RegisterSender — the dispatch below is a plain registry so
+// transports stay pluggable (SPEC §9.6).
+type SenderFunc func(m *Manager, ctx context.Context, ch *model.NotificationChannel,
+	target, subject, body string, rc *RenderContext) (string, error)
+
+// senders is the transport registry, keyed by channel type.
+var senders = map[model.ChannelType]SenderFunc{
+	model.ChannelEmail: func(m *Manager, ctx context.Context, ch *model.NotificationChannel, target, subject, body string, _ *RenderContext) (string, error) {
+		return m.sendEmail(ctx, ch, target, subject, body)
+	},
+	model.ChannelWebhook: func(m *Manager, ctx context.Context, ch *model.NotificationChannel, _, _, body string, _ *RenderContext) (string, error) {
+		return m.sendWebhook(ctx, ch, body)
+	},
+	model.ChannelSlack: func(m *Manager, ctx context.Context, ch *model.NotificationChannel, _, _, body string, _ *RenderContext) (string, error) {
+		return m.sendJSONHook(ctx, ch, body)
+	},
+	model.ChannelTeams: func(m *Manager, ctx context.Context, ch *model.NotificationChannel, _, _, body string, _ *RenderContext) (string, error) {
+		return m.sendJSONHook(ctx, ch, body)
+	},
+	model.ChannelNtfy: func(m *Manager, ctx context.Context, ch *model.NotificationChannel, _, subject, body string, rc *RenderContext) (string, error) {
+		return m.sendNtfy(ctx, ch, subject, body, rc)
+	},
+	model.ChannelSMS: func(m *Manager, ctx context.Context, ch *model.NotificationChannel, target, _, body string, _ *RenderContext) (string, error) {
+		return m.sendSMS(ctx, ch, target, body)
+	},
+	model.ChannelPush: func(m *Manager, ctx context.Context, ch *model.NotificationChannel, target, _, body string, rc *RenderContext) (string, error) {
+		return m.sendPush(ctx, ch, target, body, rc)
+	},
+	model.ChannelVoice: func(m *Manager, ctx context.Context, ch *model.NotificationChannel, target, _, body string, rc *RenderContext) (string, error) {
+		return m.sendVoice(ctx, ch, target, body, rc)
+	},
+	model.ChannelServiceNow: func(m *Manager, ctx context.Context, ch *model.NotificationChannel, _, subject, body string, rc *RenderContext) (string, error) {
+		return m.sendTicket(ctx, ch, subject, body, rc, nil)
+	},
+	model.ChannelZendesk: func(m *Manager, ctx context.Context, ch *model.NotificationChannel, _, subject, body string, rc *RenderContext) (string, error) {
+		return m.sendTicket(ctx, ch, subject, body, rc, nil)
+	},
+	model.ChannelJira: func(m *Manager, ctx context.Context, ch *model.NotificationChannel, _, subject, body string, rc *RenderContext) (string, error) {
+		return m.sendTicket(ctx, ch, subject, body, rc, nil)
+	},
+	model.ChannelTicket: func(m *Manager, ctx context.Context, ch *model.NotificationChannel, _, subject, body string, rc *RenderContext) (string, error) {
+		return m.sendTicket(ctx, ch, subject, body, rc, nil)
+	},
+}
+
+// RegisterSender adds (or replaces) a transport for a channel type.
+func RegisterSender(t model.ChannelType, fn SenderFunc) { senders[t] = fn }
+
 // send dispatches to the concrete transport (SPEC §9.6).
 func (m *Manager) send(ctx context.Context, ch *model.NotificationChannel,
 	target, subject, body string, rc *RenderContext) (string, error) {
-	switch ch.Type {
-	case model.ChannelEmail:
-		return m.sendEmail(ctx, ch, target, subject, body)
-	case model.ChannelWebhook:
-		return m.sendWebhook(ctx, ch, body)
-	case model.ChannelSlack, model.ChannelTeams:
-		return m.sendJSONHook(ctx, ch, body)
-	case model.ChannelNtfy:
-		return m.sendNtfy(ctx, ch, subject, body, rc)
-	case model.ChannelSMS:
-		return m.sendSMS(ctx, ch, target, body)
-	case model.ChannelPush:
-		return m.sendPush(ctx, ch, target, body, rc)
-	case model.ChannelVoice:
-		return "", fmt.Errorf("voice provider integration is v2 (SPEC §9.6) — configure SMS/Push for now")
-	default:
+	fn, ok := senders[ch.Type]
+	if !ok {
 		return "", fmt.Errorf("unsupported channel type %q", ch.Type)
 	}
+	return fn(m, ctx, ch, target, subject, body, rc)
 }
 
 // --- e-mail: native SMTP client (STARTTLS/implicit, SPEC §9.6) ---
@@ -306,7 +342,11 @@ func (m *Manager) sendTwilioSMS(ctx context.Context, ch *model.NotificationChann
 		return "", fmt.Errorf("twilio: accountSid, authToken, from required")
 	}
 	form := url.Values{"To": {to}, "From": {from}, "Body": {text}}
-	endpoint := "https://api.twilio.com/2010-04-01/Accounts/" + sid + "/Messages.json"
+	apiBase := strings.TrimSuffix(ch.Config["apiBase"], "/")
+	if apiBase == "" {
+		apiBase = "https://api.twilio.com"
+	}
+	endpoint := apiBase + "/2010-04-01/Accounts/" + sid + "/Messages.json"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint,
 		strings.NewReader(form.Encode()))
 	if err != nil {

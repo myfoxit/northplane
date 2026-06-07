@@ -14,7 +14,32 @@ const (
 	ChannelPush    ChannelType = "push" // Web Push / PWA (ADR-12)
 	ChannelSMS     ChannelType = "sms"
 	ChannelVoice   ChannelType = "voice"
+	// Ticket-system transports (F-04.05): create an external ticket and
+	// optionally auto-close it when the alert resolves.
+	ChannelServiceNow ChannelType = "servicenow"
+	ChannelZendesk    ChannelType = "zendesk"
+	ChannelJira       ChannelType = "jira"
+	ChannelTicket     ChannelType = "ticket" // generic HTTP ticket gateway
 )
+
+// IsTicket reports whether a channel type creates external tickets.
+func (t ChannelType) IsTicket() bool {
+	switch t {
+	case ChannelServiceNow, ChannelZendesk, ChannelJira, ChannelTicket:
+		return true
+	}
+	return false
+}
+
+// TicketRef records the external ticket created for an alert (F-04.05).
+// Stored on the alert so resolution can auto-close the ticket.
+type TicketRef struct {
+	Channel   string `json:"channel"`            // NotificationChannel name
+	Type      string `json:"type"`               // servicenow|zendesk|jira|ticket
+	Ref       string `json:"ref"`                // provider id (sys_id, ticket id, issue key)
+	URL       string `json:"url,omitempty"`      // human link
+	AutoClose bool   `json:"autoClose,omitempty"`
+}
 
 // NotificationChannel is a configured transport instance.
 type NotificationChannel struct {
@@ -94,13 +119,25 @@ type EscalationTarget struct {
 // EscalationAction is a non-notification side effect (ServiceNow…, F-04.05).
 type EscalationAction struct {
 	ServiceNow *ServiceNowAction `json:"servicenow,omitempty" yaml:"servicenow,omitempty"`
-	Webhook    string            `json:"webhook,omitempty"    yaml:"webhook,omitempty"` // channel name
+	// Ticket creates an external ticket through a named ticket channel
+	// (servicenow | zendesk | jira | generic "ticket").
+	Ticket  *TicketAction `json:"ticket,omitempty"  yaml:"ticket,omitempty"`
+	Webhook string        `json:"webhook,omitempty" yaml:"webhook,omitempty"` // channel name
 }
 
 // ServiceNowAction creates/updates a ServiceNow incident.
 type ServiceNowAction struct {
 	AssignmentGroup string `json:"assignmentGroup" yaml:"assignmentGroup"`
 	AutoClose       bool   `json:"autoClose"       yaml:"autoClose"`
+}
+
+// TicketAction creates a ticket via a configured ticket channel.
+type TicketAction struct {
+	Channel   string            `json:"channel"             yaml:"channel"` // NotificationChannel name
+	AutoClose bool              `json:"autoClose,omitempty" yaml:"autoClose,omitempty"`
+	// Params are merged into the provider payload (assignment_group,
+	// priority, tags …) — provider-specific, see channel docs.
+	Params map[string]string `json:"params,omitempty" yaml:"params,omitempty"`
 }
 
 // EscalationStep fires After the alert opened, unless acked (SPEC §9.4).

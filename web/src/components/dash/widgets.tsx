@@ -209,6 +209,209 @@ function MarkdownWidget({ widget }: { widget: DashboardWidget }) {
   )
 }
 
+// rangeStartNum extracts the numeric start of a Nagios range spec
+// ("80", "80:", "@10:20" → 80/80/10) for gauge/bar threshold colouring.
+function rangeStartNum(spec?: string): number | null {
+  if (!spec) return null
+  let body = spec.startsWith('@') ? spec.slice(1) : spec
+  body = body.split(':')[body.includes(':') ? 1 : 0] || body.split(':')[0]
+  const v = parseFloat(body)
+  return Number.isFinite(v) ? v : null
+}
+
+function thresholdTone(v: number, warn: number | null, crit: number | null): string {
+  if (crit !== null && v >= crit) return '#f87171' // red-400
+  if (warn !== null && v >= warn) return '#fbbf24' // amber-400
+  return '#34d399' // emerald-400
+}
+
+// GaugeWidget: SVG arc gauge of a metric's latest value with warn/crit
+// zones from perfdata thresholds (or the metric's own ranges).
+function GaugeWidget({ widget }: { widget: DashboardWidget }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['metrics', 'gauge', widget.object, widget.metric],
+    enabled: !!widget.object,
+    queryFn: () => post<SeriesResult[]>('/metrics/query', {
+      objectId: widget.object,
+      metric: widget.metric || undefined,
+      from: rangeFrom('1h'),
+      to: new Date().toISOString(),
+      maxPoints: 20,
+    }),
+    refetchInterval: REFRESH,
+  })
+  if (!widget.object) return <Empty text={t('empty')} />
+  if (isLoading) return <Spinner />
+  const s = (data ?? []).filter((r) => !r.series.metric.startsWith('np_') && r.points.length > 0)[0]
+  if (!s) return <Empty text="keine Daten" />
+  const value = s.points[s.points.length - 1].v
+  const warn = rangeStartNum(s.series.warn)
+  const crit = rangeStartNum(s.series.crit)
+  const max = widget.max || crit || Math.max(100, Math.ceil(value * 1.25))
+  const frac = Math.min(1, Math.max(0, value / max))
+  // 240°-arc geometry: angles measured clockwise from 12 o'clock,
+  // -120°…+120° leaves the gap at the bottom.
+  const polar = (deg: number, r: number) => {
+    const rad = (deg * Math.PI) / 180
+    return [60 + r * Math.sin(rad), 60 - r * Math.cos(rad)]
+  }
+  const arc = (fromDeg: number, toDeg: number, r: number) => {
+    const [x1, y1] = polar(fromDeg, r)
+    const [x2, y2] = polar(toDeg, r)
+    const large = toDeg - fromDeg > 180 ? 1 : 0
+    return `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${x2.toFixed(2)} ${y2.toFixed(2)}`
+  }
+  const START = -120, SPAN = 240
+  const tone = thresholdTone(value, warn, crit)
+  const zone = (v: number | null) => (v === null || v > max ? null : START + SPAN * Math.min(1, v / max))
+  const warnDeg = zone(warn), critDeg = zone(crit)
+  return (
+    <div className="flex flex-col items-center justify-center h-full py-1">
+      <svg viewBox="0 0 120 92" className="w-full max-w-[220px]">
+        <path d={arc(START, START + SPAN, 46)} fill="none" stroke="#1e293b" strokeWidth="9" strokeLinecap="round" />
+        {warnDeg !== null && (
+          <path d={arc(warnDeg, critDeg ?? START + SPAN, 46)} fill="none" stroke="rgba(251,191,36,0.35)" strokeWidth="9" />
+        )}
+        {critDeg !== null && (
+          <path d={arc(critDeg, START + SPAN, 46)} fill="none" stroke="rgba(248,113,113,0.4)" strokeWidth="9" />
+        )}
+        {frac > 0.005 && (
+          <path d={arc(START, START + SPAN * frac, 46)} fill="none" stroke={tone} strokeWidth="9" strokeLinecap="round" />
+        )}
+        <text x="60" y="58" textAnchor="middle" fill="#e2e8f0" fontSize="20" fontWeight="700" className="tabular-nums">
+          {value >= 100 ? Math.round(value) : value.toFixed(1)}
+        </text>
+        <text x="60" y="72" textAnchor="middle" fill="#64748b" fontSize="8">
+          {s.series.metric}{s.series.unit ? ` (${s.series.unit})` : ''} / {max}
+        </text>
+      </svg>
+      {(warn !== null || crit !== null) && (
+        <div className="text-[10px] text-slate-500 tabular-nums">
+          {warn !== null && <span className="text-amber-400/80">warn {warn}</span>}
+          {warn !== null && crit !== null && ' · '}
+          {crit !== null && <span className="text-red-400/80">crit {crit}</span>}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// DonutWidget: state distribution (services or hosts) as an SVG donut.
+function DonutWidget({ widget }: { widget: DashboardWidget }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['overview'],
+    queryFn: () => get<Overview>('/overview'),
+    refetchInterval: REFRESH,
+  })
+  if (isLoading) return <Spinner />
+  const s = data?.summary
+  if (!s) return <Empty text="keine Daten" />
+  const segs = widget.scope === 'hosts'
+    ? [
+      { label: 'Up', value: s.hostsUp, color: '#34d399' },
+      { label: 'Down', value: s.hostsDown, color: '#f87171' },
+      { label: 'Unreachable', value: s.hostsUnreachable, color: '#a78bfa' },
+    ]
+    : [
+      { label: 'OK', value: s.servicesOk, color: '#34d399' },
+      { label: 'Warning', value: s.servicesWarning, color: '#fbbf24' },
+      { label: 'Critical', value: s.servicesCritical, color: '#f87171' },
+      { label: 'Unknown', value: s.servicesUnknown, color: '#94a3b8' },
+    ]
+  const total = segs.reduce((n, x) => n + x.value, 0)
+  if (total === 0) return <Empty text="keine Daten" />
+  const R = 40, C = 2 * Math.PI * R
+  let offset = 0
+  return (
+    <div className="flex items-center justify-center gap-5 h-full">
+      <svg viewBox="0 0 100 100" className="w-[120px] shrink-0 -rotate-90">
+        {segs.filter((x) => x.value > 0).map((x) => {
+          const len = (x.value / total) * C
+          const el = (
+            <circle key={x.label} cx="50" cy="50" r={R} fill="none" stroke={x.color}
+              strokeWidth="12" strokeDasharray={`${len} ${C - len}`}
+              strokeDashoffset={-offset} />
+          )
+          offset += len
+          return el
+        })}
+        <text x="50" y="46" textAnchor="middle" fill="#e2e8f0" fontSize="18" fontWeight="700"
+          transform="rotate(90 50 50)" className="tabular-nums">{total}</text>
+        <text x="50" y="60" textAnchor="middle" fill="#64748b" fontSize="8"
+          transform="rotate(90 50 50)">{widget.scope === 'hosts' ? 'Hosts' : 'Services'}</text>
+      </svg>
+      <div className="space-y-1">
+        {segs.map((x) => (
+          <div key={x.label} className="flex items-center gap-2 text-xs">
+            <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: x.color }} />
+            <span className="text-slate-400 w-24">{x.label}</span>
+            <span className="text-slate-200 tabular-nums font-semibold">{x.value}</span>
+            <span className="text-slate-600 tabular-nums">{total ? Math.round((x.value / total) * 100) : 0}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// BarWidget: horizontal bars of an object's current metric values,
+// threshold-coloured — e.g. disk usage per mount at a glance.
+function BarWidget({ widget }: { widget: DashboardWidget }) {
+  const limit = widget.limit ?? 8
+  const { data, isLoading } = useQuery({
+    queryKey: ['metrics', 'bar', widget.object, widget.metric],
+    enabled: !!widget.object,
+    queryFn: () => post<SeriesResult[]>('/metrics/query', {
+      objectId: widget.object,
+      metric: widget.metric || undefined,
+      from: rangeFrom('1h'),
+      to: new Date().toISOString(),
+      maxPoints: 20,
+    }),
+    refetchInterval: REFRESH,
+  })
+  if (!widget.object) return <Empty text={t('empty')} />
+  if (isLoading) return <Spinner />
+  const rows = (data ?? [])
+    .filter((r) => !r.series.metric.startsWith('np_') && r.points.length > 0)
+    .map((r) => ({
+      metric: r.series.metric, unit: r.series.unit ?? '',
+      value: r.points[r.points.length - 1].v,
+      warn: rangeStartNum(r.series.warn), crit: rangeStartNum(r.series.crit),
+    }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, limit)
+  if (rows.length === 0) return <Empty text="keine Daten" />
+  const scaleMax = Math.max(...rows.map((r) => Math.max(r.value, r.crit ?? 0, r.warn ?? 0))) || 1
+  return (
+    <div className="space-y-2 py-1">
+      {rows.map((r) => {
+        const tone = thresholdTone(r.value, r.warn, r.crit)
+        const pct = Math.max(1.5, (r.value / scaleMax) * 100)
+        return (
+          <div key={r.metric} className="text-xs">
+            <div className="flex items-baseline justify-between mb-0.5">
+              <span className="text-slate-300 font-mono truncate">{r.metric}</span>
+              <span className="text-slate-200 tabular-nums font-semibold shrink-0 ml-2">
+                {r.value >= 100 ? Math.round(r.value) : r.value.toFixed(1)}{r.unit}
+              </span>
+            </div>
+            <div className="relative h-2.5 bg-slate-800/80 rounded overflow-hidden">
+              <div className="absolute inset-y-0 left-0 rounded" style={{ width: `${pct}%`, background: tone }} />
+              {r.warn !== null && r.warn <= scaleMax && (
+                <div className="absolute inset-y-0 w-px bg-amber-400/70" style={{ left: `${(r.warn / scaleMax) * 100}%` }} />
+              )}
+              {r.crit !== null && r.crit <= scaleMax && (
+                <div className="absolute inset-y-0 w-px bg-red-400/80" style={{ left: `${(r.crit / scaleMax) * 100}%` }} />
+              )}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // WidgetBody dispatches to the right renderer for a widget type.
 export function WidgetBody({ widget }: { widget: DashboardWidget }) {
   switch (widget.type) {
@@ -216,6 +419,9 @@ export function WidgetBody({ widget }: { widget: DashboardWidget }) {
     case 'problems': return <ProblemsWidget widget={widget} />
     case 'alerts': return <AlertsWidget widget={widget} />
     case 'metric': return <MetricWidget widget={widget} />
+    case 'gauge': return <GaugeWidget widget={widget} />
+    case 'donut': return <DonutWidget widget={widget} />
+    case 'bar': return <BarWidget widget={widget} />
     case 'bpi': return <BpiWidget widget={widget} />
     case 'markdown': return <MarkdownWidget widget={widget} />
     default: return <Empty text={widget.type} />
@@ -229,6 +435,9 @@ export function widgetTypeLabel(type: DashboardWidget['type']): string {
     problems: 'Probleme',
     alerts: 'Alarme',
     metric: 'Metrik-Diagramm',
+    gauge: 'Gauge (Tacho)',
+    donut: 'Status-Donut',
+    bar: 'Balkendiagramm',
     bpi: 'Business Service',
     markdown: 'Text / Markdown',
   }

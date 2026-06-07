@@ -298,5 +298,29 @@ func buildTools() []Tool {
 				_ = json.Unmarshal(in, &args)
 				return s.planBundle(ctx, p, args.BundleYaml)
 			}},
+
+		{Def: ToolDef{Name: "apply_config_change",
+			Description: "Apply a configuration bundle. Queued for human approval; once approved the diff is applied atomically (SPEC §10.3).",
+			Schema:      sch(`{"type":"object","properties":{"bundleYaml":{"type":"string"}},"required":["bundleYaml"]}`)},
+			Perm:     model.Permission("config:write"),
+			Mutating: true, // not AutoOK: rides the approval queue by design
+			Run: func(ctx context.Context, s *Service, p *auth.Principal, in json.RawMessage) (any, error) {
+				var args struct{ BundleYaml string }
+				_ = json.Unmarshal(in, &args)
+				return s.applyBundle(ctx, p, args.BundleYaml)
+			}},
+
+		{Def: ToolDef{Name: "render_report",
+			Description: "Render a stored report on demand (availability/SLA/top-N) as structured JSON.",
+			Schema:      sch(`{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}`)},
+			Perm: model.Permission("reports:render"),
+			Run: func(ctx context.Context, s *Service, p *auth.Principal, in json.RawMessage) (any, error) {
+				var args struct{ Name string }
+				_ = json.Unmarshal(in, &args)
+				if args.Name == "" {
+					return nil, fmt.Errorf("render_report requires name")
+				}
+				return s.renderReport(ctx, p, args.Name)
+			}},
 	}
 }

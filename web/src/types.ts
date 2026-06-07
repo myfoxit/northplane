@@ -187,6 +187,7 @@ export interface AlertRule {
   escalationPolicy?: string
   groupId?: string
   setLabels?: Record<string, string>
+  incident?: boolean
   version?: number
 }
 
@@ -202,6 +203,7 @@ export interface AlertGroup {
 }
 
 export type ChannelType = 'email' | 'webhook' | 'slack' | 'teams' | 'ntfy' | 'sms' | 'push' | 'voice'
+  | 'servicenow' | 'zendesk' | 'jira' | 'ticket'
 
 export interface Channel {
   id?: string
@@ -376,12 +378,17 @@ export interface Report {
 // Dashboard spec is frontend-owned JSON (SPEC §12.3 / model.Dashboard.Spec).
 export interface DashboardWidget {
   type: 'counters' | 'problems' | 'metric' | 'bpi' | 'markdown' | 'alerts'
+    | 'gauge' | 'donut' | 'bar'
   title?: string
-  // metric widget:
+  // metric/gauge/bar widget:
   object?: string
   metric?: string
   range?: string // "3h", "24h", "7d"
-  // problems/alerts widget:
+  // gauge widget:
+  max?: number   // scale end, default 100 (or auto from data)
+  // donut widget:
+  scope?: 'services' | 'hosts'
+  // problems/alerts/bar widget:
   limit?: number
   selector?: string
   // bpi widget:
@@ -400,6 +407,30 @@ export interface DashboardDoc {
   spec: { widgets: DashboardWidget[] }
   shareToken?: string
   version?: number
+}
+
+// Wire shape of internal/api/discovery.go WebhookSubscription
+// (outgoing event webhooks, SPEC §11.5).
+export interface WebhookSub {
+  name: string
+  url: string
+  types?: string[]
+  selector?: string
+  secret?: string
+  disabled?: boolean
+  version?: number
+}
+
+// Wire shape of internal/model.Heartbeat (dead-man inputs, F-02.02).
+export interface HeartbeatDef {
+  id?: string
+  name: string
+  expectEvery: string
+  grace?: string
+  severity?: Severity
+  labels?: Record<string, string>
+  lastBeat?: string
+  missing?: boolean
 }
 
 // Wire shape of internal/api/discovery.go.

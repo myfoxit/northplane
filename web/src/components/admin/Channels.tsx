@@ -16,7 +16,10 @@ import { TypeBadge, StatusBadge, TableActions, RowActions, secretHint } from './
 
 const channelsApi = resourceApi<Channel>('channels')
 
-const CHANNEL_TYPES: ChannelType[] = ['email', 'webhook', 'slack', 'teams', 'ntfy', 'sms', 'push', 'voice']
+const CHANNEL_TYPES: ChannelType[] = [
+  'email', 'webhook', 'slack', 'teams', 'ntfy', 'sms', 'push', 'voice',
+  'servicenow', 'zendesk', 'jira', 'ticket',
+]
 
 // Field spec per config key. secret → render the $SECRET hint.
 type FieldSpec = { key: string; label: string; secret?: boolean; hint?: string; type?: 'number' }
@@ -52,7 +55,51 @@ const CONFIG_FIELDS: Record<string, FieldSpec[]> = {
     { key: 'url', label: 'URL (generic-http)', secret: true },
   ],
   push: [],
-  voice: [],
+  // voice: Twilio Voice (TTS + DTMF-Ack über /api/v1/voice/gather) oder
+  // generic-http Gateways (SPEC §9.6).
+  voice: [
+    { key: 'provider', label: 'Provider', hint: 'twilio | generic-http' },
+    { key: 'accountSid', label: 'Account SID (twilio)', secret: true },
+    { key: 'authToken', label: 'Auth-Token (twilio)', secret: true },
+    { key: 'from', label: 'Anrufer-Nummer (twilio)' },
+    { key: 'language', label: 'TTS-Sprache', hint: 'z.B. de-DE (Standard en-US)' },
+    { key: 'url', label: 'URL (generic-http)', secret: true },
+  ],
+  // Ticket-Systeme (F-04.05): Ticket bei Eskalation, Auto-Close bei Resolve.
+  servicenow: [
+    { key: 'url', label: 'Instanz-URL', hint: 'https://<instanz>.service-now.com' },
+    { key: 'username', label: 'Benutzername' },
+    { key: 'password', label: 'Passwort', secret: true },
+    { key: 'table', label: 'Tabelle', hint: 'incident (Standard)' },
+    { key: 'closeState', label: 'Close-State', hint: '6 = Resolved (Standard)' },
+    { key: 'autoClose', label: 'Auto-Close (true/false)' },
+  ],
+  zendesk: [
+    { key: 'url', label: 'Subdomain-URL', hint: 'https://<subdomain>.zendesk.com' },
+    { key: 'email', label: 'Agent-E-Mail' },
+    { key: 'apiToken', label: 'API-Token', secret: true },
+    { key: 'closeStatus', label: 'Close-Status', hint: 'solved (Standard)' },
+    { key: 'autoClose', label: 'Auto-Close (true/false)' },
+  ],
+  jira: [
+    { key: 'url', label: 'Jira-URL', hint: 'https://<org>.atlassian.net' },
+    { key: 'project', label: 'Projekt-Key', hint: 'z.B. OPS' },
+    { key: 'issueType', label: 'Issue-Typ', hint: 'Task (Standard)' },
+    { key: 'username', label: 'Benutzer / E-Mail' },
+    { key: 'password', label: 'API-Token', secret: true },
+    { key: 'closeTransitionId', label: 'Close-Transition-ID', hint: 'Workflow-Transition zum Schließen' },
+    { key: 'autoClose', label: 'Auto-Close (true/false)' },
+  ],
+  ticket: [
+    { key: 'url', label: 'Create-URL (POST, JSON)' },
+    { key: 'token', label: 'Bearer-Token', secret: true },
+    { key: 'username', label: 'Basic-Auth Benutzer' },
+    { key: 'password', label: 'Basic-Auth Passwort', secret: true },
+    { key: 'refField', label: 'Ticket-ID-Feld', hint: 'JSON-Pfad, z.B. data.ticketId (Standard: id)' },
+    { key: 'ticketUrlTemplate', label: 'Ticket-URL-Vorlage', hint: 'https://…/{ref}' },
+    { key: 'closeUrl', label: 'Close-URL', hint: '{ref}-Platzhalter' },
+    { key: 'autoClose', label: 'Auto-Close (true/false)' },
+  ],
 }
 
 export function ChannelsTab() {

@@ -66,6 +66,9 @@ type Alert struct {
 	Payload    json.RawMessage `json:"payload"`
 	Labels     Labels          `json:"labels,omitempty"`
 	EventIDs   []string        `json:"eventIds,omitempty"` // triggering events
+	// Ticket links the external ticket created for this alert (F-04.05);
+	// resolution auto-closes it when Ticket.AutoClose is set.
+	Ticket *TicketRef `json:"ticket,omitempty"`
 }
 
 // IncidentStatus tracks the bundled-incident lifecycle.
@@ -159,6 +162,9 @@ type AlertRule struct {
 	EscalationPolicy string   `json:"escalationPolicy,omitempty" yaml:"escalationPolicy,omitempty"`
 	GroupID          string   `json:"groupId,omitempty"          yaml:"groupId,omitempty"`
 	SetLabels        Labels   `json:"setLabels,omitempty"        yaml:"setLabels,omitempty"`
+	// Incident automatically opens an incident for each alert this rule
+	// opens, and resolves it once all of its alerts resolved (F-04.05).
+	Incident bool `json:"incident,omitempty" yaml:"incident,omitempty"`
 
 	Version   int64     `json:"version"`
 	CreatedAt time.Time `json:"createdAt"`
