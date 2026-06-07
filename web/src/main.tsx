@@ -5,6 +5,7 @@ import {
   RouterProvider, createRouter, createRootRoute, createRoute, Outlet,
 } from '@tanstack/react-router'
 import { queryClient } from './api'
+import type { AlertsSearch, ObjectsSearch } from './types'
 import { Layout } from './components/Layout'
 import { OverviewPage } from './pages/Overview'
 import { ProblemsPage } from './pages/Problems'
@@ -26,12 +27,36 @@ const rootRoute = createRootRoute({
   component: () => <Layout><Outlet /></Layout>,
 })
 
+// str narrows an unknown search param to a non-empty string.
+const str = (v: unknown) => (typeof v === 'string' && v !== '' ? v : undefined)
+
 const routes = [
   createRoute({ getParentRoute: () => rootRoute, path: '/', component: OverviewPage }),
   createRoute({ getParentRoute: () => rootRoute, path: '/problems', component: ProblemsPage }),
-  createRoute({ getParentRoute: () => rootRoute, path: '/objects', component: ObjectsPage }),
+  createRoute({
+    getParentRoute: () => rootRoute, path: '/objects', component: ObjectsPage,
+    // Filters live in the URL (linkable views, drill-down targets,
+    // back-button restores state). Keys stay optional so plain links
+    // to /objects need no search object.
+    validateSearch: (s: Record<string, unknown>): ObjectsSearch => {
+      const out: ObjectsSearch = {}
+      const selector = str(s.selector); if (selector) out.selector = selector
+      const q = str(s.q); if (q) out.q = q
+      const state = str(s.state); if (state) out.state = state
+      if (s.kind === 'host' || s.kind === 'service') out.kind = s.kind
+      return out
+    },
+  }),
   createRoute({ getParentRoute: () => rootRoute, path: '/objects/$id', component: ObjectDetailPage }),
-  createRoute({ getParentRoute: () => rootRoute, path: '/alerts', component: AlertsPage }),
+  createRoute({
+    getParentRoute: () => rootRoute, path: '/alerts', component: AlertsPage,
+    validateSearch: (s: Record<string, unknown>): AlertsSearch => {
+      const out: AlertsSearch = {}
+      const status = str(s.status); if (status) out.status = status
+      const severity = str(s.severity); if (severity) out.severity = severity
+      return out
+    },
+  }),
   createRoute({ getParentRoute: () => rootRoute, path: '/incidents', component: IncidentsPage }),
   createRoute({ getParentRoute: () => rootRoute, path: '/events', component: EventsPage }),
   createRoute({ getParentRoute: () => rootRoute, path: '/oncall', component: OnCallPage }),

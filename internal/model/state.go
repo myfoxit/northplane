@@ -135,6 +135,54 @@ func (s Severity) Valid() bool {
 	return false
 }
 
+// NotifyToken maps a hard state onto its ObjectSpec.NotifyOn filter
+// token ("recovery", "warning", "critical", "unknown", "down",
+// "unreachable").
+func NotifyToken(s State, kind Kind) string {
+	if kind == KindHost {
+		switch s {
+		case HostUp:
+			return "recovery"
+		case HostDown:
+			return "down"
+		case HostUnreachable:
+			return "unreachable"
+		default:
+			return "unknown"
+		}
+	}
+	switch s {
+	case StateOK:
+		return "recovery"
+	case StateWarning:
+		return "warning"
+	case StateCritical:
+		return "critical"
+	default:
+		return "unknown"
+	}
+}
+
+// ValidNotifyOn enumerates the accepted NotifyOn tokens (validation).
+var ValidNotifyOn = map[string]bool{
+	"warning": true, "critical": true, "unknown": true,
+	"down": true, "unreachable": true, "recovery": true,
+}
+
+// WantsNotify reports whether the spec's NotifyOn filter includes the
+// token. An empty filter notifies on everything (Nagios default).
+func (s *ObjectSpec) WantsNotify(token string) bool {
+	if len(s.NotifyOn) == 0 {
+		return true
+	}
+	for _, t := range s.NotifyOn {
+		if t == token {
+			return true
+		}
+	}
+	return false
+}
+
 // AlertStatus is the alert lifecycle (SPEC §6.5).
 type AlertStatus string
 

@@ -45,10 +45,11 @@ function splitRef(ref?: string): { kind: string; rest: string } {
   if (ref.startsWith('agent:exec:')) return { kind: 'agent:exec', rest: ref.slice('agent:exec:'.length) }
   if (ref.startsWith('agent:')) return { kind: 'agent:exec', rest: ref.slice('agent:'.length) }
   if (ref.startsWith('exec:')) return { kind: 'exec', rest: ref.slice('exec:'.length) }
-  return { kind: 'exec', rest: ref } // bare name → named command (importer)
+  return { kind: 'command', rest: ref } // bare name → named CheckCommand
 }
 function joinRef(kind: string, rest: string): string {
   if (kind === 'passive') return 'passive'
+  if (kind === 'command') return rest // bare name = named CheckCommand lookup
   return `${kind}:${rest}`
 }
 
@@ -73,26 +74,29 @@ export function useResourceNames(base: string, queryKey: string[]) {
 
 function CheckCommandField({ spec, patch }: { spec: ObjectSpec; patch: (p: Partial<ObjectSpec>) => void }) {
   const { data: builtins } = useBuiltins()
+  const commands = useResourceNames('check-commands', ['resources', 'check-commands', 'names'])
   const { kind, rest } = splitRef(spec.checkCommand)
+  const listId = kind === 'builtin' ? 'sugg-builtins' : kind === 'command' ? 'sugg-commands' : undefined
   return (
     <div className="grid grid-cols-[10rem_1fr] gap-2">
       <Field label={t('checkCommand')}>
         <Select value={kind} onChange={(e) => patch({ checkCommand: joinRef(e.target.value, rest) })}>
           <option value="builtin">builtin</option>
+          <option value="command">Kommando (definiert)</option>
           <option value="exec">exec</option>
           <option value="agent:exec">agent:exec</option>
           <option value="passive">passive</option>
         </Select>
       </Field>
-      <Field label={kind === 'builtin' ? 'Builtin-Check' : kind === 'passive' ? '—' : 'Kommando / Plugin'}>
+      <Field label={kind === 'builtin' ? 'Builtin-Check' : kind === 'command' ? 'Check-Kommando' : kind === 'passive' ? '—' : 'Kommando / Plugin'}>
         {kind === 'passive' ? (
           <Input value="passive" disabled />
         ) : (
           <>
             <Input
               value={rest}
-              list={kind === 'builtin' ? 'sugg-builtins' : undefined}
-              placeholder={kind === 'builtin' ? 'icmp' : 'check_postgres'}
+              list={listId}
+              placeholder={kind === 'builtin' ? 'icmp' : kind === 'command' ? 'check_disk_all' : 'check_postgres'}
               onChange={(e) => patch({ checkCommand: joinRef(kind, e.target.value) })}
             />
             {kind === 'builtin' && (
@@ -100,9 +104,51 @@ function CheckCommandField({ spec, patch }: { spec: ObjectSpec; patch: (p: Parti
                 {(builtins ?? []).map((b) => <option key={b} value={b} />)}
               </datalist>
             )}
+            {kind === 'command' && (
+              <datalist id="sugg-commands">
+                {(commands.data ?? []).map((c) => <option key={c} value={c} />)}
+              </datalist>
+            )}
           </>
         )}
       </Field>
+    </div>
+  )
+}
+
+// ——— notifyOn state chips ———————————————————————————————————————
+// Which hard transitions notify (empty = all problems + recovery).
+const NOTIFY_TOKENS: Record<'host' | 'service' | '', string[]> = {
+  host: ['down', 'unreachable', 'recovery'],
+  service: ['warning', 'critical', 'unknown', 'recovery'],
+  '': ['warning', 'critical', 'unknown', 'down', 'unreachable', 'recovery'],
+}
+
+function NotifyOnChips({ kind, value, onChange }: {
+  kind: 'host' | 'service' | ''
+  value: string[] | undefined
+  onChange: (v: string[] | undefined) => void
+}) {
+  const active = (tok: string) => (value ?? []).includes(tok)
+  const toggle = (tok: string) => {
+    const cur = value ?? []
+    const next = active(tok) ? cur.filter((x) => x !== tok) : [...cur, tok]
+    onChange(next.length ? next : undefined)
+  }
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {NOTIFY_TOKENS[kind].map((tok) => (
+        <button
+          key={tok} type="button" onClick={() => toggle(tok)}
+          className={`px-2 py-0.5 rounded-full text-xs border transition-colors ${
+            active(tok)
+              ? 'bg-blue-500/20 border-blue-500/60 text-blue-300'
+              : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'
+          }`}
+        >
+          {tok}
+        </button>
+      ))}
     </div>
   )
 }
@@ -119,6 +165,8 @@ export function SpecFields({ spec, onChange, kind, hideCommand }: {
   const patch = (p: Partial<ObjectSpec>) => onChange({ ...spec, ...p })
   const templates = useResourceNames('templates', ['resources', 'templates', 'names'])
   const periods = useResourceNames('time-periods', ['resources', 'time-periods', 'names'])
+  const contactGroups = useResourceNames('contact-groups', ['resources', 'contact-groups', 'names'])
+  const contacts = useResourceNames('contacts', ['resources', 'contacts', 'names'])
   const hosts = useQuery({
     queryKey: ['objects', 'host-names'],
     queryFn: () => get<{ items: { name: string }[] | null }>('/hosts?limit=2000&withState=false')
@@ -180,7 +228,30 @@ export function SpecFields({ spec, onChange, kind, hideCommand }: {
               {(periods.data ?? []).map((p) => <option key={p} value={p} />)}
             </datalist>
           </Field>
-          <Field label="Benachrichtigungszeitraum">
+        </div>
+      </div>
+
+      {/* NOTIFICATION ROUTING — Nagios contact_groups parity: the
+          referenced groups/contacts are notified directly on hard state
+          changes; notifyOn filters the transitions, the period gates the
+          time window. */}
+      <div className="border border-slate-800 rounded-lg p-3 space-y-3">
+        <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{t('notifications')}</div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <Field label="Kontaktgruppen" hint="Direkt benachrichtigt bei harten Statuswechseln">
+            <ListEditor value={spec.contactGroups ?? []} onChange={(v) => patch({ contactGroups: v })}
+              placeholder="ops" suggestions={contactGroups.data ?? []} />
+          </Field>
+          <Field label="Kontakte" hint="Zusätzliche Einzelkontakte">
+            <ListEditor value={spec.contacts ?? []} onChange={(v) => patch({ contacts: v })}
+              placeholder="alice" suggestions={contacts.data ?? []} />
+          </Field>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <Field label="Benachrichtigen bei" hint="Leer = alle Problemzustände + Recovery">
+            <NotifyOnChips kind={kind} value={spec.notifyOn} onChange={(v) => patch({ notifyOn: v })} />
+          </Field>
+          <Field label="Benachrichtigungszeitraum" hint="Zeitfenster (Time-Period), leer = immer">
             <Input value={spec.notificationPeriod ?? ''} list="sugg-periods" placeholder="24x7"
               onChange={(e) => patch({ notificationPeriod: e.target.value })} />
           </Field>

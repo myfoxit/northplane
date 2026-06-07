@@ -85,6 +85,61 @@ type ChannelPreference struct {
 	Severity Severity      `json:"severity,omitempty"` // minimum severity, empty = all
 }
 
+// PreferredChannels picks a contact's channels for the active time
+// profile (F-04.08), filtered by minimum severity. Named periods are
+// resolved through lookup (stored TimePeriods win); the built-in
+// profiles "worktime"/"arbeitszeit" (Mo–Fr 08:00–18:00 local) and
+// "night"/"nacht" (inverse) apply when no stored period exists.
+// A preference without a period is the fallback when no period matches.
+func PreferredChannels(c *Contact, sev Severity, now time.Time,
+	lookup func(name string) *TimePeriod) []ChannelType {
+	loc := time.UTC
+	if c.TimeZone != "" {
+		if l, err := time.LoadLocation(c.TimeZone); err == nil {
+			loc = l
+		}
+	}
+	local := now.In(loc)
+	var fallback []ChannelType
+	for _, pref := range c.Preferences {
+		if pref.Severity != "" && sev.Rank() < pref.Severity.Rank() {
+			continue
+		}
+		if pref.Period == "" {
+			if fallback == nil {
+				fallback = pref.Channels
+			}
+			continue
+		}
+		if lookup != nil {
+			if tp := lookup(pref.Period); tp != nil {
+				if tp.Contains(local) {
+					return pref.Channels
+				}
+				continue
+			}
+		}
+		if matchBuiltinProfile(pref.Period, local) {
+			return pref.Channels
+		}
+	}
+	return fallback
+}
+
+// matchBuiltinProfile implements the two well-known time profiles.
+func matchBuiltinProfile(period string, t time.Time) bool {
+	hour := t.Hour()
+	isWeekday := t.Weekday() >= time.Monday && t.Weekday() <= time.Friday
+	switch period {
+	case "worktime", "arbeitszeit":
+		return isWeekday && hour >= 8 && hour < 18
+	case "night", "nacht":
+		return !isWeekday || hour < 8 || hour >= 18
+	default:
+		return false
+	}
+}
+
 // ContactGroup groups contacts; may mirror an IdP group (SPEC §6.1).
 type ContactGroup struct {
 	ID        string    `json:"id"`

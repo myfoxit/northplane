@@ -1,6 +1,6 @@
 // Event log (SPEC §12.3 / F-05.01): searchable, filterable, NDJSON export.
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { get, fmtTime, type ListResponse } from '../api'
 import type { NPEvent } from '../types'
 import { sevColor } from '../types'
@@ -17,6 +17,7 @@ export function EventsPage() {
     queryKey: ['events', type, objectId],
     queryFn: () => get<ListResponse<NPEvent>>(
       `/events?types=${type}&objectId=${encodeURIComponent(objectId)}&limit=200`),
+    placeholderData: keepPreviousData, // filter changes render instantly
   })
   const rows = data?.items ?? []
   return (

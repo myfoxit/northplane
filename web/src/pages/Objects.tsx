@@ -3,33 +3,84 @@
 // metric charts with threshold bands, event timeline.
 // CMP "Monitoring Admin" + "Wizard" parity: create / edit / delete hosts
 // and services (incl. check-interval management) and the batch importer.
-import { useRef, useState } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
-import { Link, useParams, useNavigate } from '@tanstack/react-router'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { keepPreviousData, useQuery, useMutation } from '@tanstack/react-query'
+import { Link, useParams, useNavigate, useSearch } from '@tanstack/react-router'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { get, post, del, fmtTime, fmtAgo, queryClient, type ListResponse } from '../api'
-import type { NPObject, NPEvent, SeriesResult, ObjectSpec } from '../types'
+import type { NPObject, NPEvent, SeriesResult, ObjectSpec, ObjectsSearch } from '../types'
 import { stateLabel, stateIcon, stateColor } from '../types'
 import { Button, Card, Input, Empty, LabelChips, Badge } from '../components/ui'
+import { Select } from '../components/forms'
 import { Chart } from '../components/Chart'
 import { DowntimeDialog } from '../components/AckDialog'
 import { ObjectFormDialog, BatchAddDialog } from '../components/objects/ObjectForm'
 import { t } from '../i18n'
 
+// State filter options (URL token → label). Tokens match
+// stateLabel(kind, n).toLowerCase() so one filter serves both kinds.
+const STATE_FILTERS: [string, string][] = [
+  ['', 'Alle Status'],
+  ['problem', 'Probleme'],
+  ['ok', 'OK'],
+  ['up', 'Up'],
+  ['warning', 'Warning'],
+  ['critical', 'Critical'],
+  ['unknown', 'Unknown'],
+  ['down', 'Down'],
+  ['unreachable', 'Unreachable'],
+  ['pending', 'Pending'],
+]
+
 export function ObjectsPage() {
-  const [selector, setSelector] = useState('')
-  const [query, setQuery] = useState('')
+  // Filters live in the URL: dashboard drill-downs link here and the
+  // back button restores the previous view.
+  const search = useSearch({ strict: false }) as ObjectsSearch
+  const navigate = useNavigate()
+  const [selector, setSelector] = useState(search.selector ?? '')
+  const [query, setQuery] = useState(search.q ?? '')
+  const stateFilter = search.state ?? ''
+  const kindFilter = search.kind ?? ''
   const parentRef = useRef<HTMLDivElement>(null)
   const [create, setCreate] = useState<'host' | 'service' | null>(null)
   const [edit, setEdit] = useState<NPObject | null>(null)
   const [batch, setBatch] = useState(false)
 
+  const patchSearch = (patch: Partial<ObjectsSearch>) =>
+    navigate({
+      to: '/objects',
+      search: (prev) => ({ ...prev, ...patch }),
+      replace: true,
+    })
+
+  // Debounced URL sync for the text inputs (typing stays local-state fast).
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      if ((search.selector ?? '') !== selector || (search.q ?? '') !== query) {
+        patchSearch({ selector: selector || undefined, q: query || undefined })
+      }
+    }, 250)
+    return () => window.clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selector, query])
+
   const { data, isLoading } = useQuery({
     queryKey: ['objects', selector, query],
     queryFn: () => get<ListResponse<NPObject>>(
       `/objects?selector=${encodeURIComponent(selector)}&q=${encodeURIComponent(query)}&limit=2000`),
+    placeholderData: keepPreviousData, // navigation shows the last list instantly
   })
-  const rows = data?.items ?? []
+  const all = useMemo(() => data?.items ?? [], [data])
+  // State/kind filtering happens client-side over the loaded window —
+  // instant, no extra round-trip.
+  const rows = useMemo(() => all.filter((o) => {
+    if (kindFilter && o.kind !== kindFilter) return false
+    if (!stateFilter) return true
+    if (stateFilter === 'pending') return !o.state?.lastCheck
+    if (!o.state?.lastCheck) return false
+    if (stateFilter === 'problem') return o.state.state !== 0
+    return stateLabel(o.kind, o.state.state).toLowerCase() === stateFilter
+  }), [all, kindFilter, stateFilter])
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
@@ -55,9 +106,24 @@ export function ObjectsPage() {
           <Button variant="ghost" onClick={() => setBatch(true)}>{t('batchAdd')}</Button>
         </div>
       </div>
-      <div className="flex gap-2">
+      <div className="flex gap-2 flex-wrap">
         <Input placeholder={t('filter')} value={selector} onChange={(e) => setSelector(e.target.value)} className="max-w-xs" />
         <Input placeholder="Volltext…" value={query} onChange={(e) => setQuery(e.target.value)} className="max-w-xs" />
+        <Select value={kindFilter} className="w-36"
+          onChange={(e) => patchSearch({ kind: (e.target.value || undefined) as ObjectsSearch['kind'] })}>
+          <option value="">Hosts + Services</option>
+          <option value="host">Hosts</option>
+          <option value="service">Services</option>
+        </Select>
+        <Select value={stateFilter} className="w-36"
+          onChange={(e) => patchSearch({ state: e.target.value || undefined })}>
+          {STATE_FILTERS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+        </Select>
+        {(stateFilter || kindFilter) && (
+          <Button variant="ghost" onClick={() => patchSearch({ state: undefined, kind: undefined })}>
+            ✕ Filter zurücksetzen
+          </Button>
+        )}
       </div>
       {isLoading && <Empty text={t('loading')} />}
       <div ref={parentRef} className="flex-1 overflow-auto border border-slate-800 rounded-xl bg-slate-900/40 min-h-[420px]">

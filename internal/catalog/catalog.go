@@ -169,7 +169,20 @@ func (c *Catalog) loadTenantLocked(ctx context.Context, tenantID string) error {
 		}
 	}
 
-	// link services ↔ hosts and parent graph
+	c.relinkTenantLocked(tenantID)
+	return nil
+}
+
+// relinkTenantLocked rebuilds the service↔host and parent-graph edges
+// of a tenant from the in-memory entries (no SQL — O(n) map pass).
+func (c *Catalog) relinkTenantLocked(tenantID string) {
+	for id, e := range c.entries {
+		if e.Object.TenantID != tenantID {
+			continue
+		}
+		delete(c.children, id)
+		delete(c.parents, id)
+	}
 	for _, e := range c.entries {
 		if e.Object.TenantID != tenantID {
 			continue
@@ -186,7 +199,53 @@ func (c *Catalog) loadTenantLocked(ctx context.Context, tenantID string) error {
 			}
 		}
 	}
-	return nil
+}
+
+// UpsertObject (re)indexes a single object after a create/update —
+// the incremental alternative to ReloadTenant so a save does not pay
+// for a full tenant reload (SPEC §11.2 write latency). Edges are
+// relinked in memory; templates/commands/periods stay as cached.
+func (c *Catalog) UpsertObject(o *model.Object) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if old, ok := c.entries[o.ID]; ok {
+		delete(c.byName, nameKey(old.Object.TenantID, old.Object.Kind,
+			old.Object.HostID, old.Object.Name))
+	}
+	err := c.indexLocked(o)
+	if err != nil {
+		// Config errors must not lose the entry — index with defaults so
+		// the object surfaces in the UI (same policy as loadTenantLocked).
+		e := &Entry{Object: o, Effective: model.SpecDefaults}
+		c.entries[o.ID] = e
+		c.byName[nameKey(o.TenantID, o.Kind, o.HostID, o.Name)] = o.ID
+	}
+	c.relinkTenantLocked(o.TenantID)
+	return err
+}
+
+// RemoveObject drops an object and its service children from the cache
+// and returns the removed ids (callers descheduled them).
+func (c *Catalog) RemoveObject(tenantID, id string) []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	removed := []string{}
+	drop := func(oid string) {
+		if e, ok := c.entries[oid]; ok {
+			delete(c.byName, nameKey(e.Object.TenantID, e.Object.Kind,
+				e.Object.HostID, e.Object.Name))
+			delete(c.entries, oid)
+			removed = append(removed, oid)
+		}
+		delete(c.children, oid)
+		delete(c.parents, oid)
+	}
+	for _, child := range c.children[id] {
+		drop(child)
+	}
+	drop(id)
+	c.relinkTenantLocked(tenantID)
+	return removed
 }
 
 func nameKey(tenant string, kind model.Kind, hostID, name string) string {

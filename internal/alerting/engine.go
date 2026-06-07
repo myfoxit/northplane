@@ -143,6 +143,11 @@ func (en *Engine) handleEvent(ctx context.Context, e *model.Event) {
 		en.mu.Unlock()
 	}
 
+	// Direct object routing (Nagios contact_groups semantics): hard
+	// state changes notify the object's contacts/contactGroups without
+	// requiring an alert rule.
+	en.notifyObjectContacts(ctx, e)
+
 	view := EventView(e)
 	en.mu.RLock()
 	rules := en.rules[e.TenantID]

@@ -434,16 +434,22 @@ func remoteHost(r *http.Request) string {
 	return host
 }
 
-// configEvent notifies live subsystems about config changes and emits a
-// config event (catalog reload + scheduler upsert happen here so every
-// mutating handler stays small).
+// configChanged notifies live subsystems about config changes and emits
+// a config event. The expensive full-tenant catalog reload + reschedule
+// only runs for kinds the catalog actually caches (templates, commands,
+// time periods — they fan out into many effective specs) or when no
+// kind is given (bulk object paths). Saving a contact, dashboard,
+// channel or rule must NOT pay for a tenant-wide reload (write latency
+// — SPEC §11.2); single-object mutations use objectChanged instead.
 func (a *API) configChanged(ctx context.Context, tenantID string, kinds ...string) {
-	if err := a.Catalog.ReloadTenant(ctx, tenantID); err != nil {
-		a.Log.Error("api: catalog reload", "err", err)
-	}
-	for _, e := range a.Catalog.All() {
-		if e.Object.TenantID == tenantID {
-			a.Sched.Upsert(e)
+	if catalogAffecting(kinds) {
+		if err := a.Catalog.ReloadTenant(ctx, tenantID); err != nil {
+			a.Log.Error("api: catalog reload", "err", err)
+		}
+		for _, e := range a.Catalog.All() {
+			if e.Object.TenantID == tenantID {
+				a.Sched.Upsert(e)
+			}
 		}
 	}
 	for _, k := range kinds {
@@ -451,6 +457,48 @@ func (a *API) configChanged(ctx context.Context, tenantID string, kinds ...strin
 			_ = a.Alert.ReloadRules(ctx, tenantID)
 		}
 	}
+	a.emitConfigEvent(ctx, tenantID, kinds)
+}
+
+// catalogAffecting reports whether a change to these kinds invalidates
+// cached effective specs. No kinds = object bulk path = yes. The
+// pseudo-kind "object" marks bulk object mutations (bundles, batch).
+func catalogAffecting(kinds []string) bool {
+	if len(kinds) == 0 {
+		return true
+	}
+	for _, k := range kinds {
+		switch k {
+		case storage.KindTemplate, storage.KindCheckCommand, storage.KindTimePeriod, "object":
+			return true
+		}
+	}
+	return false
+}
+
+// objectChanged incrementally refreshes catalog + scheduler for one
+// object mutation — O(1) instead of a full tenant reload per save.
+func (a *API) objectChanged(ctx context.Context, obj *model.Object) {
+	if err := a.Catalog.UpsertObject(obj); err != nil {
+		a.Log.Warn("api: object reindex", "object", obj.Name, "err", err)
+	}
+	if e := a.Catalog.Get(obj.ID); e != nil {
+		a.Sched.Upsert(e)
+	}
+	a.emitConfigEvent(ctx, obj.TenantID, []string{"object"})
+}
+
+// objectRemoved drops the object (and cascaded service children) from
+// catalog, scheduler and pipeline working set.
+func (a *API) objectRemoved(ctx context.Context, obj *model.Object) {
+	for _, id := range a.Catalog.RemoveObject(obj.TenantID, obj.ID) {
+		a.Sched.Remove(id)
+		a.Pipe.Forget(id)
+	}
+	a.emitConfigEvent(ctx, obj.TenantID, []string{"object"})
+}
+
+func (a *API) emitConfigEvent(ctx context.Context, tenantID string, kinds []string) {
 	raw, _ := json.Marshal(map[string]any{"kinds": kinds})
 	ev := &model.Event{ID: model.NewID(), TenantID: tenantID, TS: time.Now().UTC(),
 		Type: model.EventConfig, Severity: model.SevInfo, Payload: raw}
