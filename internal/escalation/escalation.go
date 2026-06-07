@@ -192,7 +192,8 @@ func (e *Engine) notifyStep(ctx context.Context, alert *model.Alert,
 	for _, contact := range contacts {
 		channels := step.Channels
 		if len(channels) == 0 {
-			channels = preferredChannels(contact, alert.Severity, time.Now())
+			channels = model.PreferredChannels(contact, alert.Severity, time.Now(),
+				e.periodLookup(ctx, alert.TenantID))
 		}
 		if len(channels) == 0 {
 			channels = []model.ChannelType{model.ChannelEmail}
@@ -302,45 +303,16 @@ func (e *Engine) contactByRef(ctx context.Context, tenantID, ref string) (*model
 	return storage.LoadOne[model.Contact](ctx, e.store, tenantID, storage.KindContact, ref)
 }
 
-// preferredChannels picks the contact's channels for the active time
-// profile (F-04.08), filtered by minimum severity.
-func preferredChannels(c *model.Contact, sev model.Severity, now time.Time) []model.ChannelType {
-	loc := time.UTC
-	if c.TimeZone != "" {
-		if l, err := time.LoadLocation(c.TimeZone); err == nil {
-			loc = l
+// periodLookup resolves named TimePeriods of a tenant from storage so
+// contact preferences can reference user-defined periods (F-04.08) —
+// stored periods win over the built-in worktime/night profiles.
+func (e *Engine) periodLookup(ctx context.Context, tenantID string) func(name string) *model.TimePeriod {
+	return func(name string) *model.TimePeriod {
+		tp, err := storage.LoadOne[model.TimePeriod](ctx, e.store, tenantID,
+			storage.KindTimePeriod, name)
+		if err != nil {
+			return nil
 		}
-	}
-	local := now.In(loc)
-	var fallback []model.ChannelType
-	for _, pref := range c.Preferences {
-		if pref.Severity != "" && sev.Rank() < pref.Severity.Rank() {
-			continue
-		}
-		if pref.Period == "" {
-			fallback = pref.Channels
-			continue
-		}
-		tp := model.TimePeriod{Days: map[string][]string{}}
-		_ = tp
-		// Named-period preferences resolve through simple built-ins:
-		// "worktime" = Mo–Fr 08:00–18:00, "night" = inverse.
-		if matchProfile(pref.Period, local) {
-			return pref.Channels
-		}
-	}
-	return fallback
-}
-
-func matchProfile(period string, t time.Time) bool {
-	hour := t.Hour()
-	isWeekday := t.Weekday() >= time.Monday && t.Weekday() <= time.Friday
-	switch period {
-	case "worktime", "arbeitszeit":
-		return isWeekday && hour >= 8 && hour < 18
-	case "night", "nacht":
-		return !isWeekday || hour < 8 || hour >= 18
-	default:
-		return false
+		return tp
 	}
 }

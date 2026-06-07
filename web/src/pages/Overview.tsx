@@ -5,7 +5,8 @@ import { Link, useSearch } from '@tanstack/react-router'
 import { get, fmtAgo } from '../api'
 import type { Overview as OverviewData, OnCallNow, ProblemRow } from '../types'
 import { stateLabel, stateIcon, stateColor, sevColor } from '../types'
-import { Card, Tile, Badge, Empty } from '../components/ui'
+import { Card, Badge, Empty } from '../components/ui'
+import { TileLink } from '../components/dash/widgets'
 import { t } from '../i18n'
 
 export function OverviewPage() {
@@ -32,12 +33,12 @@ export function OverviewPage() {
 
   const tiles = (
     <div className={`grid gap-3 ${wallboard ? 'grid-cols-3 lg:grid-cols-6' : 'grid-cols-2 lg:grid-cols-6'}`}>
-      <Tile label={t('hostsUp')} value={s?.hostsUp ?? '—'} tone="ok" />
-      <Tile label={t('hostsDown')} value={s?.hostsDown ?? '—'} tone={s?.hostsDown ? 'crit' : 'default'} />
-      <Tile label={t('servicesOk')} value={s?.servicesOk ?? '—'} tone="ok" />
-      <Tile label={t('servicesWarning')} value={s?.servicesWarning ?? '—'} tone={s?.servicesWarning ? 'warn' : 'default'} />
-      <Tile label={t('servicesCritical')} value={s?.servicesCritical ?? '—'} tone={s?.servicesCritical ? 'crit' : 'default'} />
-      <Tile label={t('openAlerts')} value={`${critAlerts + warnAlerts}`} tone={critAlerts ? 'crit' : warnAlerts ? 'warn' : 'default'} />
+      <TileLink to="/objects" search={{ kind: 'host', state: 'up' }} label={t('hostsUp')} value={s?.hostsUp ?? '—'} tone="ok" />
+      <TileLink to="/objects" search={{ kind: 'host', state: 'down' }} label={t('hostsDown')} value={s?.hostsDown ?? '—'} tone={s?.hostsDown ? 'crit' : 'default'} />
+      <TileLink to="/objects" search={{ kind: 'service', state: 'ok' }} label={t('servicesOk')} value={s?.servicesOk ?? '—'} tone="ok" />
+      <TileLink to="/objects" search={{ kind: 'service', state: 'warning' }} label={t('servicesWarning')} value={s?.servicesWarning ?? '—'} tone={s?.servicesWarning ? 'warn' : 'default'} />
+      <TileLink to="/objects" search={{ kind: 'service', state: 'critical' }} label={t('servicesCritical')} value={s?.servicesCritical ?? '—'} tone={s?.servicesCritical ? 'crit' : 'default'} />
+      <TileLink to="/alerts" label={t('openAlerts')} value={`${critAlerts + warnAlerts}`} tone={critAlerts ? 'crit' : warnAlerts ? 'warn' : 'default'} />
     </div>
   )
 

@@ -3,13 +3,14 @@
 // independently (wallboard-friendly: refetchInterval 30s). The grid
 // placement + edit chrome live in Dashboards.tsx; this file is the
 // read-only "what a widget shows" layer.
+import type { ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { get, post, fmtAgo, type ListResponse } from '../../api'
 import type {
-  Overview, ProblemRow, Alert, SeriesResult, DashboardWidget,
+  Overview, ProblemRow, Alert, SeriesResult, DashboardWidget, NPObject, ObjectsSearch,
 } from '../../types'
-import { stateIcon, stateColor, sevColor } from '../../types'
+import { stateIcon, stateColor, stateLabel, sevColor } from '../../types'
 import { Tile, Badge, Empty, Spinner } from '../ui'
 import { Chart } from '../Chart'
 import { t } from '../../i18n'
@@ -43,7 +44,22 @@ export function rangeFrom(range?: string): string {
   return new Date(now - ms).toISOString()
 }
 
-// CountersWidget: KPI tiles from /overview.
+// TileLink: a KPI tile that drills down into the matching filtered list
+// — every dashboard number is clickable (SPEC §12.3 drill-down).
+export function TileLink({ to, search, label, value, tone }: {
+  to: '/objects' | '/alerts'
+  search?: ObjectsSearch
+  label: string; value: ReactNode; tone?: 'default' | 'ok' | 'warn' | 'crit'
+}) {
+  return (
+    <Link to={to} search={search ?? {}} className="block hover:opacity-80 transition-opacity">
+      <Tile label={label} value={value} tone={tone} />
+    </Link>
+  )
+}
+
+// CountersWidget: KPI tiles from /overview — each tile links to the
+// filtered objects/alerts list.
 function CountersWidget() {
   const { data } = useQuery({
     queryKey: ['overview'],
@@ -55,12 +71,12 @@ function CountersWidget() {
   const warnAlerts = data?.openAlerts?.warning ?? 0
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-      <Tile label={t('hostsUp')} value={s?.hostsUp ?? '—'} tone="ok" />
-      <Tile label={t('hostsDown')} value={s?.hostsDown ?? '—'} tone={s?.hostsDown ? 'crit' : 'default'} />
-      <Tile label={t('servicesOk')} value={s?.servicesOk ?? '—'} tone="ok" />
-      <Tile label={t('servicesWarning')} value={s?.servicesWarning ?? '—'} tone={s?.servicesWarning ? 'warn' : 'default'} />
-      <Tile label={t('servicesCritical')} value={s?.servicesCritical ?? '—'} tone={s?.servicesCritical ? 'crit' : 'default'} />
-      <Tile label={t('openAlerts')} value={`${critAlerts + warnAlerts}`} tone={critAlerts ? 'crit' : warnAlerts ? 'warn' : 'default'} />
+      <TileLink to="/objects" search={{ kind: 'host', state: 'up' }} label={t('hostsUp')} value={s?.hostsUp ?? '—'} tone="ok" />
+      <TileLink to="/objects" search={{ kind: 'host', state: 'down' }} label={t('hostsDown')} value={s?.hostsDown ?? '—'} tone={s?.hostsDown ? 'crit' : 'default'} />
+      <TileLink to="/objects" search={{ kind: 'service', state: 'ok' }} label={t('servicesOk')} value={s?.servicesOk ?? '—'} tone="ok" />
+      <TileLink to="/objects" search={{ kind: 'service', state: 'warning' }} label={t('servicesWarning')} value={s?.servicesWarning ?? '—'} tone={s?.servicesWarning ? 'warn' : 'default'} />
+      <TileLink to="/objects" search={{ kind: 'service', state: 'critical' }} label={t('servicesCritical')} value={s?.servicesCritical ?? '—'} tone={s?.servicesCritical ? 'crit' : 'default'} />
+      <TileLink to="/alerts" label={t('openAlerts')} value={`${critAlerts + warnAlerts}`} tone={critAlerts ? 'crit' : warnAlerts ? 'warn' : 'default'} />
     </div>
   )
 }
@@ -297,6 +313,7 @@ function GaugeWidget({ widget }: { widget: DashboardWidget }) {
 }
 
 // DonutWidget: state distribution (services or hosts) as an SVG donut.
+// Legend rows (and slices) drill down into the filtered objects list.
 function DonutWidget({ widget }: { widget: DashboardWidget }) {
   const { data, isLoading } = useQuery({
     queryKey: ['overview'],
@@ -306,17 +323,18 @@ function DonutWidget({ widget }: { widget: DashboardWidget }) {
   if (isLoading) return <Spinner />
   const s = data?.summary
   if (!s) return <Empty text="keine Daten" />
+  const kind = widget.scope === 'hosts' ? 'host' : 'service'
   const segs = widget.scope === 'hosts'
     ? [
-      { label: 'Up', value: s.hostsUp, color: '#34d399' },
-      { label: 'Down', value: s.hostsDown, color: '#f87171' },
-      { label: 'Unreachable', value: s.hostsUnreachable, color: '#a78bfa' },
+      { label: 'Up', state: 'up', value: s.hostsUp, color: '#34d399' },
+      { label: 'Down', state: 'down', value: s.hostsDown, color: '#f87171' },
+      { label: 'Unreachable', state: 'unreachable', value: s.hostsUnreachable, color: '#a78bfa' },
     ]
     : [
-      { label: 'OK', value: s.servicesOk, color: '#34d399' },
-      { label: 'Warning', value: s.servicesWarning, color: '#fbbf24' },
-      { label: 'Critical', value: s.servicesCritical, color: '#f87171' },
-      { label: 'Unknown', value: s.servicesUnknown, color: '#94a3b8' },
+      { label: 'OK', state: 'ok', value: s.servicesOk, color: '#34d399' },
+      { label: 'Warning', state: 'warning', value: s.servicesWarning, color: '#fbbf24' },
+      { label: 'Critical', state: 'critical', value: s.servicesCritical, color: '#f87171' },
+      { label: 'Unknown', state: 'unknown', value: s.servicesUnknown, color: '#94a3b8' },
     ]
   const total = segs.reduce((n, x) => n + x.value, 0)
   if (total === 0) return <Empty text="keine Daten" />
@@ -328,9 +346,11 @@ function DonutWidget({ widget }: { widget: DashboardWidget }) {
         {segs.filter((x) => x.value > 0).map((x) => {
           const len = (x.value / total) * C
           const el = (
-            <circle key={x.label} cx="50" cy="50" r={R} fill="none" stroke={x.color}
-              strokeWidth="12" strokeDasharray={`${len} ${C - len}`}
-              strokeDashoffset={-offset} />
+            <Link key={x.label} to="/objects" search={{ kind, state: x.state }}>
+              <circle cx="50" cy="50" r={R} fill="none" stroke={x.color}
+                strokeWidth="12" strokeDasharray={`${len} ${C - len}`}
+                strokeDashoffset={-offset} className="cursor-pointer" />
+            </Link>
           )
           offset += len
           return el
@@ -342,15 +362,70 @@ function DonutWidget({ widget }: { widget: DashboardWidget }) {
       </svg>
       <div className="space-y-1">
         {segs.map((x) => (
-          <div key={x.label} className="flex items-center gap-2 text-xs">
+          <Link key={x.label} to="/objects" search={{ kind, state: x.state }}
+            className="flex items-center gap-2 text-xs hover:bg-slate-800/60 rounded px-1 -mx-1">
             <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: x.color }} />
             <span className="text-slate-400 w-24">{x.label}</span>
             <span className="text-slate-200 tabular-nums font-semibold">{x.value}</span>
             <span className="text-slate-600 tabular-nums">{total ? Math.round((x.value / total) * 100) : 0}%</span>
-          </div>
+          </Link>
         ))}
       </div>
     </div>
+  )
+}
+
+// TableWidget: a live host/service table on the dashboard — state,
+// name, output, last check; rows drill down to the object detail.
+function TableWidget({ widget }: { widget: DashboardWidget }) {
+  const limit = widget.limit ?? 15
+  const path = widget.scope === 'hosts' ? '/hosts' : widget.scope === 'services' ? '/services' : '/objects'
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (widget.selector) params.set('selector', widget.selector)
+  if (widget.query) params.set('q', widget.query)
+  const { data, isLoading } = useQuery({
+    queryKey: ['objects', 'table-widget', widget.scope, widget.selector, widget.query, limit],
+    queryFn: () => get<ListResponse<NPObject>>(`${path}?${params.toString()}`),
+    refetchInterval: REFRESH,
+  })
+  const rows = data?.items ?? []
+  if (isLoading) return <Spinner />
+  if (rows.length === 0) return <Empty text={t('empty')} />
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="text-left text-xs text-slate-500 uppercase tracking-wider">
+          <th className="font-medium pb-1.5 pr-2">{t('state')}</th>
+          <th className="font-medium pb-1.5 pr-2">{t('name')}</th>
+          <th className="font-medium pb-1.5 pr-2">{t('output')}</th>
+          <th className="font-medium pb-1.5 text-right">Check</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-slate-800/60">
+        {rows.map((o) => (
+          <tr key={o.id} className="hover:bg-slate-900/60 group">
+            <td className="py-1.5 pr-2 whitespace-nowrap">
+              <Link to="/objects/$id" params={{ id: o.id }}
+                className={`font-semibold ${o.state?.lastCheck ? stateColor(o.kind, o.state.state) : 'text-slate-500'}`}>
+                {o.state?.lastCheck
+                  ? `${stateIcon(o.kind, o.state.state)} ${stateLabel(o.kind, o.state.state)}`
+                  : `○ ${t('pending')}`}
+              </Link>
+            </td>
+            <td className="py-1.5 pr-2 max-w-[16rem]">
+              <Link to="/objects/$id" params={{ id: o.id }}
+                className="text-slate-200 font-medium truncate block group-hover:text-blue-300">
+                {o.kind === 'service' && o.hostName ? `${o.hostName} / ` : ''}{o.name}
+              </Link>
+            </td>
+            <td className="py-1.5 pr-2 text-slate-500 truncate max-w-[20rem]">{o.state?.output}</td>
+            <td className="py-1.5 text-slate-600 text-xs tabular-nums text-right whitespace-nowrap">
+              {fmtAgo(o.state?.lastCheck)}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   )
 }
 
@@ -422,6 +497,7 @@ export function WidgetBody({ widget }: { widget: DashboardWidget }) {
     case 'gauge': return <GaugeWidget widget={widget} />
     case 'donut': return <DonutWidget widget={widget} />
     case 'bar': return <BarWidget widget={widget} />
+    case 'table': return <TableWidget widget={widget} />
     case 'bpi': return <BpiWidget widget={widget} />
     case 'markdown': return <MarkdownWidget widget={widget} />
     default: return <Empty text={widget.type} />
@@ -438,6 +514,7 @@ export function widgetTypeLabel(type: DashboardWidget['type']): string {
     gauge: 'Gauge (Tacho)',
     donut: 'Status-Donut',
     bar: 'Balkendiagramm',
+    table: 'Tabelle (Hosts/Services)',
     bpi: 'Business Service',
     markdown: 'Text / Markdown',
   }

@@ -1,35 +1,56 @@
 // Alerts & Incidents (SPEC §12.3).
 import { useState } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useMutation } from '@tanstack/react-query'
+import { useNavigate, useSearch } from '@tanstack/react-router'
 import { get, post, queryClient, fmtAgo, type ListResponse } from '../api'
-import type { Alert, Incident } from '../types'
+import type { Alert, AlertsSearch, Incident, Severity } from '../types'
 import { sevColor } from '../types'
 import { Button, Badge, Empty, Card } from '../components/ui'
 import { AckDialog } from '../components/AckDialog'
 import { t } from '../i18n'
 
 export function AlertsPage() {
-  const [status, setStatus] = useState('open,acked')
+  // Status + severity filters live in the URL (linkable, back-button).
+  const search = useSearch({ strict: false }) as AlertsSearch
+  const navigate = useNavigate()
+  const status = search.status ?? 'open,acked'
+  const severity = search.severity ?? ''
+  const patchSearch = (patch: Partial<AlertsSearch>) =>
+    navigate({
+      to: '/alerts',
+      search: (prev) => ({ ...prev, ...patch }),
+      replace: true,
+    })
   const [ackTarget, setAckTarget] = useState<Alert | null>(null)
   const { data, isLoading } = useQuery({
     queryKey: ['alerts', status],
     queryFn: () => get<ListResponse<Alert>>(`/alerts?status=${status}&limit=200`),
+    placeholderData: keepPreviousData,
   })
   const resolve = useMutation({
     mutationFn: (id: string) => post(`/alerts/${id}:resolve`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['alerts'] }),
   })
-  const rows = data?.items ?? []
+  const rows = (data?.items ?? []).filter((a) => !severity || a.severity === (severity as Severity))
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <h1 className="text-lg font-bold">{t('alerts')} <span className="text-slate-500 text-sm">({rows.length})</span></h1>
-        <select value={status} onChange={(e) => setStatus(e.target.value)}
-          className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-sm text-slate-300">
-          <option value="open,acked">offen + quittiert</option>
-          <option value="open">nur offen</option>
-          <option value="resolved,expired">geschlossen</option>
-        </select>
+        <div className="flex gap-2">
+          <select value={severity} onChange={(e) => patchSearch({ severity: e.target.value || undefined })}
+            className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-sm text-slate-300">
+            <option value="">alle Severities</option>
+            <option value="critical">critical</option>
+            <option value="warning">warning</option>
+            <option value="info">info</option>
+          </select>
+          <select value={status} onChange={(e) => patchSearch({ status: e.target.value })}
+            className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-sm text-slate-300">
+            <option value="open,acked">offen + quittiert</option>
+            <option value="open">nur offen</option>
+            <option value="resolved,expired">geschlossen</option>
+          </select>
+        </div>
       </div>
       {isLoading && <Empty text={t('loading')} />}
       {!isLoading && rows.length === 0 && <Empty text={t('empty')} />}

@@ -1,7 +1,7 @@
 // Problems view (SPEC §12.3): priority-sorted, inline ack/downtime in
 // ≤ 3 clicks, handled toggle, live via SSE invalidation.
 import { useState } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useMutation } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { get, post, queryClient, fmtAgo } from '../api'
 import type { ProblemRow, Alert } from '../types'
@@ -18,6 +18,7 @@ export function ProblemsPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['problems', includeHandled],
     queryFn: () => get<{ items: ProblemRow[] | null }>(`/problems?includeHandled=${includeHandled}`),
+    placeholderData: keepPreviousData, // toggle shows the last list instantly
   })
   const { data: alerts } = useQuery({
     queryKey: ['alerts', 'open-map'],

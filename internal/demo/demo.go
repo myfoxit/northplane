@@ -381,6 +381,10 @@ func (s *seeder) passiveAndHeartbeat(ctx context.Context) error {
 			CheckCommand:   "passive",
 			StalenessAfter: model.Duration(10 * time.Minute),
 			StalenessText:  "no batch-job result submitted in 10m",
+			// Direct object routing showcase (Nagios contact_groups):
+			// hard CRITICAL/recovery notifies demo-ops without any rule.
+			ContactGroups: []string{"demo-ops"},
+			NotifyOn:      []string{"critical", "recovery"},
 		},
 	}); err != nil {
 		return err
@@ -636,6 +640,7 @@ func dashboardSpec(httpLatencyMetric string) map[string]any {
 				"range":  "3h",
 			},
 			{"type": "bpi", "title": "Webshop health", "service": "demo-webshop"},
+			{"type": "table", "title": "Demo-Inventar", "selector": "demo=true", "limit": 15, "w": 12, "h": 2},
 		},
 	}
 }

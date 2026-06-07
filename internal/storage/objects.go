@@ -307,6 +307,45 @@ func (s *Store) GetCheckState(ctx context.Context, objectID string) (*model.Chec
 	return scanState(row)
 }
 
+// ListCheckStates fetches the hot state rows for many objects in
+// chunked IN queries — one round-trip per 500 ids instead of one per
+// object (list-endpoint hot path, SPEC §11.2).
+func (s *Store) ListCheckStates(ctx context.Context, objectIDs []string) (map[string]*model.CheckState, error) {
+	out := make(map[string]*model.CheckState, len(objectIDs))
+	const chunk = 500
+	for start := 0; start < len(objectIDs); start += chunk {
+		end := start + chunk
+		if end > len(objectIDs) {
+			end = len(objectIDs)
+		}
+		ids := objectIDs[start:end]
+		ph := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+		args := make([]any, len(ids))
+		for i, id := range ids {
+			args[i] = id
+		}
+		rows, err := s.db.QueryContext(ctx, s.Q(
+			`SELECT `+stateCols+` FROM check_state WHERE object_id IN (`+ph+`)`), args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			cs, err := scanState(rows)
+			if err != nil {
+				rows.Close()
+				return nil, err
+			}
+			out[cs.ObjectID] = cs
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rows.Close()
+	}
+	return out, nil
+}
+
 // SaveCheckStates upserts a batch in one transaction (pipeline batch
 // commits, SPEC §7.4).
 func (s *Store) SaveCheckStates(ctx context.Context, states []*model.CheckState) error {

@@ -103,6 +103,8 @@ func (m *Manager) deliver(ctx context.Context, item *storage.OutboxItem) {
 	switch item.Kind {
 	case "notification":
 		providerID, err = m.deliverNotification(ctx, item)
+	case "object-notification":
+		providerID, err = m.deliverObjectNotification(ctx, item)
 	case "webhook-sub":
 		providerID, err = m.deliverWebhookSub(ctx, item)
 	case "action":

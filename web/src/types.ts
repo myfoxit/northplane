@@ -130,6 +130,10 @@ export interface ObjectSpec {
   timeout?: string
   checkPeriod?: string
   notificationPeriod?: string
+  // Direct notification routing (Nagios contact_groups semantics):
+  contacts?: string[]
+  contactGroups?: string[]
+  notifyOn?: string[] // warning|critical|unknown|down|unreachable|recovery
   enableNotifications?: boolean
   enableChecks?: boolean
   enableFlapDetection?: boolean
@@ -378,7 +382,7 @@ export interface Report {
 // Dashboard spec is frontend-owned JSON (SPEC §12.3 / model.Dashboard.Spec).
 export interface DashboardWidget {
   type: 'counters' | 'problems' | 'metric' | 'bpi' | 'markdown' | 'alerts'
-    | 'gauge' | 'donut' | 'bar'
+    | 'gauge' | 'donut' | 'bar' | 'table'
   title?: string
   // metric/gauge/bar widget:
   object?: string
@@ -386,11 +390,13 @@ export interface DashboardWidget {
   range?: string // "3h", "24h", "7d"
   // gauge widget:
   max?: number   // scale end, default 100 (or auto from data)
-  // donut widget:
+  // donut/table widget:
   scope?: 'services' | 'hosts'
-  // problems/alerts/bar widget:
+  // problems/alerts/bar/table widget:
   limit?: number
   selector?: string
+  // table widget: free-text filter (matches name/output)
+  query?: string
   // bpi widget:
   service?: string
   // markdown widget:
@@ -448,6 +454,20 @@ export interface DiscoveryScan {
     openPorts: number[] | null
     suggest: string[] | null
   }[] | null
+}
+
+// URL search-param shapes of the filterable list routes (drill-down
+// targets — keys must stay optional so plain links don't need them).
+export interface ObjectsSearch {
+  selector?: string
+  q?: string
+  state?: string
+  kind?: 'host' | 'service'
+}
+
+export interface AlertsSearch {
+  status?: string
+  severity?: string
 }
 
 export const svcStates = ['OK', 'WARNING', 'CRITICAL', 'UNKNOWN'] as const

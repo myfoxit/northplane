@@ -5,7 +5,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
-import { resourceApi } from '../api'
+import { APIError, resourceApi } from '../api'
 import type { DashboardDoc, DashboardWidget } from '../types'
 import { Button, Card, Dialog, Empty, Spinner, Badge } from '../components/ui'
 import { Field, Select, TextArea, Toggle, FormError, SubmitRow, useSave, DeleteButton } from '../components/forms'
@@ -32,6 +32,7 @@ function defaultWidget(type: DashboardWidget['type']): DashboardWidget {
     case 'gauge': return { ...base, w: 3, h: 2 }
     case 'donut': return { ...base, w: 4, h: 2, scope: 'services' }
     case 'bar': return { ...base, w: 6, h: 2, limit: 8 }
+    case 'table': return { ...base, w: 12, h: 2, limit: 15 }
     case 'problems': return { ...base, w: 6, h: 2, limit: 10 }
     case 'alerts': return { ...base, w: 6, h: 2, limit: 10 }
     case 'bpi': return { ...base, w: 6, h: 2 }
@@ -151,10 +152,20 @@ function DashboardView({ name, wallboard }: { name: string; wallboard: boolean }
 
   const save = useSave(
     async (next: DashboardWidget[]) => {
-      // Re-fetch for a fresh ETag (other tabs may have written).
-      const fresh = await dashApi.get(name)
-      const doc: DashboardDoc = { ...fresh.data, name, spec: { widgets: next } }
-      return dashApi.update(name, doc, fresh.etag)
+      // Fast path: PUT with the ETag we already hold — no extra GET
+      // round-trip per save. A 409 (another tab wrote) re-fetches once
+      // and retries on the fresh version.
+      const put = (base: DashboardDoc, etag: number) =>
+        dashApi.update(name, { ...base, name, spec: { widgets: next } }, etag)
+      try {
+        return await put(data!.data, data!.etag)
+      } catch (err) {
+        if (err instanceof APIError && err.status === 409) {
+          const fresh = await dashApi.get(name)
+          return put(fresh.data, fresh.etag)
+        }
+        throw err
+      }
     },
     {
       invalidate: [[...dashApi.queryKey, name] as unknown as string[], dashApi.queryKey as unknown as string[]],
@@ -329,6 +340,31 @@ function WidgetConfigFields({ widget, onChange }: {
           </Select>
         </Field>
       )
+    case 'table':
+      return (
+        <div className="space-y-2">
+          <Field label="Bereich">
+            <Select value={widget.scope ?? ''}
+              onChange={(e) => onChange({ scope: (e.target.value || undefined) as 'services' | 'hosts' | undefined })}>
+              <option value="">Hosts + Services</option>
+              <option value="hosts">Hosts</option>
+              <option value="services">Services</option>
+            </Select>
+          </Field>
+          <Field label="Selector (optional)">
+            <Input value={widget.selector ?? ''} placeholder="env=prod"
+              onChange={(e) => onChange({ selector: e.target.value })} />
+          </Field>
+          <Field label="Volltext-Filter (optional)">
+            <Input value={widget.query ?? ''} placeholder="db"
+              onChange={(e) => onChange({ query: e.target.value })} />
+          </Field>
+          <Field label="Limit">
+            <Input type="number" min={1} max={100} value={widget.limit ?? 15}
+              onChange={(e) => onChange({ limit: Number(e.target.value) })} />
+          </Field>
+        </div>
+      )
     case 'bar':
       return (
         <div className="space-y-2">
@@ -381,7 +417,7 @@ function WidgetConfigFields({ widget, onChange }: {
 // ——— add-widget dialog: pick a type, configure, append ———
 
 const WIDGET_TYPES: DashboardWidget['type'][] = [
-  'counters', 'problems', 'alerts', 'metric', 'gauge', 'donut', 'bar', 'bpi', 'markdown',
+  'counters', 'problems', 'alerts', 'table', 'metric', 'gauge', 'donut', 'bar', 'bpi', 'markdown',
 ]
 
 // Rendered only while open (mounted fresh each time) so its working state

@@ -218,7 +218,9 @@ func (a *API) ApplyBundleYAML(ctx context.Context, tenantID, yamlText string) (a
 				Name: doc.Metadata.Name, Host: doc.Metadata.Host})
 		}
 	}
-	a.configChanged(ctx, tenantID, storage.KindAlertRule)
+	// Bundles touch objects AND rules: "object" forces the catalog
+	// reload, the rule kind recompiles the alerting engine.
+	a.configChanged(ctx, tenantID, "object", storage.KindAlertRule)
 	return PlanResult{Plan: applied, Warnings: warnings}, nil
 }
 
@@ -512,7 +514,7 @@ func (a *API) applyBundle(w http.ResponseWriter, r *http.Request, p *auth.Princi
 		}
 	}
 	a.audit(r, p, "bundle.apply", "", nil, map[string]any{"applied": applied})
-	a.configChanged(r.Context(), tenant, storage.KindAlertRule)
+	a.configChanged(r.Context(), tenant, "object", storage.KindAlertRule)
 	a.writeJSON(w, http.StatusOK, PlanResult{Plan: applied, Warnings: warnings})
 }
 

@@ -98,7 +98,7 @@ func (a *API) registerObjects() {
 				return
 			}
 			a.audit(r, p, string(kind)+".create", obj.ID, nil, obj)
-			a.configChanged(r.Context(), obj.TenantID)
+			a.objectChanged(r.Context(), obj)
 			etag(w, obj.Version)
 			a.writeJSON(w, http.StatusCreated, obj)
 		}
@@ -158,7 +158,7 @@ func (a *API) registerObjects() {
 				return
 			}
 			a.audit(r, p, string(obj.Kind)+".update", obj.ID, before, obj)
-			a.configChanged(r.Context(), obj.TenantID)
+			a.objectChanged(r.Context(), obj)
 			etag(w, obj.Version)
 			a.writeJSON(w, http.StatusOK, obj)
 		})
@@ -174,10 +174,10 @@ func (a *API) registerObjects() {
 				a.fail(w, r, err)
 				return
 			}
-			a.Sched.Remove(obj.ID)
-			a.Pipe.Forget(obj.ID)
 			a.audit(r, p, string(obj.Kind)+".delete", obj.ID, obj, nil)
-			a.configChanged(r.Context(), obj.TenantID)
+			// objectRemoved deschedules the object AND its cascaded
+			// service children (the old path left children on the wheel).
+			a.objectRemoved(r.Context(), obj)
 			w.WriteHeader(http.StatusNoContent)
 		})
 
@@ -329,8 +329,22 @@ func (a *API) registerObjects() {
 	a.registerConfigResources()
 }
 
-// decorate joins live state and host names onto objects.
+// decorate joins live state and host names onto objects. States are
+// fetched in one batched query — a 2000-row listing must not issue
+// 2000 point lookups (SPEC §11.2 list-endpoint latency).
 func (a *API) decorate(r *http.Request, objs []*model.Object, withState bool) []*ObjectView {
+	var states map[string]*model.CheckState
+	if withState && len(objs) > 0 {
+		ids := make([]string, len(objs))
+		for i, o := range objs {
+			ids[i] = o.ID
+		}
+		if m, err := a.Store.ListCheckStates(r.Context(), ids); err == nil {
+			states = m
+		} else {
+			a.Log.Error("api: batch state fetch", "err", err)
+		}
+	}
 	views := make([]*ObjectView, 0, len(objs))
 	for _, o := range objs {
 		v := &ObjectView{Object: o}
@@ -339,10 +353,8 @@ func (a *API) decorate(r *http.Request, objs []*model.Object, withState bool) []
 				v.HostName = h.Object.Name
 			}
 		}
-		if withState {
-			if cs, err := a.Store.GetCheckState(r.Context(), o.ID); err == nil {
-				v.State = cs
-			}
+		if cs, ok := states[o.ID]; ok {
+			v.State = cs
 		}
 		views = append(views, v)
 	}
@@ -370,14 +382,32 @@ func (a *API) resolveHost(r *http.Request, p *auth.Principal, ref string) (*mode
 // validateSpec resolves templates + command references (config errors
 // fail fast at write time, SPEC §11.1: 422).
 func (a *API) validateSpec(ctx context.Context, obj *model.Object) error {
-	_, _, err := model.EffectiveSpec(obj, func(name string) *model.Template {
+	eff, _, err := model.EffectiveSpec(obj, func(name string) *model.Template {
 		t, err := storage.LoadOne[model.Template](ctx, a.Store, obj.TenantID, storage.KindTemplate, name)
 		if err != nil {
 			return nil
 		}
 		return t
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	for _, tok := range eff.NotifyOn {
+		if !model.ValidNotifyOn[tok] {
+			return fmt.Errorf("invalid notifyOn token %q (valid: warning, critical, unknown, down, unreachable, recovery)", tok)
+		}
+	}
+	for _, g := range eff.ContactGroups {
+		if _, err := a.Store.ResolveResource(ctx, obj.TenantID, storage.KindContactGroup, g); err != nil {
+			return fmt.Errorf("unknown contact group %q", g)
+		}
+	}
+	for _, c := range eff.Contacts {
+		if _, err := a.Store.ResolveResource(ctx, obj.TenantID, storage.KindContact, c); err != nil {
+			return fmt.Errorf("unknown contact %q", c)
+		}
+	}
+	return nil
 }
 
 // registerConfigResources wires templates, check commands, time periods.

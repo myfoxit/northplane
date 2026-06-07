@@ -108,6 +108,17 @@ type ObjectSpec struct {
 
 	NotificationPeriod  string   `json:"notificationPeriod,omitempty" yaml:"notificationPeriod,omitempty"`
 	EnableNotifications *bool    `json:"enableNotifications,omitempty" yaml:"enableNotifications,omitempty"`
+	// Contacts / ContactGroups are notified directly on hard state
+	// changes (Nagios contact_groups semantics — SPEC §9, F-04) without
+	// requiring an alert rule. Resolution honours NotificationPeriod,
+	// EnableNotifications and NotifyOn; delivery uses each contact's
+	// channel preferences. Values are contact / contact-group names (or ids).
+	Contacts      []string `json:"contacts,omitempty"      yaml:"contacts,omitempty"`
+	ContactGroups []string `json:"contactGroups,omitempty" yaml:"contactGroups,omitempty"`
+	// NotifyOn filters which hard transitions notify: "warning",
+	// "critical", "unknown" (services), "down", "unreachable" (hosts),
+	// "recovery". Empty = all problem states + recovery (Nagios default).
+	NotifyOn []string `json:"notifyOn,omitempty" yaml:"notifyOn,omitempty"`
 	EnableChecks        *bool    `json:"enableChecks,omitempty"        yaml:"enableChecks,omitempty"`
 	EnableFlapDetection *bool    `json:"enableFlapDetection,omitempty" yaml:"enableFlapDetection,omitempty"`
 	FlapThresholdLow    float64  `json:"flapThresholdLow,omitempty"    yaml:"flapThresholdLow,omitempty"`  // % (default 25)
@@ -174,6 +185,15 @@ func MergeSpec(base, child ObjectSpec) ObjectSpec {
 	}
 	if child.EnableNotifications != nil {
 		out.EnableNotifications = child.EnableNotifications
+	}
+	if child.Contacts != nil {
+		out.Contacts = child.Contacts
+	}
+	if child.ContactGroups != nil {
+		out.ContactGroups = child.ContactGroups
+	}
+	if child.NotifyOn != nil {
+		out.NotifyOn = child.NotifyOn
 	}
 	if child.EnableChecks != nil {
 		out.EnableChecks = child.EnableChecks
