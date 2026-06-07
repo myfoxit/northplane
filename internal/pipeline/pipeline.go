@@ -169,6 +169,11 @@ func (p *Pipeline) process(ctx context.Context, res *model.CheckResult) {
 		FlapThresholdLow:  eff.FlapThresholdLow,
 		FlapThresholdHigh: eff.FlapThresholdHigh,
 	}
+	// Passive results are hard state changes (classic Nagios default:
+	// passive_*_checks_are_soft=0) — SPEC §8.5.
+	if res.Source == "passive" || res.Source == "agent" {
+		cfg.MaxCheckAttempts = 1
+	}
 	prevState := cs.State
 	tr := statemachine.Apply(cs, cfg, statemachine.Input{
 		State: inState, Output: res.Output, LongOutput: res.LongOutput,

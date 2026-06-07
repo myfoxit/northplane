@@ -382,6 +382,30 @@ func HMACSign(secret []byte, body []byte) string {
 	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
 }
 
+// TestSend pushes a synthetic notification through a channel
+// (admin test console, SPEC §12.3). target overrides the destination
+// for personal channel types.
+func (m *Manager) TestSend(ctx context.Context, ch *model.NotificationChannel, target, by string) (string, error) {
+	alert := &model.Alert{ID: "test", TenantID: ch.TenantID,
+		Severity: model.SevInfo, Status: model.AlertOpen,
+		Title:    "Test notification from Northplane (" + by + ")",
+		OpenedAt: time.Now().UTC()}
+	contact := &model.Contact{Name: by, Email: target, Phone: target, UserID: target}
+	rc := m.renderContext(alert, contact, notifyJob{AlertID: alert.ID, TenantID: ch.TenantID})
+	subject, body, err := m.render(ch, rc)
+	if err != nil {
+		return "", err
+	}
+	dst := targetFor(ch.Type, contact, ch)
+	if dst == "" {
+		return "", fmt.Errorf("no target for %s (pass one in the request)", ch.Type)
+	}
+	if m.SendHook != nil {
+		return m.SendHook(ch, dst, subject, body)
+	}
+	return m.send(ctx, ch, dst, subject, body, rc)
+}
+
 // Stats snapshot.
 type Stats struct {
 	Sent   uint64 `json:"sent"`
