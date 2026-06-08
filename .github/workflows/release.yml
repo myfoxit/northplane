@@ -66,9 +66,9 @@ jobs:
               -ldflags "-s -w -X main.version=${VERSION}" \
               -o "dist/${bin}" "./cmd/${bin}"
           done
-          cp LICENSE README.md dist/
+          cp LICENSE dist/
           ASSET="northplane_${GITHUB_REF_NAME}_${GOOS}_${GOARCH}.tar.gz"
-          tar -czf "${ASSET}" -C dist northplaned np np-agent LICENSE README.md
+          tar -czf "${ASSET}" -C dist northplaned np np-agent LICENSE
           sha256sum "${ASSET}" > "${ASSET}.sha256"
       - uses: actions/upload-artifact@v4
         with:
