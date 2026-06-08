@@ -148,11 +148,11 @@ func (m *Manager) sendEmail(ctx context.Context, ch *model.NotificationChannel,
 		}
 		if ok, _ := c.Extension("STARTTLS"); ok {
 			if err := c.StartTLS(&tls.Config{ServerName: host}); err != nil {
-				c.Close()
+				_ = c.Close()
 				return nil, err
 			}
 		} else if ch.Config["allowPlaintext"] != "true" {
-			c.Close()
+			_ = c.Close()
 			return nil, fmt.Errorf("server offers no STARTTLS (set allowPlaintext=true to override)")
 		}
 		return c, nil
@@ -161,7 +161,7 @@ func (m *Manager) sendEmail(ctx context.Context, ch *model.NotificationChannel,
 	if err != nil {
 		return "", fmt.Errorf("smtp connect: %w", err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	if user != "" {
 		if err := c.Auth(smtp.PlainAuth("", user, pass, host)); err != nil {
 			return "", fmt.Errorf("smtp auth: %w", err)
@@ -242,8 +242,8 @@ func (m *Manager) sendWebhook(ctx context.Context, ch *model.NotificationChannel
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
-	io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096)) // drain for keep-alive
 	if resp.StatusCode >= 300 {
 		return "", fmt.Errorf("webhook: HTTP %d", resp.StatusCode)
 	}
@@ -401,8 +401,8 @@ func (m *Manager) sendGenericSMS(ctx context.Context, ch *model.NotificationChan
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
-	io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096)) // drain for keep-alive
 	if resp.StatusCode >= 300 {
 		return "", fmt.Errorf("sms gateway: HTTP %d", resp.StatusCode)
 	}
@@ -434,8 +434,8 @@ func (m *Manager) deliverWebhookSub(ctx context.Context, item *storage.OutboxIte
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
-	io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096)) // drain for keep-alive
 	if resp.StatusCode >= 300 {
 		return "", fmt.Errorf("subscription webhook: HTTP %d", resp.StatusCode)
 	}

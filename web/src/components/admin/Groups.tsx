@@ -6,8 +6,11 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { resourceApi } from '../../api'
 import type { ContactGroup, Contact } from '../../types'
-import { Button, Table, Empty, Dialog, Input, Spinner } from '../ui'
-import { Field, FormError, SubmitRow, useSave, DeleteButton, ListEditor } from '../forms'
+import { Button } from '@/components/ui/button'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Empty, Spinner, Field, FormError, SubmitRow, useSave, DeleteButton, ListEditor } from '@/components/kit'
 import { t } from '../../i18n'
 import { TableActions, RowActions } from './common'
 
@@ -20,20 +23,30 @@ export function GroupsTab() {
   return (
     <div className="space-y-4">
       <TableActions onCreate={() => setEditing('new')} label={t('create')} />
-      <Table head={[t('name'), 'Mitglieder', 'IdP-Gruppe', '']}>
-        {(data ?? []).map((g) => (
-          <tr key={g.name}>
-            <td className="px-3 py-2 text-foreground">{g.name}</td>
-            <td className="px-3 py-2 text-xs text-muted-foreground">{g.members?.join(', ') || '—'}</td>
-            <td className="px-3 py-2 text-xs text-muted-foreground font-mono">{g.idpGroup || '—'}</td>
-            <td className="px-3 py-2">
-              <RowActions>
-                <Button size="sm" variant="ghost" onClick={() => setEditing(g)}>{t('edit')}</Button>
-                <GroupDelete group={g} />
-              </RowActions>
-            </td>
-          </tr>
-        ))}
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{t('name')}</TableHead>
+            <TableHead>Mitglieder</TableHead>
+            <TableHead>IdP-Gruppe</TableHead>
+            <TableHead></TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {(data ?? []).map((g) => (
+            <TableRow key={g.name}>
+              <TableCell className="px-3 py-2 text-foreground">{g.name}</TableCell>
+              <TableCell className="px-3 py-2 text-xs text-muted-foreground">{g.members?.join(', ') || '—'}</TableCell>
+              <TableCell className="px-3 py-2 text-xs text-muted-foreground font-mono">{g.idpGroup || '—'}</TableCell>
+              <TableCell className="px-3 py-2">
+                <RowActions>
+                  <Button size="sm" variant="ghost" onClick={() => setEditing(g)}>{t('edit')}</Button>
+                  <GroupDelete group={g} />
+                </RowActions>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
       </Table>
       {!isLoading && (data?.length ?? 0) === 0 && <Empty text={t('empty')} />}
       {editing && (
@@ -62,7 +75,16 @@ function GroupDialog({ name, onClose }: { name: string | null; onClose: () => vo
     enabled: !isNew,
   })
   if (!isNew && isLoading) {
-    return <Dialog open onClose={onClose} title={t('loading')} size="md"><Spinner /></Dialog>
+    return (
+      <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('loading')}</DialogTitle>
+          </DialogHeader>
+          <Spinner />
+        </DialogContent>
+      </Dialog>
+    )
   }
   return (
     <GroupForm
@@ -88,20 +110,25 @@ function GroupForm({ doc, etag, isNew, suggestions, onClose }: {
     { invalidate: [[...groupsApi.queryKey]], onDone: onClose },
   )
   return (
-    <Dialog open onClose={onClose} title={isNew ? t('create') : `${t('edit')}: ${doc.name}`} size="md">
-      <form onSubmit={(e) => { e.preventDefault(); save.mutate(undefined) }} className="space-y-3">
-        <Field label={t('name')} required>
-          <Input value={name} onChange={(e) => setName(e.target.value)} required disabled={!isNew} />
-        </Field>
-        <Field label="Mitglieder" hint="Kontakte (Name)">
-          <ListEditor value={members} onChange={setMembers} placeholder="Kontakt…" suggestions={suggestions} />
-        </Field>
-        <Field label="IdP-Gruppe" hint="optional — spiegelt eine Entra/Keycloak-Gruppe">
-          <Input value={idpGroup} onChange={(e) => setIdpGroup(e.target.value)} />
-        </Field>
-        <FormError error={save.error} />
-        <SubmitRow onCancel={onClose} saving={save.isPending} disabled={!name} />
-      </form>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{isNew ? t('create') : `${t('edit')}: ${doc.name}`}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={(e) => { e.preventDefault(); save.mutate(undefined) }} className="space-y-3">
+          <Field label={t('name')} required>
+            <Input value={name} onChange={(e) => setName(e.target.value)} required disabled={!isNew} />
+          </Field>
+          <Field label="Mitglieder" hint="Kontakte (Name)">
+            <ListEditor value={members} onChange={setMembers} placeholder="Kontakt…" suggestions={suggestions} />
+          </Field>
+          <Field label="IdP-Gruppe" hint="optional — spiegelt eine Entra/Keycloak-Gruppe">
+            <Input value={idpGroup} onChange={(e) => setIdpGroup(e.target.value)} />
+          </Field>
+          <FormError error={save.error} />
+          <SubmitRow onCancel={onClose} saving={save.isPending} disabled={!name} />
+        </form>
+      </DialogContent>
     </Dialog>
   )
 }

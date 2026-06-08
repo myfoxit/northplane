@@ -10,11 +10,11 @@ import (
 // Perf is one parsed perfdata token:
 // 'label'=value[UOM];[warn];[crit];[min];[max] (SPEC §8.3).
 type Perf struct {
-	Label string  `json:"label"`
-	Value float64 `json:"value"`
-	UOM   string  `json:"uom,omitempty"` // original unit
-	Warn  string  `json:"warn,omitempty"`
-	Crit  string  `json:"crit,omitempty"`
+	Label string   `json:"label"`
+	Value float64  `json:"value"`
+	UOM   string   `json:"uom,omitempty"` // original unit
+	Warn  string   `json:"warn,omitempty"`
+	Crit  string   `json:"crit,omitempty"`
 	Min   *float64 `json:"min,omitempty"`
 	Max   *float64 `json:"max,omitempty"`
 
@@ -242,7 +242,7 @@ func ParseRange(s string) (Range, error) {
 			// Fault tolerance (SPEC §8.3): real-world plugins emit UOM
 			// suffixes in range bounds ("80%", "5948MB") — strip them.
 			end := len(v)
-			for end > 0 && !(v[end-1] >= '0' && v[end-1] <= '9') && v[end-1] != '.' {
+			for end > 0 && (v[end-1] < '0' || v[end-1] > '9') && v[end-1] != '.' {
 				end--
 			}
 			if end == 0 {

@@ -87,7 +87,7 @@ type Incident struct {
 	Status     IncidentStatus `json:"status"`
 	Severity   Severity       `json:"severity"`
 	Title      string         `json:"title"`
-	Summary    string         `json:"summary,omitempty"`   // AI or human
+	Summary    string         `json:"summary,omitempty"` // AI or human
 	Impact     string         `json:"impact,omitempty"`
 	TicketURL  string         `json:"ticketUrl,omitempty"` // ServiceNow etc.
 	CreatedBy  string         `json:"createdBy"`           // user|ai_agent|correlation
@@ -98,18 +98,18 @@ type Incident struct {
 
 // EventSource is an ingress adapter instance (SPEC §7.5).
 type EventSource struct {
-	ID        string    `json:"id"`
-	TenantID  string    `json:"tenantId"`
-	Name      string    `json:"name"`
-	Type      string    `json:"type"` // webhook|alertmanager|email|snmp-trap|heartbeat|agent|…
-	Enabled   bool      `json:"enabled"`
+	ID       string `json:"id"`
+	TenantID string `json:"tenantId"`
+	Name     string `json:"name"`
+	Type     string `json:"type"` // webhook|alertmanager|email|snmp-trap|heartbeat|agent|…
+	Enabled  bool   `json:"enabled"`
 	// Auth: token (hashed at rest), hmac secret, or basic credentials.
 	AuthMode  string `json:"authMode"` // token|hmac|basic|none
 	SecretRef string `json:"secretRef,omitempty"`
 	// Mapping: CEL expressions producing the NormEvent fields from the
 	// raw payload (SPEC §9.2). Empty mapping = identity for JSON in
 	// normal form already.
-	Mapping   map[string]string `json:"mapping,omitempty"`
+	Mapping map[string]string `json:"mapping,omitempty"`
 	// Config: transport-specific settings (mirrors NotificationChannel.Config).
 	// snmp-trap: listen ("udp://:9162"), community, severity, v3 user/auth/priv.
 	// imap: host, port, tls, username, passwordSecretRef, folder, pollInterval.
@@ -159,9 +159,9 @@ type AlertRule struct {
 	AutoCloseAfter Duration `json:"autoCloseAfter,omitempty" yaml:"autoCloseAfter,omitempty"`
 	ResolveOnOK    *bool    `json:"resolveOnOk,omitempty"    yaml:"resolveOnOk,omitempty"` // default true
 
-	EscalationPolicy string   `json:"escalationPolicy,omitempty" yaml:"escalationPolicy,omitempty"`
-	GroupID          string   `json:"groupId,omitempty"          yaml:"groupId,omitempty"`
-	SetLabels        Labels   `json:"setLabels,omitempty"        yaml:"setLabels,omitempty"`
+	EscalationPolicy string `json:"escalationPolicy,omitempty" yaml:"escalationPolicy,omitempty"`
+	GroupID          string `json:"groupId,omitempty"          yaml:"groupId,omitempty"`
+	SetLabels        Labels `json:"setLabels,omitempty"        yaml:"setLabels,omitempty"`
 	// Incident automatically opens an incident for each alert this rule
 	// opens, and resolves it once all of its alerts resolved (F-04.05).
 	Incident bool `json:"incident,omitempty" yaml:"incident,omitempty"`

@@ -64,7 +64,8 @@ func TestGorillaRoundtrip(t *testing.T) {
 
 func TestGorillaSpecialValues(t *testing.T) {
 	app := NewChunkAppender()
-	vals := []float64{0, math.Inf(1), math.Inf(-1), math.NaN(), -0.0, 1e-300, math.MaxFloat64}
+	negZero := math.Copysign(0, -1) // true -0.0 (the literal -0.0 is +0.0 in Go)
+	vals := []float64{0, math.Inf(1), math.Inf(-1), math.NaN(), negZero, 1e-300, math.MaxFloat64}
 	ts := int64(1000)
 	for _, v := range vals {
 		app.Append(ts, v)

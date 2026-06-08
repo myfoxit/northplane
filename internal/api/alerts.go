@@ -412,7 +412,7 @@ func (a *API) ackAlert(r *http.Request, tenantID, alertID, by, comment string, p
 	raw, _ := json.Marshal(map[string]any{"alertId": alert.ID, "by": by, "comment": comment})
 	ev := &model.Event{ID: model.NewID(), TenantID: tenantID, TS: time.Now().UTC(),
 		Type: model.EventAck, ObjectID: alert.ObjectID, Severity: model.SevInfo, Payload: raw}
-	_ = a.Store.InsertEvents(r.Context(), []*model.Event{ev})
+	a.insertEvents(r.Context(), ev)
 	a.Bus.FanoutOnly(ev)
 	return alert, nil
 }
@@ -421,7 +421,7 @@ func (a *API) alertLifecycleEvent(r *http.Request, tenantID string, alert *model
 	raw, _ := json.Marshal(map[string]any{"alertId": alert.ID, "title": alert.Title})
 	ev := &model.Event{ID: model.NewID(), TenantID: tenantID, TS: time.Now().UTC(),
 		Type: typ, ObjectID: alert.ObjectID, Severity: model.SevOK, Payload: raw}
-	_ = a.Store.InsertEvents(r.Context(), []*model.Event{ev})
+	a.insertEvents(r.Context(), ev)
 	a.Bus.FanoutOnly(ev)
 }
 
@@ -429,6 +429,6 @@ func (a *API) alertLifecycleEventTenant(r *http.Request, tenantID, alertID strin
 	raw, _ := json.Marshal(map[string]any{"alertId": alertID, "via": "ack-link"})
 	ev := &model.Event{ID: model.NewID(), TenantID: tenantID, TS: time.Now().UTC(),
 		Type: model.EventAck, Severity: model.SevInfo, Payload: raw}
-	_ = a.Store.InsertEvents(r.Context(), []*model.Event{ev})
+	a.insertEvents(r.Context(), ev)
 	a.Bus.FanoutOnly(ev)
 }

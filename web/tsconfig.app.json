@@ -6,6 +6,8 @@
     "module": "esnext",
     "types": ["vite/client"],
     "skipLibCheck": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
 
     /* Bundler mode */
     "moduleResolution": "bundler",
@@ -15,11 +17,20 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
+    /* Path alias (TS 6: paths resolve relative to this file, no baseUrl) */
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+
     /* Linting */
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  /* Test files import vitest globals (describe/it/expect) and jsdom/MSW
+     helpers — keep them out of the strict app build (`tsc -b`). Vitest
+     typechecks them on its own (esbuild) against vitest.config.ts. */
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/test"]
 }

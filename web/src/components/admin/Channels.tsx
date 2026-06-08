@@ -9,8 +9,15 @@ import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { resourceApi, post } from '../../api'
 import type { Channel, ChannelType } from '../../types'
-import { Button, Table, Empty, Dialog, Input, Badge, Spinner } from '../ui'
-import { Field, FormError, SubmitRow, useSave, DeleteButton, Select, Toggle, KVEditor } from '../forms'
+import { Button } from '@/components/ui/button'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
+import { Label } from '@/components/ui/label'
+import { Empty, Spinner, Field, FormError, SubmitRow, useSave, DeleteButton, KVEditor } from '@/components/kit'
 import { t } from '../../i18n'
 import { TypeBadge, StatusBadge, TableActions, RowActions, secretHint } from './common'
 
@@ -108,22 +115,33 @@ export function ChannelsTab() {
   return (
     <div className="space-y-4">
       <TableActions onCreate={() => setEditing('new')} label={t('create')} />
-      <Table head={[t('type'), t('name'), t('status'), 'Template', '']}>
-        {(data ?? []).map((ch) => (
-          <tr key={ch.name}>
-            <td className="px-3 py-2 w-24"><TypeBadge>{ch.type}</TypeBadge></td>
-            <td className="px-3 py-2 text-foreground">{ch.name}</td>
-            <td className="px-3 py-2">{ch.enabled ? <StatusBadge kind="enabled" /> : <StatusBadge kind="disabled" />}</td>
-            <td className="px-3 py-2 text-xs text-muted-foreground font-mono">{ch.template || '—'}</td>
-            <td className="px-3 py-2">
-              <RowActions>
-                <TestButton name={ch.name} />
-                <Button size="sm" variant="ghost" onClick={() => setEditing(ch)}>{t('edit')}</Button>
-                <ChannelDelete channel={ch} />
-              </RowActions>
-            </td>
-          </tr>
-        ))}
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{t('type')}</TableHead>
+            <TableHead>{t('name')}</TableHead>
+            <TableHead>{t('status')}</TableHead>
+            <TableHead>Template</TableHead>
+            <TableHead></TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {(data ?? []).map((ch) => (
+            <TableRow key={ch.name}>
+              <TableCell className="px-3 py-2 w-24"><TypeBadge>{ch.type}</TypeBadge></TableCell>
+              <TableCell className="px-3 py-2 text-foreground">{ch.name}</TableCell>
+              <TableCell className="px-3 py-2">{ch.enabled ? <StatusBadge kind="enabled" /> : <StatusBadge kind="disabled" />}</TableCell>
+              <TableCell className="px-3 py-2 text-xs text-muted-foreground font-mono">{ch.template || '—'}</TableCell>
+              <TableCell className="px-3 py-2">
+                <RowActions>
+                  <TestButton name={ch.name} />
+                  <Button size="sm" variant="ghost" onClick={() => setEditing(ch)}>{t('edit')}</Button>
+                  <ChannelDelete channel={ch} />
+                </RowActions>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
       </Table>
       {!isLoading && (data?.length ?? 0) === 0 && <Empty text={t('empty')} />}
       {editing && (
@@ -170,7 +188,16 @@ function ChannelDialog({ name, onClose }: { name: string | null; onClose: () => 
     enabled: !isNew,
   })
   if (!isNew && isLoading) {
-    return <Dialog open onClose={onClose} title={t('loading')} size="lg"><Spinner /></Dialog>
+    return (
+      <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{t('loading')}</DialogTitle>
+          </DialogHeader>
+          <Spinner />
+        </DialogContent>
+      </Dialog>
+    )
   }
   return (
     <ChannelForm
@@ -206,50 +233,61 @@ function ChannelForm({ doc, etag, isNew, onClose }: {
     { invalidate: [[...channelsApi.queryKey]], onDone: onClose },
   )
   return (
-    <Dialog open onClose={onClose} title={isNew ? t('create') : `${t('edit')}: ${doc.name}`} size="lg">
-      <form onSubmit={(e) => { e.preventDefault(); save.mutate(undefined) }} className="space-y-3">
-        <div className="grid grid-cols-2 gap-2">
-          <Field label={t('name')} required>
-            <Input value={name} onChange={(e) => setName(e.target.value)} required disabled={!isNew} />
-          </Field>
-          <Field label={t('type')}>
-            <Select value={type} onChange={(e) => setType(e.target.value as ChannelType)}>
-              {CHANNEL_TYPES.map((ty) => <option key={ty} value={ty}>{ty}</option>)}
-            </Select>
-          </Field>
-        </div>
-        <Toggle checked={enabled} onChange={setEnabled} label={t('enabled')} />
-
-        {known.length > 0 && (
-          <div className="border border-border rounded-lg p-3 space-y-2">
-            <div className="text-xs text-muted-foreground font-medium">Konfiguration ({type})</div>
-            {known.map((f) => (
-              <Field key={f.key} label={f.label} hint={f.secret ? secretHint : f.hint}>
-                <Input
-                  type={f.type === 'number' ? 'number' : (f.secret ? 'text' : 'text')}
-                  value={config[f.key] ?? ''}
-                  onChange={(e) => setField(f.key, e.target.value)}
-                />
-              </Field>
-            ))}
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{isNew ? t('create') : `${t('edit')}: ${doc.name}`}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={(e) => { e.preventDefault(); save.mutate(undefined) }} className="space-y-3">
+          <div className="grid grid-cols-2 gap-2">
+            <Field label={t('name')} required>
+              <Input value={name} onChange={(e) => setName(e.target.value)} required disabled={!isNew} />
+            </Field>
+            <Field label={t('type')}>
+              <Select value={type} onValueChange={(v) => setType(v as ChannelType)}>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {CHANNEL_TYPES.map((ty) => <SelectItem key={ty} value={ty}>{ty}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </Field>
           </div>
-        )}
+          <div className="flex items-center gap-2">
+            <Switch id="channel-enabled" checked={enabled} onCheckedChange={setEnabled} />
+            <Label htmlFor="channel-enabled">{t('enabled')}</Label>
+          </div>
 
-        <Field label="Weitere Einstellungen" hint="Beliebige zusätzliche Config-Schlüssel">
-          <KVEditor value={extra} onChange={setExtra} />
-        </Field>
+          {known.length > 0 && (
+            <div className="border border-border rounded-lg p-3 space-y-2">
+              <div className="text-xs text-muted-foreground font-medium">Konfiguration ({type})</div>
+              {known.map((f) => (
+                <Field key={f.key} label={f.label} hint={f.secret ? secretHint : f.hint}>
+                  <Input
+                    type={f.type === 'number' ? 'number' : (f.secret ? 'text' : 'text')}
+                    value={config[f.key] ?? ''}
+                    onChange={(e) => setField(f.key, e.target.value)}
+                  />
+                </Field>
+              ))}
+            </div>
+          )}
 
-        <Field label="Template" hint="optional — überschreibt das Standard-Template">
-          <Input value={template} onChange={(e) => setTemplate(e.target.value)} placeholder="(Standard)" />
-        </Field>
+          <Field label="Weitere Einstellungen" hint="Beliebige zusätzliche Config-Schlüssel">
+            <KVEditor value={extra} onChange={setExtra} />
+          </Field>
 
-        {type === 'push' && (
-          <Badge className="bg-muted text-muted-foreground border-input">VAPID serverseitig — keine Config nötig</Badge>
-        )}
+          <Field label="Template" hint="optional — überschreibt das Standard-Template">
+            <Input value={template} onChange={(e) => setTemplate(e.target.value)} placeholder="(Standard)" />
+          </Field>
 
-        <FormError error={save.error} />
-        <SubmitRow onCancel={onClose} saving={save.isPending} disabled={!name} />
-      </form>
+          {type === 'push' && (
+            <Badge variant="outline" className="bg-muted text-muted-foreground border-input">VAPID serverseitig — keine Config nötig</Badge>
+          )}
+
+          <FormError error={save.error} />
+          <SubmitRow onCancel={onClose} saving={save.isPending} disabled={!name} />
+        </form>
+      </DialogContent>
     </Dialog>
   )
 }

@@ -33,12 +33,12 @@ type Config struct {
 
 // Transition describes what happened.
 type Transition struct {
-	StateChanged  bool // raw state differs from previous raw state
-	HardChange    bool // a hard state was entered (notify on this)
-	Recovered     bool // hard problem → OK
-	FlapStarted   bool
-	FlapStopped   bool
-	IsSoft        bool
+	StateChanged bool // raw state differs from previous raw state
+	HardChange   bool // a hard state was entered (notify on this)
+	Recovered    bool // hard problem → OK
+	FlapStarted  bool
+	FlapStopped  bool
+	IsSoft       bool
 }
 
 // Apply mutates cs according to the Nagios rules and returns the

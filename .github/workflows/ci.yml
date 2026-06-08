@@ -21,7 +21,13 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - run: cd web && npm ci && npm run build
+      - run: cd web && npm ci
+      - name: frontend lint
+        run: cd web && npm run lint
+      - name: frontend tests (vitest)
+        run: cd web && npm test
+      - name: frontend build
+        run: cd web && npm run build
       - run: |
           rm -rf internal/web/dist
           cp -r web/dist internal/web/dist
@@ -30,6 +36,49 @@ jobs:
           name: ui-dist
           path: internal/web/dist
           retention-days: 1
+
+  # Typed-codegen drift gate (ADR-10): regenerate web/src/types.gen.ts from the
+  # Go API's OpenAPI spec and fail if it differs from the committed file. A red
+  # diff means the Go API changed but the generated TS types weren't refreshed
+  # (run `make types` and commit). Needs both Go (to dump the spec offline via
+  # `northplaned openapi`) and Node (for the openapi-typescript codegen).
+  types:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: cd web && npm ci
+      - name: regenerate types and fail on drift
+        run: make types-check
+
+  # Static analysis gate: gofmt formatting + golangci-lint (errcheck, govet,
+  # staticcheck, unused, ineffassign, misspell, unconvert, bodyclose — see
+  # .golangci.yml). Compiles against the committed embedded UI.
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l cmd internal)
+          if [ -n "$unformatted" ]; then
+            echo "These files need gofmt:"; echo "$unformatted"; exit 1
+          fi
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
 
   test:
     needs: ui

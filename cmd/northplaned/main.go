@@ -5,8 +5,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -14,6 +16,7 @@ import (
 	"syscall"
 
 	"github.com/northplane/northplane/internal/ai"
+	"github.com/northplane/northplane/internal/api"
 	"github.com/northplane/northplane/internal/auth"
 	"github.com/northplane/northplane/internal/bundle"
 	"github.com/northplane/northplane/internal/catalog"
@@ -50,6 +53,8 @@ func main() {
 		backupCmd(args)
 	case "mcp":
 		mcpCmd(args)
+	case "openapi":
+		openapiCmd(args)
 	case "bootstrap-admin":
 		bootstrapAdminCmd(args)
 	case "version", "--version", "-v":
@@ -77,6 +82,7 @@ Usage:
   northplaned backup     [-config …]       consistent backup to backup.target
   northplaned mcp        [-config …]       MCP server on stdio (NORTHPLANE_TOKEN auth)
   northplaned bootstrap-admin [-config …]  create the initial admin token
+  northplaned openapi                      print the OpenAPI 3.1 spec to stdout (no server needed)
   northplaned version
 
 Flags for most commands: -config /etc/northplane/config.yaml
@@ -122,6 +128,15 @@ func newLogger(cfg config.Config) *slog.Logger {
 	return logger
 }
 
+// closeLogged closes c on shutdown and logs any error — these are deferred
+// in main/command functions where there is nothing to do but record that a
+// final flush/close did not complete cleanly.
+func closeLogged(name string, c io.Closer, log *slog.Logger) {
+	if err := c.Close(); err != nil {
+		log.Error("close failed", "what", name, "err", err)
+	}
+}
+
 func openStore(ctx context.Context, cfg config.Config, log *slog.Logger) *storage.Store {
 	store, err := storage.Open(ctx, storage.Options{
 		DSN: cfg.Storage.DSN, DataDir: cfg.DataDir, Log: log,
@@ -145,12 +160,12 @@ func serve(args []string) {
 	defer stop()
 
 	store := openStore(ctx, cfg, log)
-	defer store.Close()
+	defer closeLogged("store", store, log)
 	ts, err := tsdb.Open(cfg.TSDBDir(), log, tsdb.Retention{})
 	if err != nil {
 		fatal("tsdb: %v", err)
 	}
-	defer ts.Close()
+	defer closeLogged("tsdb", ts, log)
 
 	if *demoSeed {
 		seedDemo(ctx, store, log, *demoSNMP, *demoTraps)
@@ -256,7 +271,7 @@ func migrateCmd(args []string) {
 	log := newLogger(cfg)
 	ctx := context.Background()
 	store := openStore(ctx, cfg, log) // Open runs migrations with startup gate
-	defer store.Close()
+	defer closeLogged("store", store, log)
 	fmt.Println("migrations applied — schema is current")
 }
 
@@ -279,13 +294,13 @@ func storageCmd(args []string) {
 	ctx := context.Background()
 
 	src := openStore(ctx, cfg, log)
-	defer src.Close()
+	defer closeLogged("source store", src, log)
 	dst, err := storage.Open(ctx, storage.Options{DSN: *to, DataDir: cfg.DataDir + "-migrated",
 		Log: log, RetentionMonths: cfg.Storage.EventRetentionMonths})
 	if err != nil {
 		fatal("target: %v", err)
 	}
-	defer dst.Close()
+	defer closeLogged("target store", dst, log)
 	n, err := storage.CopyAll(ctx, src, dst)
 	if err != nil {
 		fatal("copy: %v", err)
@@ -328,7 +343,7 @@ func backupCmd(args []string) {
 	}
 	ctx := context.Background()
 	store := openStore(ctx, cfg, log)
-	defer store.Close()
+	defer closeLogged("store", store, log)
 	manifest, err := server.Backup(ctx, cfg, store, version)
 	if err != nil {
 		fatal("backup: %v", err)
@@ -345,12 +360,12 @@ func mcpCmd(args []string) {
 	defer stop()
 
 	store := openStore(ctx, cfg, log)
-	defer store.Close()
+	defer closeLogged("store", store, log)
 	ts, err := tsdb.Open(cfg.TSDBDir(), log, tsdb.Retention{})
 	if err != nil {
 		fatal("tsdb: %v", err)
 	}
-	defer ts.Close()
+	defer closeLogged("tsdb", ts, log)
 	cat := catalog.New(store)
 	if err := cat.LoadAll(ctx); err != nil {
 		fatal("catalog: %v", err)
@@ -375,6 +390,20 @@ func mcpCmd(args []string) {
 	}
 }
 
+// openapiCmd prints the OpenAPI 3.1 document to stdout without starting
+// the server or touching any storage. It reuses the exact generator the
+// server serves at /api/openapi.json (api.OpenAPIDocument), so the typed
+// codegen pipeline (`make types`) can never drift from the live spec.
+func openapiCmd(args []string) {
+	_ = args // no flags; spec is generated purely from the route registry
+	doc := api.OpenAPIDocument(version)
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(doc); err != nil {
+		fatal("openapi: %v", err)
+	}
+}
+
 // bootstrapAdminCmd mints the initial admin API token for headless installs.
 // Creating any token also closes the web first-run /setup gate (by design —
 // whoever ran this already has admin access).
@@ -384,7 +413,7 @@ func bootstrapAdminCmd(args []string) {
 	log := newLogger(cfg)
 	ctx := context.Background()
 	store := openStore(ctx, cfg, log)
-	defer store.Close()
+	defer closeLogged("store", store, log)
 
 	existing, err := store.ListAPITokens(ctx, model.DefaultTenant)
 	if err != nil {

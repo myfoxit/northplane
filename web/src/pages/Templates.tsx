@@ -5,10 +5,19 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { resourceApi, APIError } from '../api'
 import type { Template, CheckCommand, TimePeriod, ObjectSpec, Kind } from '../types'
-import { Card, Table, Button, Empty, Dialog, Badge, TabBar, Spinner } from '../components/ui'
-import { Field, Select, KVEditor, ListEditor, Toggle, DurationInput, FormError, SubmitRow, useSave, DeleteButton } from '../components/forms'
-import { Input } from '../components/ui'
-import { SpecFields, cleanSpec } from '../components/objects/SpecFields'
+import { Button } from '@/components/ui/button'
+import { Card, CardHeader, CardTitle, CardAction, CardContent } from '@/components/ui/card'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
+import { Label } from '@/components/ui/label'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Empty, Spinner, Field, KVEditor, ListEditor, DurationInput, FormError, SubmitRow, useSave, DeleteButton } from '@/components/kit'
+import { SpecFields } from '../components/objects/SpecFields'
+import { cleanSpec } from '../components/objects/specUtil'
 import { t } from '../i18n'
 
 const tabs = ['templates', 'check-commands', 'time-periods'] as const
@@ -24,13 +33,21 @@ export function TemplatesPage() {
   return (
     <div className="space-y-4">
       <h1 className="text-lg font-bold">{t('templates')} &amp; Konfiguration</h1>
-      <TabBar tabs={tabs} value={tab} onChange={setTab} labels={(tb) => tabLabels[tb]} />
+      <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
+        <TabsList>
+          {tabs.map((tb) => <TabsTrigger key={tb} value={tb}>{tabLabels[tb]}</TabsTrigger>)}
+        </TabsList>
+      </Tabs>
       {tab === 'templates' && <TemplatesTab />}
       {tab === 'check-commands' && <CheckCommandsTab />}
       {tab === 'time-periods' && <TimePeriodsTab />}
     </div>
   )
 }
+
+// Radix SelectItem value cannot be "" — sentinel for the empty template
+// kind ("Host & Service"), mapped back to '' for the document.
+const BOTH = '__both__'
 
 // 409/412 → standard German conflict copy.
 function conflictMessage(err: unknown): unknown {
@@ -52,33 +69,46 @@ function TemplatesTab() {
   const remove = useSave<string>((name) => templatesApi.remove(name), { invalidate: templatesInval })
 
   return (
-    <Card title={t('templates')} actions={<Button variant="primary" size="sm" onClick={() => setEditing('new')}>+ {t('create')}</Button>}>
-      {isLoading ? <Spinner /> : (data?.length ?? 0) === 0 ? <Empty text={t('empty')} /> : (
-        <Table head={[t('name'), t('type'), t('labels'), t('templates'), '']}>
-          {data!.map((tpl) => (
-            <tr key={tpl.name}>
-              <td className="px-3 py-2 text-foreground font-medium">{tpl.name}</td>
-              <td className="px-3 py-2">
-                <Badge className="bg-muted text-muted-foreground border-input">{tpl.kind || 'beide'}</Badge>
-              </td>
-              <td className="px-3 py-2 text-xs text-muted-foreground font-mono">
-                {Object.entries(tpl.labels ?? {}).map(([k, v]) => `${k}=${v}`).join(', ') || '—'}
-              </td>
-              <td className="px-3 py-2 text-xs text-muted-foreground font-mono">{(tpl.spec?.templates ?? []).join(', ') || '—'}</td>
-              <td className="px-3 py-2 text-right whitespace-nowrap">
-                <Button size="sm" variant="ghost" onClick={() => setEditing({ name: tpl.name })}>{t('edit')}</Button>
-                <DeleteButton onDelete={() => remove.mutate(tpl.name)} />
-              </td>
-            </tr>
-          ))}
-        </Table>
-      )}
-      {editing && (
-        <TemplateDialog
-          name={editing === 'new' ? null : editing.name}
-          onClose={() => setEditing(null)}
-        />
-      )}
+    <Card>
+      <CardHeader>
+        <CardTitle>{t('templates')}</CardTitle>
+        <CardAction><Button variant="default" size="sm" onClick={() => setEditing('new')}>+ {t('create')}</Button></CardAction>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? <Spinner /> : (data?.length ?? 0) === 0 ? <Empty text={t('empty')} /> : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                {[t('name'), t('type'), t('labels'), t('templates'), ''].map((h, i) => <TableHead key={i}>{h}</TableHead>)}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data!.map((tpl) => (
+                <TableRow key={tpl.name}>
+                  <TableCell className="text-foreground font-medium">{tpl.name}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="bg-muted text-muted-foreground border-input">{tpl.kind || 'beide'}</Badge>
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground font-mono">
+                    {Object.entries(tpl.labels ?? {}).map(([k, v]) => `${k}=${v}`).join(', ') || '—'}
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground font-mono">{(tpl.spec?.templates ?? []).join(', ') || '—'}</TableCell>
+                  <TableCell className="text-right whitespace-nowrap">
+                    <Button size="sm" variant="ghost" onClick={() => setEditing({ name: tpl.name })}>{t('edit')}</Button>
+                    <DeleteButton onDelete={() => remove.mutate(tpl.name)} />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+        {editing && (
+          <TemplateDialog
+            name={editing === 'new' ? null : editing.name}
+            onClose={() => setEditing(null)}
+          />
+        )}
+      </CardContent>
     </Card>
   )
 }
@@ -119,31 +149,37 @@ function TemplateDialog({ name, onClose }: { name: string | null; onClose: () =>
   }, { invalidate: templatesInval, onDone: onClose })
 
   return (
-    <Dialog open onClose={onClose} title={isEdit ? `${t('edit')}: ${name}` : `${t('templates')} — ${t('create')}`} size="lg">
-      {isEdit && isLoading ? <Spinner /> : (
-        <form onSubmit={(e) => { e.preventDefault(); save.mutate() }} className="space-y-4">
-          <div className="grid grid-cols-2 gap-2">
-            <Field label={t('name')} required>
-              <Input value={isEdit ? name! : draftName} disabled={isEdit}
-                onChange={(e) => setDraftName(e.target.value)} placeholder="generic-host" autoFocus={!isEdit} />
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader><DialogTitle>{isEdit ? `${t('edit')}: ${name}` : `${t('templates')} — ${t('create')}`}</DialogTitle></DialogHeader>
+        {isEdit && isLoading ? <Spinner /> : (
+          <form onSubmit={(e) => { e.preventDefault(); save.mutate() }} className="space-y-4">
+            <div className="grid grid-cols-2 gap-2">
+              <Field label={t('name')} required>
+                <Input value={isEdit ? name! : draftName} disabled={isEdit}
+                  onChange={(e) => setDraftName(e.target.value)} placeholder="generic-host" autoFocus={!isEdit} />
+              </Field>
+              <Field label={t('type')} hint="leer = Host & Service">
+                <Select value={kind || BOTH} onValueChange={(v) => setKind((v === BOTH ? '' : v) as Kind | '')}>
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={BOTH}>beide</SelectItem>
+                    <SelectItem value="host">{t('host')}</SelectItem>
+                    <SelectItem value="service">{t('service')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+            </div>
+            <Field label={t('labels')}>
+              <KVEditor value={labels} onChange={setLabels} keyPlaceholder="env" valuePlaceholder="prod" />
             </Field>
-            <Field label={t('type')} hint="leer = Host & Service">
-              <Select value={kind} onChange={(e) => setKind(e.target.value as Kind | '')}>
-                <option value="">beide</option>
-                <option value="host">{t('host')}</option>
-                <option value="service">{t('service')}</option>
-              </Select>
-            </Field>
-          </div>
-          <Field label={t('labels')}>
-            <KVEditor value={labels} onChange={setLabels} keyPlaceholder="env" valuePlaceholder="prod" />
-          </Field>
-          <SpecFields spec={spec} onChange={setSpec} kind={kind} />
-          <FormError error={conflictMessage(save.error)} />
-          <SubmitRow onCancel={onClose} saving={save.isPending} disabled={!(isEdit ? name : draftName)}
-            label={isEdit ? t('save') : t('create')} />
-        </form>
-      )}
+            <SpecFields spec={spec} onChange={setSpec} kind={kind} />
+            <FormError error={conflictMessage(save.error)} />
+            <SubmitRow onCancel={onClose} saving={save.isPending} disabled={!(isEdit ? name : draftName)}
+              label={isEdit ? t('save') : t('create')} />
+          </form>
+        )}
+      </DialogContent>
     </Dialog>
   )
 }
@@ -158,27 +194,40 @@ function CheckCommandsTab() {
   const remove = useSave<string>((name) => commandsApi.remove(name), { invalidate: commandsInval })
 
   return (
-    <Card title="Check-Kommandos" actions={<Button variant="primary" size="sm" onClick={() => setEditing('new')}>+ {t('create')}</Button>}>
-      {isLoading ? <Spinner /> : (data?.length ?? 0) === 0 ? <Empty text={t('empty')} /> : (
-        <Table head={[t('name'), t('type'), 'Kommandozeile', 'Env', t('timeout'), '']}>
-          {data!.map((cmd) => (
-            <tr key={cmd.name}>
-              <td className="px-3 py-2 text-foreground font-medium">{cmd.name}</td>
-              <td className="px-3 py-2"><Badge className="bg-muted text-muted-foreground border-input">{cmd.type}</Badge></td>
-              <td className="px-3 py-2 text-xs text-muted-foreground font-mono truncate max-w-md">{(cmd.line ?? []).join(' ') || '—'}</td>
-              <td className="px-3 py-2 text-xs text-muted-foreground">{cmd.env ? 'ja' : '—'}</td>
-              <td className="px-3 py-2 text-xs text-muted-foreground font-mono">{cmd.timeout || '—'}</td>
-              <td className="px-3 py-2 text-right whitespace-nowrap">
-                <Button size="sm" variant="ghost" onClick={() => setEditing({ name: cmd.name })}>{t('edit')}</Button>
-                <DeleteButton onDelete={() => remove.mutate(cmd.name)} />
-              </td>
-            </tr>
-          ))}
-        </Table>
-      )}
-      {editing && (
-        <CheckCommandDialog name={editing === 'new' ? null : editing.name} onClose={() => setEditing(null)} />
-      )}
+    <Card>
+      <CardHeader>
+        <CardTitle>Check-Kommandos</CardTitle>
+        <CardAction><Button variant="default" size="sm" onClick={() => setEditing('new')}>+ {t('create')}</Button></CardAction>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? <Spinner /> : (data?.length ?? 0) === 0 ? <Empty text={t('empty')} /> : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                {[t('name'), t('type'), 'Kommandozeile', 'Env', t('timeout'), ''].map((h, i) => <TableHead key={i}>{h}</TableHead>)}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data!.map((cmd) => (
+                <TableRow key={cmd.name}>
+                  <TableCell className="text-foreground font-medium">{cmd.name}</TableCell>
+                  <TableCell><Badge variant="outline" className="bg-muted text-muted-foreground border-input">{cmd.type}</Badge></TableCell>
+                  <TableCell className="text-xs text-muted-foreground font-mono truncate max-w-md">{(cmd.line ?? []).join(' ') || '—'}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{cmd.env ? 'ja' : '—'}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground font-mono">{cmd.timeout || '—'}</TableCell>
+                  <TableCell className="text-right whitespace-nowrap">
+                    <Button size="sm" variant="ghost" onClick={() => setEditing({ name: cmd.name })}>{t('edit')}</Button>
+                    <DeleteButton onDelete={() => remove.mutate(cmd.name)} />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+        {editing && (
+          <CheckCommandDialog name={editing === 'new' ? null : editing.name} onClose={() => setEditing(null)} />
+        )}
+      </CardContent>
     </Card>
   )
 }
@@ -220,39 +269,48 @@ function CheckCommandDialog({ name, onClose }: { name: string | null; onClose: (
   }, { invalidate: commandsInval, onDone: onClose })
 
   return (
-    <Dialog open onClose={onClose} title={isEdit ? `${t('edit')}: ${name}` : `Check-Kommando — ${t('create')}`} size="lg">
-      {isEdit && isLoading ? <Spinner /> : (
-        <form onSubmit={(e) => { e.preventDefault(); save.mutate() }} className="space-y-4">
-          <div className="grid grid-cols-2 gap-2">
-            <Field label={t('name')} required>
-              <Input value={isEdit ? name! : draftName} disabled={isEdit}
-                onChange={(e) => setDraftName(e.target.value)} placeholder="check_postgres" autoFocus={!isEdit} />
-            </Field>
-            <Field label={t('type')}>
-              <Select value={type} onChange={(e) => setType(e.target.value as CheckCommand['type'])}>
-                <option value="exec">exec</option>
-                <option value="builtin">builtin</option>
-                <option value="agent">agent</option>
-                <option value="passive">passive</option>
-              </Select>
-            </Field>
-          </div>
-          <Field label="Kommandozeile" hint="Ein Token pro Eintrag; argv[0] = Plugin/Builtin-Name, dann $ARG1$ …">
-            <ListEditor value={line} onChange={setLine} placeholder="check_postgres" />
-          </Field>
-          <div className="grid grid-cols-2 gap-2 items-end">
-            <Field label={t('timeout')}>
-              <DurationInput value={timeout} onChange={setTimeoutV} placeholder="30s" />
-            </Field>
-            <div className="pb-1.5">
-              <Toggle checked={env} onChange={setEnv} label="NAGIOS_*/NORTHPLANE_* Umgebungsmakros exportieren" />
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader><DialogTitle>{isEdit ? `${t('edit')}: ${name}` : `Check-Kommando — ${t('create')}`}</DialogTitle></DialogHeader>
+        {isEdit && isLoading ? <Spinner /> : (
+          <form onSubmit={(e) => { e.preventDefault(); save.mutate() }} className="space-y-4">
+            <div className="grid grid-cols-2 gap-2">
+              <Field label={t('name')} required>
+                <Input value={isEdit ? name! : draftName} disabled={isEdit}
+                  onChange={(e) => setDraftName(e.target.value)} placeholder="check_postgres" autoFocus={!isEdit} />
+              </Field>
+              <Field label={t('type')}>
+                <Select value={type} onValueChange={(v) => setType(v as CheckCommand['type'])}>
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="exec">exec</SelectItem>
+                    <SelectItem value="builtin">builtin</SelectItem>
+                    <SelectItem value="agent">agent</SelectItem>
+                    <SelectItem value="passive">passive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
             </div>
-          </div>
-          <FormError error={conflictMessage(save.error)} />
-          <SubmitRow onCancel={onClose} saving={save.isPending} disabled={!(isEdit ? name : draftName)}
-            label={isEdit ? t('save') : t('create')} />
-        </form>
-      )}
+            <Field label="Kommandozeile" hint="Ein Token pro Eintrag; argv[0] = Plugin/Builtin-Name, dann $ARG1$ …">
+              <ListEditor value={line} onChange={setLine} placeholder="check_postgres" />
+            </Field>
+            <div className="grid grid-cols-2 gap-2 items-end">
+              <Field label={t('timeout')}>
+                <DurationInput value={timeout} onChange={setTimeoutV} placeholder="30s" />
+              </Field>
+              <div className="pb-1.5">
+                <Label className="cursor-pointer">
+                  <Switch checked={env} onCheckedChange={setEnv} />
+                  <span className="text-sm text-foreground/90">NAGIOS_*/NORTHPLANE_* Umgebungsmakros exportieren</span>
+                </Label>
+              </div>
+            </div>
+            <FormError error={conflictMessage(save.error)} />
+            <SubmitRow onCancel={onClose} saving={save.isPending} disabled={!(isEdit ? name : draftName)}
+              label={isEdit ? t('save') : t('create')} />
+          </form>
+        )}
+      </DialogContent>
     </Dialog>
   )
 }
@@ -272,26 +330,39 @@ function TimePeriodsTab() {
   const remove = useSave<string>((name) => periodsApi.remove(name), { invalidate: periodsInval })
 
   return (
-    <Card title="Zeiträume" actions={<Button variant="primary" size="sm" onClick={() => setEditing('new')}>+ {t('create')}</Button>}>
-      {isLoading ? <Spinner /> : (data?.length ?? 0) === 0 ? <Empty text={t('empty')} /> : (
-        <Table head={[t('name'), 'Alias', 'Tage', 'Ausnahmen', '']}>
-          {data!.map((tp) => (
-            <tr key={tp.name}>
-              <td className="px-3 py-2 text-foreground font-medium">{tp.name}</td>
-              <td className="px-3 py-2 text-xs text-muted-foreground">{tp.alias || '—'}</td>
-              <td className="px-3 py-2 text-xs text-muted-foreground">{Object.keys(tp.days ?? {}).length || '—'}</td>
-              <td className="px-3 py-2 text-xs text-muted-foreground">{Object.keys(tp.exceptions ?? {}).length || '—'}</td>
-              <td className="px-3 py-2 text-right whitespace-nowrap">
-                <Button size="sm" variant="ghost" onClick={() => setEditing({ name: tp.name })}>{t('edit')}</Button>
-                <DeleteButton onDelete={() => remove.mutate(tp.name)} />
-              </td>
-            </tr>
-          ))}
-        </Table>
-      )}
-      {editing && (
-        <TimePeriodDialog name={editing === 'new' ? null : editing.name} onClose={() => setEditing(null)} />
-      )}
+    <Card>
+      <CardHeader>
+        <CardTitle>Zeiträume</CardTitle>
+        <CardAction><Button variant="default" size="sm" onClick={() => setEditing('new')}>+ {t('create')}</Button></CardAction>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? <Spinner /> : (data?.length ?? 0) === 0 ? <Empty text={t('empty')} /> : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                {[t('name'), 'Alias', 'Tage', 'Ausnahmen', ''].map((h, i) => <TableHead key={i}>{h}</TableHead>)}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data!.map((tp) => (
+                <TableRow key={tp.name}>
+                  <TableCell className="text-foreground font-medium">{tp.name}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{tp.alias || '—'}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{Object.keys(tp.days ?? {}).length || '—'}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{Object.keys(tp.exceptions ?? {}).length || '—'}</TableCell>
+                  <TableCell className="text-right whitespace-nowrap">
+                    <Button size="sm" variant="ghost" onClick={() => setEditing({ name: tp.name })}>{t('edit')}</Button>
+                    <DeleteButton onDelete={() => remove.mutate(tp.name)} />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+        {editing && (
+          <TimePeriodDialog name={editing === 'new' ? null : editing.name} onClose={() => setEditing(null)} />
+        )}
+      </CardContent>
     </Card>
   )
 }
@@ -344,45 +415,48 @@ function TimePeriodDialog({ name, onClose }: { name: string | null; onClose: () 
   }, { invalidate: periodsInval, onDone: onClose })
 
   return (
-    <Dialog open onClose={onClose} title={isEdit ? `${t('edit')}: ${name}` : `Zeitraum — ${t('create')}`} size="lg">
-      {isEdit && isLoading ? <Spinner /> : (
-        <form onSubmit={(e) => { e.preventDefault(); save.mutate() }} className="space-y-4">
-          <div className="grid grid-cols-2 gap-2">
-            <Field label={t('name')} required>
-              <Input value={isEdit ? name! : draftName} disabled={isEdit}
-                onChange={(e) => setDraftName(e.target.value)} placeholder="business-hours" autoFocus={!isEdit} />
-            </Field>
-            <Field label="Alias">
-              <Input value={alias} onChange={(e) => setAlias(e.target.value)} placeholder="Geschäftszeiten" />
-            </Field>
-          </div>
-
-          <div className="border border-border rounded-lg p-3 space-y-2">
-            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Wochentage</div>
-            {WEEKDAYS.map((wd) => (
-              <Field key={wd} label={WEEKDAY_DE[wd]} hint='Bereiche "HH:MM-HH:MM"'>
-                <ListEditor
-                  value={days[wd] ?? []}
-                  onChange={(v) => setDays((d) => ({ ...d, [wd]: v }))}
-                  placeholder="09:00-17:00"
-                />
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader><DialogTitle>{isEdit ? `${t('edit')}: ${name}` : `Zeitraum — ${t('create')}`}</DialogTitle></DialogHeader>
+        {isEdit && isLoading ? <Spinner /> : (
+          <form onSubmit={(e) => { e.preventDefault(); save.mutate() }} className="space-y-4">
+            <div className="grid grid-cols-2 gap-2">
+              <Field label={t('name')} required>
+                <Input value={isEdit ? name! : draftName} disabled={isEdit}
+                  onChange={(e) => setDraftName(e.target.value)} placeholder="business-hours" autoFocus={!isEdit} />
               </Field>
-            ))}
-          </div>
+              <Field label="Alias">
+                <Input value={alias} onChange={(e) => setAlias(e.target.value)} placeholder="Geschäftszeiten" />
+              </Field>
+            </div>
 
-          <Field label="Ausnahmen" hint='Datum → Bereiche, z.B. "2026-12-24" → "00:00-00:00" (geschlossen)'>
-            <KVEditor value={exceptions} onChange={setExceptions} keyPlaceholder="2026-12-24" valuePlaceholder="00:00-00:00" />
-          </Field>
+            <div className="border border-border rounded-lg p-3 space-y-2">
+              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Wochentage</div>
+              {WEEKDAYS.map((wd) => (
+                <Field key={wd} label={WEEKDAY_DE[wd]} hint='Bereiche "HH:MM-HH:MM"'>
+                  <ListEditor
+                    value={days[wd] ?? []}
+                    onChange={(v) => setDays((d) => ({ ...d, [wd]: v }))}
+                    placeholder="09:00-17:00"
+                  />
+                </Field>
+              ))}
+            </div>
 
-          <Field label="Ausschluss (exclude)" hint="Namen anderer Zeiträume, die abgezogen werden">
-            <ListEditor value={exclude} onChange={setExclude} placeholder="holidays" />
-          </Field>
+            <Field label="Ausnahmen" hint='Datum → Bereiche, z.B. "2026-12-24" → "00:00-00:00" (geschlossen)'>
+              <KVEditor value={exceptions} onChange={setExceptions} keyPlaceholder="2026-12-24" valuePlaceholder="00:00-00:00" />
+            </Field>
 
-          <FormError error={conflictMessage(save.error)} />
-          <SubmitRow onCancel={onClose} saving={save.isPending} disabled={!(isEdit ? name : draftName)}
-            label={isEdit ? t('save') : t('create')} />
-        </form>
-      )}
+            <Field label="Ausschluss (exclude)" hint="Namen anderer Zeiträume, die abgezogen werden">
+              <ListEditor value={exclude} onChange={setExclude} placeholder="holidays" />
+            </Field>
+
+            <FormError error={conflictMessage(save.error)} />
+            <SubmitRow onCancel={onClose} saving={save.isPending} disabled={!(isEdit ? name : draftName)}
+              label={isEdit ? t('save') : t('create')} />
+          </form>
+        )}
+      </DialogContent>
     </Dialog>
   )
 }

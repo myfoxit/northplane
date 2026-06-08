@@ -82,8 +82,8 @@ func (a *API) registerAdmin() {
 		ExpiresAt *time.Time         `json:"expiresAt,omitempty"`
 	}
 	type tokenResponse struct {
-		Token string          `json:"token"` // shown once
-		Meta  model.APIToken  `json:"meta"`
+		Token string         `json:"token"` // shown once
+		Meta  model.APIToken `json:"meta"`
 	}
 	a.handle("POST /api/v1/api-tokens", "Create API token (secret shown once)",
 		"admin:tokens", tokenRequest{}, tokenResponse{},

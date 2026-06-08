@@ -5,23 +5,24 @@
 // resourceApi.get (getWithEtag) and PUT with that etag; 409/412 surface
 // through FormError.
 import { type ReactNode } from 'react'
-import { Badge, Button } from '../ui'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { t } from '../../i18n'
 
 // Status badges — never colour-only (A-15.29ff): each carries its word.
 export function StatusBadge({ kind }: { kind: 'disabled' | 'enabled' | 'system' }) {
   if (kind === 'disabled') {
-    return <Badge className="bg-muted text-muted-foreground border-input">{t('disabled')}</Badge>
+    return <Badge variant="outline" className="bg-muted text-muted-foreground border-input">{t('disabled')}</Badge>
   }
   if (kind === 'system') {
-    return <Badge className="bg-purple-500/10 text-purple-400 border-purple-800">System</Badge>
+    return <Badge variant="outline" className="bg-purple-500/10 text-purple-400 border-purple-800">System</Badge>
   }
-  return <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-800">{t('enabled')}</Badge>
+  return <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-800">{t('enabled')}</Badge>
 }
 
 export function TypeBadge({ children }: { children: ReactNode }) {
   return (
-    <Badge className="bg-muted text-foreground/90 border-input justify-center font-mono">
+    <Badge variant="outline" className="bg-muted text-foreground/90 border-input justify-center font-mono">
       {children}
     </Badge>
   )
@@ -34,7 +35,7 @@ export function TableActions({ onCreate, label, children }: {
   return (
     <div className="flex items-center gap-2 justify-end">
       {children}
-      {onCreate && <Button variant="primary" size="sm" onClick={onCreate}>{label}</Button>}
+      {onCreate && <Button variant="default" size="sm" onClick={onCreate}>{label}</Button>}
     </div>
   )
 }

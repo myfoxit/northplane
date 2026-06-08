@@ -25,12 +25,12 @@ type Redactor struct {
 
 // alwaysPatterns are redacted regardless of configuration.
 var alwaysPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`np_[A-Za-z0-9]{16,}`),                              // API tokens
+	regexp.MustCompile(`np_[A-Za-z0-9]{16,}`), // API tokens
 	regexp.MustCompile(`(?i)(password|passwd|secret|api[_-]?key|token)\s*[:=]\s*\S+`),
 	regexp.MustCompile(`-----BEGIN [A-Z ]+PRIVATE KEY-----`),
 	regexp.MustCompile(`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b`), // emails
 	regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`),                        // IPv4
-	regexp.MustCompile(`\b[A-Fa-f0-9]{2}(?::[A-Fa-f0-9]{2}){5}\b`),          // MAC
+	regexp.MustCompile(`\b[A-Fa-f0-9]{2}(?::[A-Fa-f0-9]{2}){5}\b`),           // MAC
 }
 
 var hostnamePattern = regexp.MustCompile(`\b[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+\b`)

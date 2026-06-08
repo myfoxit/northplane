@@ -8,10 +8,18 @@ import { useQuery } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { resourceApi } from '../../api'
 import type { Contact, ChannelPreference, ChannelType, Severity } from '../../types'
-import { Button, Table, Empty, Dialog, Input, Badge, Spinner } from '../ui'
-import { Field, FormError, SubmitRow, useSave, DeleteButton, Select } from '../forms'
+import { Button } from '@/components/ui/button'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
+import { Empty, Spinner, Field, FormError, SubmitRow, useSave, DeleteButton } from '@/components/kit'
 import { t } from '../../i18n'
 import { TableActions, RowActions } from './common'
+
+// Radix SelectItem value cannot be "" — sentinel for the "(alle)" min-severity.
+const ALL_SEVERITIES = '__all__'
 
 const contactsApi = resourceApi<Contact>('contacts')
 
@@ -24,22 +32,34 @@ export function ContactsTab() {
   return (
     <div className="space-y-4">
       <TableActions onCreate={() => setEditing('new')} label={t('create')} />
-      <Table head={[t('name'), t('email'), t('phone'), t('timezone'), 'Profile', '']}>
-        {(data ?? []).map((c) => (
-          <tr key={c.name}>
-            <td className="px-3 py-2 text-foreground">{c.name}</td>
-            <td className="px-3 py-2 text-xs text-muted-foreground">{c.email || '—'}</td>
-            <td className="px-3 py-2 text-xs text-muted-foreground font-mono">{c.phone || '—'}</td>
-            <td className="px-3 py-2 text-xs text-muted-foreground">{c.timeZone || '—'}</td>
-            <td className="px-3 py-2 text-xs text-muted-foreground">{c.preferences?.length ?? 0}</td>
-            <td className="px-3 py-2">
-              <RowActions>
-                <Button size="sm" variant="ghost" onClick={() => setEditing(c)}>{t('edit')}</Button>
-                <ContactDelete contact={c} />
-              </RowActions>
-            </td>
-          </tr>
-        ))}
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{t('name')}</TableHead>
+            <TableHead>{t('email')}</TableHead>
+            <TableHead>{t('phone')}</TableHead>
+            <TableHead>{t('timezone')}</TableHead>
+            <TableHead>Profile</TableHead>
+            <TableHead></TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {(data ?? []).map((c) => (
+            <TableRow key={c.name}>
+              <TableCell className="px-3 py-2 text-foreground">{c.name}</TableCell>
+              <TableCell className="px-3 py-2 text-xs text-muted-foreground">{c.email || '—'}</TableCell>
+              <TableCell className="px-3 py-2 text-xs text-muted-foreground font-mono">{c.phone || '—'}</TableCell>
+              <TableCell className="px-3 py-2 text-xs text-muted-foreground">{c.timeZone || '—'}</TableCell>
+              <TableCell className="px-3 py-2 text-xs text-muted-foreground">{c.preferences?.length ?? 0}</TableCell>
+              <TableCell className="px-3 py-2">
+                <RowActions>
+                  <Button size="sm" variant="ghost" onClick={() => setEditing(c)}>{t('edit')}</Button>
+                  <ContactDelete contact={c} />
+                </RowActions>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
       </Table>
       {!isLoading && (data?.length ?? 0) === 0 && <Empty text={t('empty')} />}
       {editing && (
@@ -67,7 +87,16 @@ function ContactDialog({ name, onClose }: { name: string | null; onClose: () => 
     enabled: !isNew,
   })
   if (!isNew && isLoading) {
-    return <Dialog open onClose={onClose} title={t('loading')} size="lg"><Spinner /></Dialog>
+    return (
+      <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{t('loading')}</DialogTitle>
+          </DialogHeader>
+          <Spinner />
+        </DialogContent>
+      </Dialog>
+    )
   }
   return (
     <ContactForm
@@ -98,21 +127,26 @@ function ContactForm({ doc, etag, isNew, onClose }: {
     { invalidate: [[...contactsApi.queryKey]], onDone: onClose },
   )
   return (
-    <Dialog open onClose={onClose} title={isNew ? t('create') : `${t('edit')}: ${doc.name}`} size="lg">
-      <form onSubmit={(e) => { e.preventDefault(); save.mutate(undefined) }} className="space-y-3">
-        <div className="grid grid-cols-2 gap-2">
-          <Field label={t('name')} required><Input value={name} onChange={(e) => setName(e.target.value)} required disabled={!isNew} /></Field>
-          <Field label={t('email')}><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
-          <Field label={t('phone')} hint="E.164, z.B. +491701234567"><Input value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>
-          <Field label={t('timezone')} hint="z.B. Europe/Berlin"><Input value={timeZone} onChange={(e) => setTimeZone(e.target.value)} /></Field>
-        </div>
-        <div>
-          <div className="text-xs text-muted-foreground font-medium mb-1">Benachrichtigungs-Präferenzen</div>
-          <PreferencesEditor value={prefs} onChange={setPrefs} />
-        </div>
-        <FormError error={save.error} />
-        <SubmitRow onCancel={onClose} saving={save.isPending} disabled={!name} />
-      </form>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{isNew ? t('create') : `${t('edit')}: ${doc.name}`}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={(e) => { e.preventDefault(); save.mutate(undefined) }} className="space-y-3">
+          <div className="grid grid-cols-2 gap-2">
+            <Field label={t('name')} required><Input value={name} onChange={(e) => setName(e.target.value)} required disabled={!isNew} /></Field>
+            <Field label={t('email')}><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
+            <Field label={t('phone')} hint="E.164, z.B. +491701234567"><Input value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>
+            <Field label={t('timezone')} hint="z.B. Europe/Berlin"><Input value={timeZone} onChange={(e) => setTimeZone(e.target.value)} /></Field>
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground font-medium mb-1">Benachrichtigungs-Präferenzen</div>
+            <PreferencesEditor value={prefs} onChange={setPrefs} />
+          </div>
+          <FormError error={save.error} />
+          <SubmitRow onCancel={onClose} saving={save.isPending} disabled={!name} />
+        </form>
+      </DialogContent>
     </Dialog>
   )
 }
@@ -131,9 +165,15 @@ function PreferencesEditor({ value, onChange }: {
             <Field label="Profil"><Input value={p.profile} onChange={(e) => update(i, { profile: e.target.value })} placeholder="default" /></Field>
             <Field label="Zeitperiode"><Input value={p.period ?? ''} onChange={(e) => update(i, { period: e.target.value || undefined })} placeholder="(immer)" /></Field>
             <Field label="Min. Severity">
-              <Select value={p.severity ?? ''} onChange={(e) => update(i, { severity: (e.target.value || undefined) as Severity | undefined })}>
-                <option value="">(alle)</option>
-                {SEVERITIES.map((s) => <option key={s} value={s}>{s}</option>)}
+              <Select
+                value={p.severity ?? ALL_SEVERITIES}
+                onValueChange={(v) => update(i, { severity: v === ALL_SEVERITIES ? undefined : (v as Severity) })}
+              >
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_SEVERITIES}>(alle)</SelectItem>
+                  {SEVERITIES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                </SelectContent>
               </Select>
             </Field>
           </div>
@@ -176,7 +216,7 @@ export function ChannelTypePicker({ value, onChange }: {
         <div className="flex flex-wrap gap-1">
           {available.map((c) => (
             <button key={c} type="button" onClick={() => onChange([...value, c])}>
-              <Badge className="bg-muted text-muted-foreground border-input hover:text-foreground cursor-pointer">+ {c}</Badge>
+              <Badge variant="outline" className="bg-muted text-muted-foreground border-input hover:text-foreground cursor-pointer">+ {c}</Badge>
             </button>
           ))}
         </div>

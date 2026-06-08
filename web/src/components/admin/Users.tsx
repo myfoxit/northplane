@@ -7,8 +7,15 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { get, post, put, del, fmtTime, type ListResponse } from '../../api'
 import type { User, Role } from '../../types'
-import { Button, Card, Table, Empty, Badge, Input, Dialog } from '../ui'
-import { Field, FormError, SubmitRow, useSave, DeleteButton, ListEditor } from '../forms'
+import { Button } from '@/components/ui/button'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Switch } from '@/components/ui/switch'
+import { Label } from '@/components/ui/label'
+import { Empty, Field, FormError, SubmitRow, useSave, DeleteButton, ListEditor } from '@/components/kit'
 import { t } from '../../i18n'
 import { StatusBadge, TableActions, RowActions } from './common'
 
@@ -31,26 +38,38 @@ export function UsersTab() {
   return (
     <div className="space-y-4">
       <TableActions onCreate={() => setEditing('new')} label={t('newUser')} />
-      <Table head={[t('name'), t('email'), t('permissions'), t('status'), t('lastSeen'), '']}>
-        {(data ?? []).map((u) => (
-          <tr key={u.id}>
-            <td className="px-3 py-2 text-foreground">
-              {u.name}
-              {!u.local && <Badge className="ml-2 bg-sky-500/10 text-sky-400 border-sky-800">OIDC</Badge>}
-            </td>
-            <td className="px-3 py-2 text-muted-foreground text-xs">{u.email}</td>
-            <td className="px-3 py-2 text-xs text-muted-foreground">{u.roles?.join(', ') || '—'}</td>
-            <td className="px-3 py-2">{u.disabled ? <StatusBadge kind="disabled" /> : <StatusBadge kind="enabled" />}</td>
-            <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">{u.lastSeenAt ? fmtTime(u.lastSeenAt) : '—'}</td>
-            <td className="px-3 py-2">
-              <RowActions>
-                {u.local && <Button size="sm" variant="ghost" onClick={() => setPwUser(u)}>{t('setPassword')}</Button>}
-                <Button size="sm" variant="ghost" onClick={() => setEditing(u)}>{t('edit')}</Button>
-                <UserDelete user={u} />
-              </RowActions>
-            </td>
-          </tr>
-        ))}
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{t('name')}</TableHead>
+            <TableHead>{t('email')}</TableHead>
+            <TableHead>{t('permissions')}</TableHead>
+            <TableHead>{t('status')}</TableHead>
+            <TableHead>{t('lastSeen')}</TableHead>
+            <TableHead></TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {(data ?? []).map((u) => (
+            <TableRow key={u.id}>
+              <TableCell className="px-3 py-2 text-foreground">
+                {u.name}
+                {!u.local && <Badge variant="outline" className="ml-2 bg-sky-500/10 text-sky-400 border-sky-800">OIDC</Badge>}
+              </TableCell>
+              <TableCell className="px-3 py-2 text-muted-foreground text-xs">{u.email}</TableCell>
+              <TableCell className="px-3 py-2 text-xs text-muted-foreground">{u.roles?.join(', ') || '—'}</TableCell>
+              <TableCell className="px-3 py-2">{u.disabled ? <StatusBadge kind="disabled" /> : <StatusBadge kind="enabled" />}</TableCell>
+              <TableCell className="px-3 py-2 text-xs text-muted-foreground tabular-nums">{u.lastSeenAt ? fmtTime(u.lastSeenAt) : '—'}</TableCell>
+              <TableCell className="px-3 py-2">
+                <RowActions>
+                  {u.local && <Button size="sm" variant="ghost" onClick={() => setPwUser(u)}>{t('setPassword')}</Button>}
+                  <Button size="sm" variant="ghost" onClick={() => setEditing(u)}>{t('edit')}</Button>
+                  <UserDelete user={u} />
+                </RowActions>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
       </Table>
       {!isLoading && (data?.length ?? 0) === 0 && <Empty text={t('empty')} />}
 
@@ -102,30 +121,35 @@ function UserDialog({ user, roleNames, onClose }: {
   )
 
   return (
-    <Dialog open onClose={onClose} title={isNew ? t('newUser') : `${t('edit')}: ${user!.name}`} size="md">
-      <form onSubmit={(e) => { e.preventDefault(); save.mutate(undefined) }} className="space-y-3">
-        <Field label={t('name')} required>
-          <Input value={name} onChange={(e) => setName(e.target.value)} required />
-        </Field>
-        <Field label={t('email')} required>
-          <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-        </Field>
-        {isNew && (
-          <Field label={t('password')} hint="Optional — mind. 12 Zeichen. Leer = nur OIDC-Login.">
-            <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-              autoComplete="new-password" minLength={12} />
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{isNew ? t('newUser') : `${t('edit')}: ${user!.name}`}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={(e) => { e.preventDefault(); save.mutate(undefined) }} className="space-y-3">
+          <Field label={t('name')} required>
+            <Input value={name} onChange={(e) => setName(e.target.value)} required />
           </Field>
-        )}
-        <Field label={t('permissions')} hint="Rollen-Namen">
-          <ListEditor value={roles} onChange={setRoles} placeholder="admin" suggestions={roleNames} />
-        </Field>
-        <label className="flex items-center gap-2 text-sm text-foreground/90 cursor-pointer">
-          <input type="checkbox" checked={disabled} onChange={(e) => setDisabled(e.target.checked)} />
-          {t('disabled')}
-        </label>
-        <FormError error={save.error} />
-        <SubmitRow onCancel={onClose} saving={save.isPending} disabled={!name || !email} />
-      </form>
+          <Field label={t('email')} required>
+            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          </Field>
+          {isNew && (
+            <Field label={t('password')} hint="Optional — mind. 12 Zeichen. Leer = nur OIDC-Login.">
+              <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+                autoComplete="new-password" minLength={12} />
+            </Field>
+          )}
+          <Field label={t('permissions')} hint="Rollen-Namen">
+            <ListEditor value={roles} onChange={setRoles} placeholder="admin" suggestions={roleNames} />
+          </Field>
+          <div className="flex items-center gap-2">
+            <Switch id="user-disabled" checked={disabled} onCheckedChange={setDisabled} />
+            <Label htmlFor="user-disabled">{t('disabled')}</Label>
+          </div>
+          <FormError error={save.error} />
+          <SubmitRow onCancel={onClose} saving={save.isPending} disabled={!name || !email} />
+        </form>
+      </DialogContent>
     </Dialog>
   )
 }
@@ -137,15 +161,20 @@ function SetPasswordDialog({ user, onClose }: { user: User; onClose: () => void 
     { invalidate: [[...USERS]], onDone: onClose },
   )
   return (
-    <Dialog open onClose={onClose} title={`${t('setPassword')}: ${user.name}`} size="md">
-      <form onSubmit={(e) => { e.preventDefault(); save.mutate(undefined) }} className="space-y-3">
-        <Field label={t('password')} required hint="Mind. 12 Zeichen. Leer lassen entfernt das Passwort (nur OIDC).">
-          <Input type="password" value={pw} onChange={(e) => setPw(e.target.value)}
-            autoComplete="new-password" />
-        </Field>
-        <FormError error={save.error} />
-        <SubmitRow onCancel={onClose} saving={save.isPending} label={t('setPassword')} />
-      </form>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{`${t('setPassword')}: ${user.name}`}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={(e) => { e.preventDefault(); save.mutate(undefined) }} className="space-y-3">
+          <Field label={t('password')} required hint="Mind. 12 Zeichen. Leer lassen entfernt das Passwort (nur OIDC).">
+            <Input type="password" value={pw} onChange={(e) => setPw(e.target.value)}
+              autoComplete="new-password" />
+          </Field>
+          <FormError error={save.error} />
+          <SubmitRow onCancel={onClose} saving={save.isPending} label={t('setPassword')} />
+        </form>
+      </DialogContent>
     </Dialog>
   )
 }
@@ -161,23 +190,28 @@ function ChangeOwnPassword() {
     { invalidate: [], onDone: () => { setOk(true); setOldPw(''); setNewPw('') } },
   )
   return (
-    <Card title="Mein Passwort ändern">
-      <form
-        onSubmit={(e) => { e.preventDefault(); setOk(false); save.mutate(undefined) }}
-        className="flex flex-wrap items-end gap-3"
-      >
-        <Field label="Aktuelles Passwort" className="flex-1 min-w-40">
-          <Input type="password" value={oldPw} onChange={(e) => setOldPw(e.target.value)} autoComplete="current-password" />
-        </Field>
-        <Field label="Neues Passwort" hint="Mind. 12 Zeichen" className="flex-1 min-w-40">
-          <Input type="password" value={newPw} onChange={(e) => setNewPw(e.target.value)} autoComplete="new-password" />
-        </Field>
-        <Button variant="primary" type="submit" disabled={!oldPw || !newPw || save.isPending}>
-          {t('changePassword')}
-        </Button>
-        {ok && <span className="text-sm text-emerald-400">{t('saved')}</span>}
-      </form>
-      <div className="mt-2"><FormError error={save.error} /></div>
+    <Card>
+      <CardHeader>
+        <CardTitle>Mein Passwort ändern</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <form
+          onSubmit={(e) => { e.preventDefault(); setOk(false); save.mutate(undefined) }}
+          className="flex flex-wrap items-end gap-3"
+        >
+          <Field label="Aktuelles Passwort" className="flex-1 min-w-40">
+            <Input type="password" value={oldPw} onChange={(e) => setOldPw(e.target.value)} autoComplete="current-password" />
+          </Field>
+          <Field label="Neues Passwort" hint="Mind. 12 Zeichen" className="flex-1 min-w-40">
+            <Input type="password" value={newPw} onChange={(e) => setNewPw(e.target.value)} autoComplete="new-password" />
+          </Field>
+          <Button variant="default" type="submit" disabled={!oldPw || !newPw || save.isPending}>
+            {t('changePassword')}
+          </Button>
+          {ok && <span className="text-sm text-emerald-400">{t('saved')}</span>}
+        </form>
+        <div className="mt-2"><FormError error={save.error} /></div>
+      </CardContent>
     </Card>
   )
 }

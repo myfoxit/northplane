@@ -111,7 +111,7 @@ func (m *Manager) deliverObjectNotification(ctx context.Context, item *storage.O
 	ev := &model.Event{ID: model.NewID(), TenantID: job.TenantID, TS: time.Now().UTC(),
 		Type: model.EventNotification, ObjectID: job.ObjectID,
 		Severity: model.SevInfo, Payload: raw}
-	_ = m.store.InsertEvents(ctx, []*model.Event{ev})
+	m.recordEvent(ctx, ev)
 	m.bus.FanoutOnly(ev)
 	return providerID, err
 }

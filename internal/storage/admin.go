@@ -151,7 +151,7 @@ func (s *Store) ListUsers(ctx context.Context) ([]*model.User, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []*model.User
 	for rows.Next() {
 		u, err := scanUser(rows)
@@ -237,7 +237,7 @@ func (s *Store) CountEnabledAdmins(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	n := 0
 	for rows.Next() {
 		var raw string
@@ -307,7 +307,7 @@ func (s *Store) TokensByPrefix(ctx context.Context, prefix string) ([]*model.API
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []*model.APIToken
 	for rows.Next() {
 		t, err := scanToken(rows)
@@ -326,7 +326,7 @@ func (s *Store) ListAPITokens(ctx context.Context, tenantID string) ([]*model.AP
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []*model.APIToken
 	for rows.Next() {
 		t, err := scanToken(rows)
@@ -472,7 +472,7 @@ func (s *Store) ListSecretNames(ctx context.Context, tenantID string) ([]string,
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []string
 	for rows.Next() {
 		var n string

@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
@@ -29,6 +30,11 @@ for (const path of ['/api', '/auth', '/login', '/setup', '/status', '/mcp', '/me
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
   optimizeDeps: {
     // Pre-bundle the heavy/barrel deps so the first dev load doesn't
     // discover them on demand — each on-the-fly discovery forces a costly

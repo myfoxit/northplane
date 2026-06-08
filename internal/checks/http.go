@@ -45,7 +45,7 @@ func httpClient(timeout time.Duration, insecure bool, maxRedirects int) *http.Cl
 			}
 			// DNS-rebinding guard: verify the resolved peer, too.
 			if ra, ok := conn.RemoteAddr().(*net.TCPAddr); ok && blockedIP(ra.IP) {
-				conn.Close()
+				_ = conn.Close()
 				return nil, fmt.Errorf("resolved destination %s blocked", ra.IP)
 			}
 			return conn, nil
@@ -225,7 +225,7 @@ func checkTLSCert(ctx context.Context, t Target, a Args) (model.State, nagios.Ou
 	if err != nil {
 		return criticalf("TLS connect to %s failed: %v", addr, err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	certs := conn.ConnectionState().PeerCertificates
 	if len(certs) == 0 {
 		return criticalf("no certificate presented by %s", addr)
@@ -256,8 +256,8 @@ type FlowStep struct {
 	Headers map[string]string `json:"headers,omitempty"`
 	Body    string            `json:"body,omitempty"`
 	// Assertions:
-	ExpectStatus int    `json:"expectStatus,omitempty"`
-	ExpectRegex  string `json:"expectRegex,omitempty"`
+	ExpectStatus int     `json:"expectStatus,omitempty"`
+	ExpectRegex  string  `json:"expectRegex,omitempty"`
 	MaxSeconds   float64 `json:"maxSeconds,omitempty"`
 	// Extraction into flow variables:
 	Extract map[string]string `json:"extract,omitempty"` // var → regex (group 1) | "json:path.to.field"

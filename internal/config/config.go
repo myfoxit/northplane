@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -42,7 +43,7 @@ type Config struct {
 	DeadManURL      string        `yaml:"deadManUrl"`
 	DeadManInterval time.Duration `yaml:"deadManInterval"`
 
-	PluginsDir   string `yaml:"pluginsDir"`   // Nagios plugins root
+	PluginsDir   string   `yaml:"pluginsDir"`   // Nagios plugins root
 	PluginsAllow []string `yaml:"pluginsAllow"` // optional allowlist (basenames)
 
 	ExecPoolSize int `yaml:"execPoolSize"` // 0 = min(256, 32×vCPU) (SPEC §7.4)
@@ -78,21 +79,21 @@ type OIDCConfig struct {
 	Issuer       string   `yaml:"issuer"`
 	ClientID     string   `yaml:"clientId"`
 	ClientSecret string   `yaml:"clientSecret"`
-	Scopes       []string `yaml:"scopes"`       // default: openid profile email groups
-	GroupsClaim  string   `yaml:"groupsClaim"`  // default "groups"
-	AdminGroup   string   `yaml:"adminGroup"`   // bootstrap mapping
+	Scopes       []string `yaml:"scopes"`      // default: openid profile email groups
+	GroupsClaim  string   `yaml:"groupsClaim"` // default "groups"
+	AdminGroup   string   `yaml:"adminGroup"`  // bootstrap mapping
 }
 
 // AIConfig per SPEC §10.2.
 type AIConfig struct {
-	Provider  string `yaml:"provider"` // anthropic | azure-openai | openai-compat | none
-	Endpoint  string `yaml:"endpoint"`
-	APIKeyEnv string `yaml:"apiKeyEnv"` // env var holding the key (never the key itself)
-	APIKey    string `yaml:"apiKey"`    // discouraged; for gateways with static keys
-	Model     string `yaml:"model"`
-	ModelDeep string `yaml:"modelDeep"`
-	MaxMonthlyTokens int64 `yaml:"maxMonthlyTokens"`
-	Redaction RedactionConfig `yaml:"redaction"`
+	Provider         string          `yaml:"provider"` // anthropic | azure-openai | openai-compat | none
+	Endpoint         string          `yaml:"endpoint"`
+	APIKeyEnv        string          `yaml:"apiKeyEnv"` // env var holding the key (never the key itself)
+	APIKey           string          `yaml:"apiKey"`    // discouraged; for gateways with static keys
+	Model            string          `yaml:"model"`
+	ModelDeep        string          `yaml:"modelDeep"`
+	MaxMonthlyTokens int64           `yaml:"maxMonthlyTokens"`
+	Redaction        RedactionConfig `yaml:"redaction"`
 }
 
 // RedactionConfig drives the PII pipeline before any LLM call (§10.1/§13.6).
@@ -208,7 +209,69 @@ func Load(path string) (Config, error) {
 			filepath.Join(cfg.DataDir, "plugins"),
 		)
 	}
+	if err := cfg.Validate(); err != nil {
+		return cfg, fmt.Errorf("config invalid: %w", err)
+	}
 	return cfg, nil
+}
+
+// Validate rejects configurations that cannot start a coherent server. It is
+// deliberately conservative: it only flags combinations that are genuinely
+// broken (an unparseable listen address, a TLS key without its cert, an
+// incomplete OIDC block), never valid dev/demo defaults. Run by Load after
+// env overrides are applied.
+func (c Config) Validate() error {
+	// Listen must be a parseable host:port. An empty host (":8443") and a
+	// "0" port (kernel-assigned, used in tests) are both valid.
+	if c.Listen == "" {
+		return errors.New("listen: must be set (host:port, e.g. \"127.0.0.1:8443\")")
+	}
+	host, port, err := net.SplitHostPort(c.Listen)
+	if err != nil {
+		return fmt.Errorf("listen %q: not a valid host:port: %w", c.Listen, err)
+	}
+	if port == "" {
+		return fmt.Errorf("listen %q: missing port", c.Listen)
+	}
+	if port != "0" {
+		if _, err := net.LookupPort("tcp", port); err != nil {
+			return fmt.Errorf("listen %q: invalid port: %w", c.Listen, err)
+		}
+	}
+	_ = host // host is already validated by SplitHostPort; "" (all interfaces) is allowed
+
+	// TLS coherence: cert and key are a pair — one without the other is a
+	// misconfiguration that would silently fall back to plaintext.
+	switch {
+	case c.TLS.CertFile != "" && c.TLS.KeyFile == "":
+		return errors.New("tls.certFile set without tls.keyFile")
+	case c.TLS.KeyFile != "" && c.TLS.CertFile == "":
+		return errors.New("tls.keyFile set without tls.certFile")
+	}
+
+	// OIDC completeness: if the block is touched at all (any field set),
+	// require the two fields the flow cannot work without. The Scopes/
+	// GroupsClaim defaults are always present, so they don't count as "set".
+	oidcTouched := c.OIDC.Issuer != "" || c.OIDC.ClientID != "" ||
+		c.OIDC.ClientSecret != "" || c.OIDC.AdminGroup != ""
+	if oidcTouched {
+		if c.OIDC.Issuer == "" {
+			return errors.New("oidc configured but oidc.issuer is empty")
+		}
+		if c.OIDC.ClientID == "" {
+			return errors.New("oidc configured but oidc.clientId is empty")
+		}
+	}
+
+	// AI provider must be one of the known values; everything else (key,
+	// endpoint) is the AI subsystem's concern and degrades gracefully.
+	switch c.AI.Provider {
+	case "", "none", "anthropic", "azure-openai", "openai-compat":
+	default:
+		return fmt.Errorf("ai.provider %q: must be one of none|anthropic|azure-openai|openai-compat", c.AI.Provider)
+	}
+
+	return nil
 }
 
 func firstExisting(paths ...string) string {

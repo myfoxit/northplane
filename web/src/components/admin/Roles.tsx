@@ -7,8 +7,11 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { resourceApi } from '../../api'
 import type { Role } from '../../types'
-import { Button, Table, Empty, Dialog, Input, Spinner } from '../ui'
-import { Field, FormError, SubmitRow, useSave, DeleteButton, ListEditor } from '../forms'
+import { Button } from '@/components/ui/button'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Empty, Spinner, Field, FormError, SubmitRow, useSave, DeleteButton, ListEditor } from '@/components/kit'
 import { t } from '../../i18n'
 import { StatusBadge, TableActions, RowActions } from './common'
 
@@ -20,27 +23,38 @@ export function RolesTab() {
   return (
     <div className="space-y-4">
       <TableActions onCreate={() => setEditing('new')} label={t('create')} />
-      <Table head={[t('name'), t('permissions'), 'Erbt', 'IdP-Gruppen', '']}>
-        {(data ?? []).map((r) => (
-          <tr key={r.name}>
-            <td className="px-3 py-2 text-foreground">
-              {r.name} {r.system && <span className="ml-1"><StatusBadge kind="system" /></span>}
-            </td>
-            <td className="px-3 py-2 text-xs text-muted-foreground font-mono truncate max-w-72">
-              {r.permissions?.join(', ') || '—'}
-            </td>
-            <td className="px-3 py-2 text-xs text-muted-foreground">{r.includes?.join(', ') || '—'}</td>
-            <td className="px-3 py-2 text-xs text-muted-foreground">{r.idpGroups?.join(', ') || '—'}</td>
-            <td className="px-3 py-2">
-              {!r.system && (
-                <RowActions>
-                  <Button size="sm" variant="ghost" onClick={() => setEditing(r)}>{t('edit')}</Button>
-                  <RoleDelete role={r} />
-                </RowActions>
-              )}
-            </td>
-          </tr>
-        ))}
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{t('name')}</TableHead>
+            <TableHead>{t('permissions')}</TableHead>
+            <TableHead>Erbt</TableHead>
+            <TableHead>IdP-Gruppen</TableHead>
+            <TableHead></TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {(data ?? []).map((r) => (
+            <TableRow key={r.name}>
+              <TableCell className="px-3 py-2 text-foreground">
+                {r.name} {r.system && <span className="ml-1"><StatusBadge kind="system" /></span>}
+              </TableCell>
+              <TableCell className="px-3 py-2 text-xs text-muted-foreground font-mono truncate max-w-72">
+                {r.permissions?.join(', ') || '—'}
+              </TableCell>
+              <TableCell className="px-3 py-2 text-xs text-muted-foreground">{r.includes?.join(', ') || '—'}</TableCell>
+              <TableCell className="px-3 py-2 text-xs text-muted-foreground">{r.idpGroups?.join(', ') || '—'}</TableCell>
+              <TableCell className="px-3 py-2">
+                {!r.system && (
+                  <RowActions>
+                    <Button size="sm" variant="ghost" onClick={() => setEditing(r)}>{t('edit')}</Button>
+                    <RoleDelete role={r} />
+                  </RowActions>
+                )}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
       </Table>
       {!isLoading && (data?.length ?? 0) === 0 && <Empty text={t('empty')} />}
       {editing && (
@@ -69,7 +83,16 @@ function RoleDialog({ name, onClose }: { name: string | null; onClose: () => voi
     enabled: !isNew,
   })
   if (!isNew && isLoading) {
-    return <Dialog open onClose={onClose} title={t('loading')} size="lg"><Spinner /></Dialog>
+    return (
+      <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{t('loading')}</DialogTitle>
+          </DialogHeader>
+          <Spinner />
+        </DialogContent>
+      </Dialog>
+    )
   }
   return (
     <RoleForm
@@ -103,28 +126,33 @@ function RoleForm({ doc, etag, isNew, onClose }: {
     { invalidate: [[...rolesApi.queryKey]], onDone: onClose },
   )
   return (
-    <Dialog open onClose={onClose} title={isNew ? t('create') : `${t('edit')}: ${doc.name}`} size="lg">
-      <form onSubmit={(e) => { e.preventDefault(); save.mutate(undefined) }} className="space-y-3">
-        <Field label={t('name')} required>
-          <Input value={name} onChange={(e) => setName(e.target.value)} required disabled={!isNew} />
-        </Field>
-        <Field label={t('permissions')} hint='z.B. objects:read, alerts:ack, "*" für alle'>
-          <ListEditor value={permissions} onChange={setPermissions} placeholder="objects:read" />
-        </Field>
-        <Field label="Erbt von Rollen (includes)">
-          <ListEditor value={includes} onChange={setIncludes} placeholder="viewer" />
-        </Field>
-        <Field label="IdP-Gruppen (Auto-Zuweisung)">
-          <ListEditor value={idpGroups} onChange={setIdpGroups} placeholder="np-admins" />
-        </Field>
-        <div className="grid grid-cols-3 gap-2">
-          <Field label="Scope: Mandant"><Input value={scopeTenant} onChange={(e) => setScopeTenant(e.target.value)} /></Field>
-          <Field label="Scope: Ordner"><Input value={scopeFolder} onChange={(e) => setScopeFolder(e.target.value)} /></Field>
-          <Field label="Scope: Selektor"><Input value={scopeSelector} onChange={(e) => setScopeSelector(e.target.value)} /></Field>
-        </div>
-        <FormError error={save.error} />
-        <SubmitRow onCancel={onClose} saving={save.isPending} disabled={!name} />
-      </form>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{isNew ? t('create') : `${t('edit')}: ${doc.name}`}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={(e) => { e.preventDefault(); save.mutate(undefined) }} className="space-y-3">
+          <Field label={t('name')} required>
+            <Input value={name} onChange={(e) => setName(e.target.value)} required disabled={!isNew} />
+          </Field>
+          <Field label={t('permissions')} hint='z.B. objects:read, alerts:ack, "*" für alle'>
+            <ListEditor value={permissions} onChange={setPermissions} placeholder="objects:read" />
+          </Field>
+          <Field label="Erbt von Rollen (includes)">
+            <ListEditor value={includes} onChange={setIncludes} placeholder="viewer" />
+          </Field>
+          <Field label="IdP-Gruppen (Auto-Zuweisung)">
+            <ListEditor value={idpGroups} onChange={setIdpGroups} placeholder="np-admins" />
+          </Field>
+          <div className="grid grid-cols-3 gap-2">
+            <Field label="Scope: Mandant"><Input value={scopeTenant} onChange={(e) => setScopeTenant(e.target.value)} /></Field>
+            <Field label="Scope: Ordner"><Input value={scopeFolder} onChange={(e) => setScopeFolder(e.target.value)} /></Field>
+            <Field label="Scope: Selektor"><Input value={scopeSelector} onChange={(e) => setScopeSelector(e.target.value)} /></Field>
+          </div>
+          <FormError error={save.error} />
+          <SubmitRow onCancel={onClose} saving={save.isPending} disabled={!name} />
+        </form>
+      </DialogContent>
     </Dialog>
   )
 }

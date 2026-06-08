@@ -5,6 +5,7 @@
 
 import { QueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
+import type { ZodType } from 'zod'
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -24,7 +25,7 @@ export class APIError extends Error {
   }
 }
 
-async function parseError(res: Response): Promise<APIError> {
+export async function parseError(res: Response): Promise<APIError> {
   try {
     const prob = await res.json()
     return new APIError(res.status, prob.code ?? 'unknown', prob.title ?? res.statusText, prob.detail ?? '')
@@ -33,7 +34,30 @@ async function parseError(res: Response): Promise<APIError> {
   }
 }
 
-export async function api<T>(path: string, init?: RequestInit & { etag?: number }): Promise<T> {
+// Runtime-validation boundary: when a caller passes a zod schema we parse the
+// decoded JSON through it instead of trusting the bare `as T` cast. A schema
+// failure means the *server sent us something we can't model* — surfaced as a
+// 502-shaped APIError so the UI's existing ErrorState path renders it like any
+// other transport failure (rather than crashing deep inside a component).
+// No schema → original behaviour (unchecked cast), so every existing call site
+// is untouched.
+export function validate<T>(json: unknown, schema?: ZodType<T>): T {
+  if (!schema) return json as T
+  const r = schema.safeParse(json)
+  if (!r.success) {
+    const detail = r.error.issues
+      .slice(0, 5)
+      .map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
+      .join('; ')
+    throw new APIError(502, 'invalid_response', 'invalid server response', detail)
+  }
+  return r.data
+}
+
+export async function api<T>(
+  path: string,
+  init?: RequestInit & { etag?: number; schema?: ZodType<T> },
+): Promise<T> {
   const headers: Record<string, string> = { ...(init?.headers as Record<string, string>) }
   if (init?.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json'
   if (init?.etag) headers['If-Match'] = `"${init.etag}"`
@@ -44,7 +68,7 @@ export async function api<T>(path: string, init?: RequestInit & { etag?: number 
   }
   if (!res.ok) throw await parseError(res)
   if (res.status === 204) return undefined as T
-  return res.json()
+  return validate(await res.json(), init?.schema)
 }
 
 export const get = <T,>(path: string) => api<T>(path)
@@ -67,24 +91,35 @@ export interface Versioned<T> {
   etag: number
 }
 
-export async function getWithEtag<T>(path: string): Promise<Versioned<T>> {
+// Pure ETag header → numeric version. Strips the quoting (and the optional
+// weak-validator W/ prefix), defaults to 0 for missing/garbage so a later PUT
+// still sends a well-formed If-Match. Exported for direct unit testing.
+export function parseEtag(header: string | null): number {
+  const n = parseInt(header?.replace(/^W\//, '').replaceAll('"', '') ?? '0', 10)
+  return Number.isNaN(n) ? 0 : n
+}
+
+export async function getWithEtag<T>(path: string, schema?: ZodType<T>): Promise<Versioned<T>> {
   const res = await fetch(`/api/v1${path}`, { credentials: 'same-origin' })
   if (res.status === 401) {
     window.location.href = '/login'
     throw new APIError(401, 'auth', 'login required', '')
   }
   if (!res.ok) throw await parseError(res)
-  const etag = parseInt(res.headers.get('ETag')?.replaceAll('"', '') ?? '0', 10)
-  return { data: await res.json(), etag: Number.isNaN(etag) ? 0 : etag }
+  const etag = parseEtag(res.headers.get('ETag'))
+  return { data: validate(await res.json(), schema), etag }
 }
 
 // CRUD facade for the uniform named-resource endpoints
 // (GET/POST /api/v1/<path>, GET/PUT/DELETE /api/v1/<path>/{name}).
-export function resourceApi<T extends { name: string }>(base: string) {
+// An optional `schema` validates the single-doc read (`get`) at the boundary —
+// used for the dashboard doc, whose `spec` is opaque frontend-owned JSON most
+// likely to come back malformed. List/create/update stay on the bare cast.
+export function resourceApi<T extends { name: string }>(base: string, schema?: ZodType<T>) {
   return {
     queryKey: ['resources', base] as const,
     list: () => get<ListResponse<T>>(`/${base}?limit=500`).then((r) => r.items ?? []),
-    get: (name: string) => getWithEtag<T>(`/${base}/${encodeURIComponent(name)}`),
+    get: (name: string) => getWithEtag<T>(`/${base}/${encodeURIComponent(name)}`, schema),
     create: (doc: T) => post<T>(`/${base}`, doc),
     update: (name: string, doc: T, etag: number) =>
       put<T>(`/${base}/${encodeURIComponent(name)}`, doc, etag),
@@ -93,8 +128,10 @@ export function resourceApi<T extends { name: string }>(base: string) {
 }
 
 // Live updates: one EventSource per tab; events invalidate the matching
-// query keys. Visibility throttling per SPEC §12.2.
-const invalidations: Record<string, string[][]> = {
+// query keys. Visibility throttling per SPEC §12.2. Each entry is a list of
+// single-segment query keys ([string] tuples) so the first segment is always
+// present (noUncheckedIndexedAccess-safe).
+export const invalidations: Record<string, [string][]> = {
   state_change: [['problems'], ['objects'], ['overview'], ['events']],
   alert_opened: [['alerts'], ['overview'], ['events']],
   alert_resolved: [['alerts'], ['overview'], ['problems'], ['events']],
@@ -113,14 +150,18 @@ const invalidations: Record<string, string[][]> = {
 // Event types the client consumes — sent as ?types= so the server doesn't
 // push (and buffer) unrelated tenant events, which is what arms a `resync`
 // when the per-subscriber buffer overflows.
-const streamTypes = Object.keys(invalidations).join(',')
+export const streamTypes = Object.keys(invalidations).join(',')
 // All live query keys, for a `resync` (missed-events signal): refresh just
 // these through the throttled flush instead of nuking the whole query cache.
-const liveKeys = Array.from(new Set(Object.values(invalidations).flat().map((k) => k[0])))
+export const liveKeys = Array.from(new Set(Object.values(invalidations).flat().map((k) => k[0])))
 
 export function useLiveUpdates(onEvent?: (type: string, data: unknown) => void) {
+  // Keep the latest callback in a ref so the EventSource effect (below, with
+  // an empty dep array) never has to re-subscribe when onEvent changes. The
+  // ref is written in its own effect — not during render — so we don't read
+  // or mutate ref.current while rendering (react-hooks/refs).
   const handler = useRef(onEvent)
-  handler.current = onEvent
+  useEffect(() => { handler.current = onEvent }, [onEvent])
   useEffect(() => {
     let es: EventSource | null = null
     let backoff = 1000
@@ -143,9 +184,9 @@ export function useLiveUpdates(onEvent?: (type: string, data: unknown) => void) 
         es?.close()
         if (!closed) setTimeout(connect, backoff = Math.min(backoff * 2, 30000))
       }
-      for (const type of Object.keys(invalidations)) {
+      for (const [type, keys] of Object.entries(invalidations)) {
         es.addEventListener(type, (ev) => {
-          for (const key of invalidations[type]) pending.add(key[0])
+          for (const key of keys) pending.add(key[0])
           if (!flushTimer) flushTimer = window.setTimeout(flush, 400)
           try { handler.current?.(type, JSON.parse((ev as MessageEvent).data)) } catch { /* ignore */ }
         })

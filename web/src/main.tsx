@@ -7,7 +7,7 @@ import {
 import { queryClient } from './api'
 import type { AlertsSearch, ObjectsSearch } from './types'
 import { Layout } from './components/Layout'
-import { ErrorState, Spinner } from './components/ui'
+import { ErrorState, Spinner } from '@/components/kit'
 import { t } from './i18n'
 import './index.css'
 

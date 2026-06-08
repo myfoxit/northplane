@@ -340,8 +340,8 @@ func (p *Pipeline) flush(ctx context.Context) {
 
 // Stats snapshot.
 type Stats struct {
-	Processed uint64 `json:"processed"`
-	WorkingSet int   `json:"workingSet"`
+	Processed  uint64 `json:"processed"`
+	WorkingSet int    `json:"workingSet"`
 }
 
 // Stats for self-metrics.

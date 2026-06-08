@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
 /*
  * Design tokens (SPEC §12.1). shadcn-style two layers: raw values live on
@@ -7,55 +8,114 @@
  * foreground`, `border-border`, `rounded-lg`, … resolve to the variables.
  * The stock Tailwind palette (slate/blue/emerald/…) stays available, so
  * call sites that haven't migrated yet keep rendering.
+ *
+ * The full shadcn/ui token surface is defined so generated components in
+ * src/components/ui/* render in the app's existing DARK palette instead of
+ * default-shadcn neutrals. The app is dark-only (no .dark toggle); the dark
+ * values therefore live on :root.
  */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
+
+  /* app-specific semantic state colours (kept for existing call sites) */
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
 
-  /* slightly rounder than the Tailwind defaults — applied app-wide */
-  --radius-sm: 0.375rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 0.625rem;
-  --radius-xl: 0.875rem;
+  /* chart palette (shadcn chart components reference --chart-1..5) */
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  /* sidebar tokens (shadcn sidebar primitive) */
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* radius scale — shadcn derives sm/md/lg/xl from --radius */
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
 }
 
 :root {
   color-scheme: dark;
 
+  /* base radius (0.625rem ≈ rounded-lg, slightly rounder than Tailwind default) */
+  --radius: 0.625rem;
+
   --background: #020617;          /* slate-950 */
   --foreground: #e2e8f0;          /* slate-200 */
-  --card: #0f172a;                /* slate-900 */
-  --card-foreground: #e2e8f0;
+
+  --card: #0f172a;                /* slate-900 — panel / card surfaces */
+  --card-foreground: #e2e8f0;     /* slate-200 */
+  --popover: #0f172a;             /* slate-900 — same panel surface as card */
+  --popover-foreground: #e2e8f0;  /* slate-200 */
+
+  --primary: #3b82f6;             /* blue-500 — accent / active */
+  --primary-foreground: #f8fafc;  /* slate-50 */
+  --secondary: #1e293b;           /* slate-800 — secondary surfaces */
+  --secondary-foreground: #e2e8f0;/* slate-200 */
+
   --muted: #1e293b;               /* slate-800 — secondary surfaces, chips */
   --muted-foreground: #94a3b8;    /* slate-400 — secondary text */
   --accent: #334155;              /* slate-700 — hover / active surfaces */
   --accent-foreground: #f1f5f9;   /* slate-100 */
+
+  --destructive: #dc2626;         /* red-600 — destructive surfaces */
+  --destructive-foreground: #fef2f2;
+
   --border: #1e293b;              /* slate-800 */
   --input: #334155;               /* slate-700 — control borders */
   --ring: #3b82f6;                /* blue-500 — focus ring */
-  --primary: #3b82f6;             /* blue-500 — accent / active */
-  --primary-foreground: #f8fafc;  /* slate-50 */
-  --destructive: #dc2626;         /* red-600 — destructive surfaces */
-  --destructive-foreground: #fef2f2;
+
+  /* app semantic state colours */
   --success: #34d399;             /* emerald-400 — OK state */
   --warning: #fbbf24;             /* amber-400 — WARN state */
   --danger: #f87171;              /* red-400 — CRIT state */
+
+  /* chart palette (blue / emerald / amber / violet / rose) */
+  --chart-1: #3b82f6;
+  --chart-2: #34d399;
+  --chart-3: #fbbf24;
+  --chart-4: #a78bfa;
+  --chart-5: #fb7185;
+
+  /* sidebar — mapped to the dark panel palette */
+  --sidebar: #0f172a;             /* slate-900 */
+  --sidebar-foreground: #e2e8f0;  /* slate-200 */
+  --sidebar-primary: #3b82f6;     /* blue-500 */
+  --sidebar-primary-foreground: #f8fafc;
+  --sidebar-accent: #334155;      /* slate-700 */
+  --sidebar-accent-foreground: #f1f5f9;
+  --sidebar-border: #1e293b;      /* slate-800 */
+  --sidebar-ring: #3b82f6;        /* blue-500 */
 }
 
 html, body, #root { height: 100%; }

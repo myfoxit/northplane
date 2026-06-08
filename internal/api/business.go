@@ -101,7 +101,7 @@ func (a *API) registerBusiness() {
 		Target       float64 `json:"target"`
 		WindowDays   int     `json:"windowDays"`
 		Availability float64 `json:"availability"`
-		BudgetTotal  string  `json:"budgetTotal"`  // allowed downtime
+		BudgetTotal  string  `json:"budgetTotal"` // allowed downtime
 		BudgetSpent  string  `json:"budgetSpent"`
 		BudgetLeft   string  `json:"budgetLeft"`
 	}

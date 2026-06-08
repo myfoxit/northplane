@@ -3,6 +3,7 @@
 /northplaned
 /np
 /np-agent
+/np-gen
 *.test
 *.out
 coverage.txt

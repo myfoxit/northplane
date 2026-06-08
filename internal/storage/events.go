@@ -117,15 +117,15 @@ func (es *eventStore) segment(key string, create bool) (*sql.DB, error) {
 	db.SetMaxOpenConns(4)
 	d := sqliteDialect{}
 	if _, err := db.Exec(d.DDL(eventDDL)); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS events_ts ON events (tenant_id, ts)`); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS events_obj ON events (object_id, ts)`); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 	es.segments[key] = db
@@ -153,6 +153,12 @@ func (es *eventStore) ensurePartition(ctx context.Context, t time.Time) error {
 	if _, err := es.store.db.ExecContext(ctx, idx); err != nil {
 		return err
 	}
+	// Parity with the SQLite segments (events_obj above): per-object lookups
+	// (QueryEvents with ObjectID) otherwise scan the whole partition on PG.
+	objIdx := fmt.Sprintf(`CREATE INDEX IF NOT EXISTS events_%s_obj ON events_%s (object_id, ts)`, key, key)
+	if _, err := es.store.db.ExecContext(ctx, objIdx); err != nil {
+		return err
+	}
 	es.mu.Lock()
 	es.ensured[key] = true
 	es.mu.Unlock()
@@ -163,7 +169,7 @@ func (es *eventStore) close() {
 	es.mu.Lock()
 	defer es.mu.Unlock()
 	for _, db := range es.segments {
-		db.Close()
+		_ = db.Close() // shutdown teardown; nothing actionable on error
 	}
 	es.segments = map[string]*sql.DB{}
 }
@@ -449,7 +455,7 @@ func (s *Store) EnforceEventRetention(ctx context.Context) (dropped []string, er
 	for _, k := range victims {
 		es.mu.Lock()
 		if db := es.segments[k]; db != nil {
-			db.Close()
+			_ = db.Close() // closing before deleting the segment files
 			delete(es.segments, k)
 		}
 		es.mu.Unlock()

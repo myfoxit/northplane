@@ -170,7 +170,7 @@ func (a *API) maintenanceEvent(r *http.Request, tenantID string, typ model.Event
 	raw, _ := json.Marshal(payload)
 	ev := &model.Event{ID: model.NewID(), TenantID: tenantID, TS: time.Now().UTC(),
 		Type: typ, Severity: model.SevInfo, Payload: raw}
-	_ = a.Store.InsertEvents(r.Context(), []*model.Event{ev})
+	a.insertEvents(r.Context(), ev)
 	a.Bus.FanoutOnly(ev)
 }
 

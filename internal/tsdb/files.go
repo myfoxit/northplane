@@ -32,15 +32,54 @@ var (
 	aggMagic   = [8]byte{'N', 'P', 'A', 'G', 'G', 'R', '1', 0}
 )
 
+// errWriter wraps an io.Writer and remembers the first write error, so a
+// long run of binary.Write/Write calls can be issued without checking each
+// one and the accumulated error checked exactly once. After an error every
+// subsequent write is a no-op.
+type errWriter struct {
+	w   io.Writer
+	err error
+}
+
+// Write satisfies io.Writer (so binary.Write can target it) and records the
+// first error.
+func (ew *errWriter) Write(p []byte) (int, error) {
+	if ew.err != nil {
+		return 0, ew.err
+	}
+	var n int
+	n, ew.err = ew.w.Write(p)
+	return n, ew.err
+}
+
+// put writes raw bytes, short-circuiting on a prior error.
+func (ew *errWriter) put(p []byte) {
+	_, _ = ew.Write(p)
+}
+
+// putBE writes a big-endian fixed-size value, short-circuiting on a prior error.
+func (ew *errWriter) putBE(v any) {
+	if ew.err != nil {
+		return
+	}
+	ew.err = binary.Write(ew, binary.BigEndian, v)
+}
+
 // syncDir fsyncs the directory holding path so a rename into it is
 // durable across a crash (the file contents are already fsync'd, but the
 // new directory entry is not until the parent dir is synced).
-func syncDir(path string) error {
+func syncDir(path string) (err error) {
 	d, err := os.Open(filepath.Dir(path))
 	if err != nil {
 		return err
 	}
-	defer d.Close()
+	defer func() {
+		// Surface a Close error only if Sync itself succeeded — the Sync
+		// result is the durability signal we care about.
+		if cerr := d.Close(); err == nil {
+			err = cerr
+		}
+	}()
 	return d.Sync()
 }
 
@@ -50,31 +89,38 @@ func writeBlockFile(path string, ws, we int64, entries []blockEntry) error {
 	if err != nil {
 		return err
 	}
-	w := bufio.NewWriterSize(f, 1<<20)
-	w.Write(blockMagic[:])
-	binary.Write(w, binary.BigEndian, ws)
-	binary.Write(w, binary.BigEndian, we)
-	binary.Write(w, binary.BigEndian, uint32(len(entries)))
+	bw := bufio.NewWriterSize(f, 1<<20)
+	ew := &errWriter{w: bw}
+	ew.put(blockMagic[:])
+	ew.putBE(ws)
+	ew.putBE(we)
+	ew.putBE(uint32(len(entries)))
 	offset := uint32(0)
 	for _, e := range entries {
-		binary.Write(w, binary.BigEndian, e.seriesID)
-		binary.Write(w, binary.BigEndian, offset)
-		binary.Write(w, binary.BigEndian, uint32(len(e.payload)))
-		binary.Write(w, binary.BigEndian, e.count)
+		ew.putBE(e.seriesID)
+		ew.putBE(offset)
+		ew.putBE(uint32(len(e.payload)))
+		ew.putBE(e.count)
 		offset += uint32(len(e.payload))
 	}
 	for _, e := range entries {
-		w.Write(e.payload)
+		ew.put(e.payload)
 	}
-	if err := w.Flush(); err != nil {
-		f.Close()
+	if ew.err != nil {
+		_ = f.Close() // already failing; the write error is what matters
+		return ew.err
+	}
+	if err := bw.Flush(); err != nil {
+		_ = f.Close() // already failing; the prior error is what matters
 		return err
 	}
 	if err := f.Sync(); err != nil {
-		f.Close()
+		_ = f.Close() // already failing; the prior error is what matters
 		return err
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		return err
+	}
 	if err := os.Rename(tmp, path); err != nil {
 		return err
 	}
@@ -94,7 +140,7 @@ func readBlockIndex(path string) (map[uint64]blockIndexEntry, int64, error) {
 	if err != nil {
 		return nil, 0, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // read-only block/agg file
 	fi, err := f.Stat()
 	if err != nil {
 		return nil, 0, err
@@ -140,7 +186,7 @@ func readBlockSeries(path string, idx map[uint64]blockIndexEntry, headerSize int
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // read-only block/agg file
 	fi, err := f.Stat()
 	if err != nil {
 		return nil, err
@@ -177,36 +223,43 @@ func writeAggFile(path string, dayStart int64, bucketMS uint32, entries []aggEnt
 	if err != nil {
 		return err
 	}
-	w := bufio.NewWriterSize(f, 1<<20)
-	w.Write(aggMagic[:])
-	binary.Write(w, binary.BigEndian, dayStart)
-	binary.Write(w, binary.BigEndian, bucketMS)
-	binary.Write(w, binary.BigEndian, uint32(len(entries)))
+	bw := bufio.NewWriterSize(f, 1<<20)
+	ew := &errWriter{w: bw}
+	ew.put(aggMagic[:])
+	ew.putBE(dayStart)
+	ew.putBE(bucketMS)
+	ew.putBE(uint32(len(entries)))
 	offset := uint32(0)
 	for _, e := range entries {
-		binary.Write(w, binary.BigEndian, e.seriesID)
-		binary.Write(w, binary.BigEndian, offset)
-		binary.Write(w, binary.BigEndian, uint32(len(e.records)))
+		ew.putBE(e.seriesID)
+		ew.putBE(offset)
+		ew.putBE(uint32(len(e.records)))
 		offset += uint32(len(e.records)) * 32
 	}
 	for _, e := range entries {
 		for _, rec := range e.records {
-			binary.Write(w, binary.BigEndian, rec.BucketIdx)
-			binary.Write(w, binary.BigEndian, rec.Count)
-			binary.Write(w, binary.BigEndian, mathFloat64bits(rec.Sum))
-			binary.Write(w, binary.BigEndian, mathFloat64bits(rec.Min))
-			binary.Write(w, binary.BigEndian, mathFloat64bits(rec.Max))
+			ew.putBE(rec.BucketIdx)
+			ew.putBE(rec.Count)
+			ew.putBE(mathFloat64bits(rec.Sum))
+			ew.putBE(mathFloat64bits(rec.Min))
+			ew.putBE(mathFloat64bits(rec.Max))
 		}
 	}
-	if err := w.Flush(); err != nil {
-		f.Close()
+	if ew.err != nil {
+		_ = f.Close() // already failing; the write error is what matters
+		return ew.err
+	}
+	if err := bw.Flush(); err != nil {
+		_ = f.Close() // already failing; the prior error is what matters
 		return err
 	}
 	if err := f.Sync(); err != nil {
-		f.Close()
+		_ = f.Close() // already failing; the prior error is what matters
 		return err
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		return err
+	}
 	if err := os.Rename(tmp, path); err != nil {
 		return err
 	}
@@ -223,7 +276,7 @@ func readAggIndex(path string) (map[uint64]aggIndexEntry, int64, uint32, error) 
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // read-only block/agg file
 	fi, err := f.Stat()
 	if err != nil {
 		return nil, 0, 0, err
@@ -268,7 +321,7 @@ func readAggSeries(path string, idx map[uint64]aggIndexEntry, headerSize int64, 
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // read-only block/agg file
 	fi, err := f.Stat()
 	if err != nil {
 		return nil, err

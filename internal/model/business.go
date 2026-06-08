@@ -29,28 +29,28 @@ type BusinessService struct {
 	Selector string  `json:"selector,omitempty"`
 	Weight   float64 `json:"weight,omitempty"`
 	// SLA definition (SPEC §9.7): target %, window, planned downtimes excluded.
-	SLATarget   float64 `json:"slaTarget,omitempty"` // e.g. 99.9
-	SLAWindow   string  `json:"slaWindow,omitempty"` // "month" | "quarter" | "year"
-	ExclDowntime bool   `json:"excludeDowntimes,omitempty"`
-	Version     int64   `json:"version"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	SLATarget    float64   `json:"slaTarget,omitempty"` // e.g. 99.9
+	SLAWindow    string    `json:"slaWindow,omitempty"` // "month" | "quarter" | "year"
+	ExclDowntime bool      `json:"excludeDowntimes,omitempty"`
+	Version      int64     `json:"version"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
 // Dashboard is a grid of widgets (SPEC §12.3).
 type Dashboard struct {
-	ID        string          `json:"id"`
-	TenantID  string          `json:"tenantId"`
-	Name      string          `json:"name"`
-	OwnerID   string          `json:"ownerId,omitempty"` // empty = shared/global
-	Shared    bool            `json:"shared"`
+	ID       string `json:"id"`
+	TenantID string `json:"tenantId"`
+	Name     string `json:"name"`
+	OwnerID  string `json:"ownerId,omitempty"` // empty = shared/global
+	Shared   bool   `json:"shared"`
 	// Layout/widgets are an opaque, schema-validated JSON document owned
 	// by the frontend (widget types: chart, status-map, list, markdown).
-	Spec      json.RawMessage `json:"spec"`
-	ShareToken string         `json:"shareToken,omitempty"` // read-only wallboard link
-	Version   int64           `json:"version"`
-	CreatedAt time.Time       `json:"createdAt"`
-	UpdatedAt time.Time       `json:"updatedAt"`
+	Spec       json.RawMessage `json:"spec"`
+	ShareToken string          `json:"shareToken,omitempty"` // read-only wallboard link
+	Version    int64           `json:"version"`
+	CreatedAt  time.Time       `json:"createdAt"`
+	UpdatedAt  time.Time       `json:"updatedAt"`
 }
 
 // ReportType enumerates built-in reports (SPEC §9.8).
@@ -67,19 +67,19 @@ const (
 // Report is a stored report definition; rendering happens on demand or
 // per schedule (POST /reports:render).
 type Report struct {
-	ID       string          `json:"id"`
-	TenantID string          `json:"tenantId"`
-	Name     string          `json:"name"`
-	Type     ReportType      `json:"type"`
+	ID       string     `json:"id"`
+	TenantID string     `json:"tenantId"`
+	Name     string     `json:"name"`
+	Type     ReportType `json:"type"`
 	// Params: selector, business service, window ("30d"), include
 	// downtimes, …
-	Params   json.RawMessage `json:"params"`
-	Schedule string          `json:"schedule,omitempty"` // cron-ish: "monthly", "weekly:monday", "daily"
-	Email    []string        `json:"email,omitempty"`    // recipients
-	Keep     int             `json:"keep,omitempty"`     // archive retention count
-	Version  int64           `json:"version"`
-	CreatedAt time.Time      `json:"createdAt"`
-	UpdatedAt time.Time      `json:"updatedAt"`
+	Params    json.RawMessage `json:"params"`
+	Schedule  string          `json:"schedule,omitempty"` // cron-ish: "monthly", "weekly:monday", "daily"
+	Email     []string        `json:"email,omitempty"`    // recipients
+	Keep      int             `json:"keep,omitempty"`     // archive retention count
+	Version   int64           `json:"version"`
+	CreatedAt time.Time       `json:"createdAt"`
+	UpdatedAt time.Time       `json:"updatedAt"`
 }
 
 // CheckResult is the executor → pipeline unit (SPEC §7.4) — also the
@@ -101,24 +101,24 @@ type CheckResult struct {
 
 // CheckState is the hot current-state row (SPEC §6.5).
 type CheckState struct {
-	ObjectID      string     `json:"objectId"`
-	State         State      `json:"state"`
-	StateType     StateType  `json:"stateType"`
-	Attempt       int        `json:"attempt"`
-	Output        string     `json:"output,omitempty"`
-	LongOutput    string     `json:"longOutput,omitempty"`
-	Perfdata      string     `json:"perfdata,omitempty"`
-	LatencyMS     int64      `json:"latencyMs,omitempty"`
-	ExecMS        int64      `json:"execMs,omitempty"`
-	LastCheck     *time.Time `json:"lastCheck,omitempty"`
-	NextCheck     *time.Time `json:"nextCheck,omitempty"`
+	ObjectID       string     `json:"objectId"`
+	State          State      `json:"state"`
+	StateType      StateType  `json:"stateType"`
+	Attempt        int        `json:"attempt"`
+	Output         string     `json:"output,omitempty"`
+	LongOutput     string     `json:"longOutput,omitempty"`
+	Perfdata       string     `json:"perfdata,omitempty"`
+	LatencyMS      int64      `json:"latencyMs,omitempty"`
+	ExecMS         int64      `json:"execMs,omitempty"`
+	LastCheck      *time.Time `json:"lastCheck,omitempty"`
+	NextCheck      *time.Time `json:"nextCheck,omitempty"`
 	LastHardChange *time.Time `json:"lastHardChange,omitempty"`
-	LastOK        *time.Time `json:"lastOk,omitempty"`
-	Flapping      bool       `json:"flapping"`
-	FlapPct       float64    `json:"flapPct,omitempty"`
-	AckedBy       string     `json:"ackedBy,omitempty"`
-	AckComment    string     `json:"ackComment,omitempty"`
-	DowntimeDepth int        `json:"downtimeDepth"`
+	LastOK         *time.Time `json:"lastOk,omitempty"`
+	Flapping       bool       `json:"flapping"`
+	FlapPct        float64    `json:"flapPct,omitempty"`
+	AckedBy        string     `json:"ackedBy,omitempty"`
+	AckComment     string     `json:"ackComment,omitempty"`
+	DowntimeDepth  int        `json:"downtimeDepth"`
 	// FlapHistory: bitfield of the last 21 transitions (LSB = newest).
 	FlapHistory uint32 `json:"-"`
 }

@@ -6,7 +6,9 @@ import { Radar, Maximize2, Phone, Check } from 'lucide-react'
 import { get, fmtAgo } from '../api'
 import type { Overview as OverviewData, OnCallNow, ProblemRow } from '../types'
 import { stateLabel, stateIcon, stateColor, sevColor } from '../types'
-import { Card, Badge, Empty, ErrorState } from '../components/ui'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Empty, ErrorState } from '@/components/kit'
 import { TileLink } from '../components/dash/widgets'
 import { t } from '../i18n'
 
@@ -70,34 +72,43 @@ export function OverviewPage() {
       </div>
       {tiles}
       <div className="grid lg:grid-cols-3 gap-4">
-        <Card title={t('problems')} className="lg:col-span-2">
-          <ProblemList problems={problems?.items ?? []} />
+        <Card className="lg:col-span-2">
+          <CardHeader><CardTitle>{t('problems')}</CardTitle></CardHeader>
+          <CardContent>
+            <ProblemList problems={problems?.items ?? []} />
+          </CardContent>
         </Card>
         <div className="space-y-4">
-          <Card title={t('openIncidents')}>
-            {(data?.openIncidents?.length ?? 0) === 0
-              ? <Empty text={t('empty')} />
-              : data!.openIncidents.map((inc) => (
-                <Link key={inc.id} to="/incidents" className="block py-1.5 border-b border-border/60 last:border-0">
-                  <Badge className={sevColor(inc.severity)}>{inc.severity}</Badge>
-                  <span className="text-sm ml-2 text-foreground/90">{inc.title}</span>
-                </Link>
-              ))}
+          <Card>
+            <CardHeader><CardTitle>{t('openIncidents')}</CardTitle></CardHeader>
+            <CardContent>
+              {(data?.openIncidents?.length ?? 0) === 0
+                ? <Empty text={t('empty')} />
+                : data!.openIncidents.map((inc) => (
+                  <Link key={inc.id} to="/incidents" className="block py-1.5 border-b border-border/60 last:border-0">
+                    <Badge variant="outline" className={sevColor(inc.severity)}>{inc.severity}</Badge>
+                    <span className="text-sm ml-2 text-foreground/90">{inc.title}</span>
+                  </Link>
+                ))}
+            </CardContent>
           </Card>
-          <Card title={t('onCallNow')}>
-            {(oncall?.length ?? 0) === 0
-              ? <Empty text={t('empty')} />
-              : oncall!.map((entry) => (
-                <div key={entry.schedule} className="py-1.5 border-b border-border/60 last:border-0">
-                  <div className="text-xs text-muted-foreground">{entry.schedule}</div>
-                  {entry.contacts?.map((c) => (
-                    <div key={c.id ?? c.name} className="text-sm text-foreground/90 flex items-center gap-1.5">
-                      <Phone size={12} className="text-muted-foreground" /> {c.name}
-                      {c.phone && <span className="text-muted-foreground text-xs ml-1">{c.phone}</span>}
-                    </div>
-                  ))}
-                </div>
-              ))}
+          <Card>
+            <CardHeader><CardTitle>{t('onCallNow')}</CardTitle></CardHeader>
+            <CardContent>
+              {(oncall?.length ?? 0) === 0
+                ? <Empty text={t('empty')} />
+                : oncall!.map((entry) => (
+                  <div key={entry.schedule} className="py-1.5 border-b border-border/60 last:border-0">
+                    <div className="text-xs text-muted-foreground">{entry.schedule}</div>
+                    {entry.contacts?.map((c) => (
+                      <div key={c.id ?? c.name} className="text-sm text-foreground/90 flex items-center gap-1.5">
+                        <Phone size={12} className="text-muted-foreground" /> {c.name}
+                        {c.phone && <span className="text-muted-foreground text-xs ml-1">{c.phone}</span>}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+            </CardContent>
           </Card>
         </div>
       </div>

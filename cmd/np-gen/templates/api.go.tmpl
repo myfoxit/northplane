@@ -1,0 +1,22 @@
+package api
+
+import (
+	"github.com/northplane/northplane/internal/model"
+	"github.com/northplane/northplane/internal/storage"
+)
+
+// register{{.PascalPlural}} wires the standard CRUD surface for the
+// {{.Title}} resource. resourceCRUD stamps the five canonical routes
+// (list/create/get/update/delete) with the house RFC 9457 problem
+// details, ETag / If-Match optimistic concurrency and audit logging:
+//
+//	GET    /api/v1/{{.KebabPlural}}
+//	POST   /api/v1/{{.KebabPlural}}
+//	GET    /api/v1/{{.KebabPlural}}/{name}
+//	PUT    /api/v1/{{.KebabPlural}}/{name}   (If-Match required)
+//	DELETE /api/v1/{{.KebabPlural}}/{name}
+//
+// MANUAL: call a.register{{.PascalPlural}}() from registerAll() in api.go.
+func (a *API) register{{.PascalPlural}}() {
+	a.resourceCRUD("{{.KebabPlural}}", storage.{{.ConstName}}, "config", model.{{.Pascal}}{})
+}

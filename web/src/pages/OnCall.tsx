@@ -4,7 +4,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { resourceApi } from '../api'
 import type { Schedule } from '../types'
-import { ErrorState } from '../components/ui'
+import { ErrorState } from '@/components/kit'
 import { t } from '../i18n'
 import {
   OnCallNowCards, SchedulesManager, ScheduleDetail,

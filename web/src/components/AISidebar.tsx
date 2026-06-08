@@ -4,7 +4,7 @@ import { useRef, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { Sparkles, X, Check } from 'lucide-react'
 import { post, queryClient, APIError } from '../api'
-import { Button } from './ui'
+import { Button } from '@/components/ui/button'
 import { t } from '../i18n'
 
 interface ActionCard {
@@ -88,7 +88,7 @@ export function AISidebar({ onClose }: { onClose: () => void }) {
                 {action.error && <div className="text-red-400 mt-1">{action.error}</div>}
                 {action.proposed && action.actionId && (
                   <div className="flex gap-2 mt-2">
-                    <Button size="sm" variant="primary"
+                    <Button size="sm" variant="default"
                       onClick={() => approve.mutate(action.actionId!)}
                       disabled={approve.isPending}>
                       {t('approve')}

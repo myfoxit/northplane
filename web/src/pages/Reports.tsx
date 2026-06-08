@@ -7,12 +7,21 @@ import { useQuery } from '@tanstack/react-query'
 import { Check } from 'lucide-react'
 import { get, post, resourceApi, fmtTime, type ListResponse } from '../api'
 import type { Report, ReportType } from '../types'
-import { Button, Card, Dialog, Empty, Spinner, Table, Badge, ErrorState } from '../components/ui'
-import { Input } from '../components/ui'
-import { Field, Select, ListEditor, FormError, SubmitRow, useSave, DeleteButton } from '../components/forms'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
+import { Empty, Spinner, ErrorState, Field, ListEditor, FormError, SubmitRow, useSave, DeleteButton } from '@/components/kit'
 import { t } from '../i18n'
 
 const reportApi = resourceApi<Report>('reports')
+
+// Radix SelectItem value cannot be "" — sentinel for the empty schedule
+// frequency ("no schedule"), mapped back to '' before composeSchedule.
+const NONE = '__none__'
 
 const REPORT_TYPES: ReportType[] = ['availability', 'sla', 'alert-stats', 'oncall', 'audit']
 const WEEKDAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
@@ -77,7 +86,7 @@ export function ReportsPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-bold">{t('reports')}</h1>
-        <Button variant="primary" onClick={() => setCreating(true)}>{t('create')}</Button>
+        <Button variant="default" onClick={() => setCreating(true)}>{t('create')}</Button>
       </div>
       {toast && (
         <div className="text-sm text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-3 py-2 flex items-center gap-1.5">
@@ -89,32 +98,41 @@ export function ReportsPage() {
       {!isLoading && rows.length === 0 && <Empty text={t('empty')} />}
       {rows.length > 0 && (
         <Card>
-          <Table head={[t('name'), t('type'), t('schedule'), t('recipients'), 'Keep', t('actions')]}>
-            {rows.map((r) => (
-              <tr key={r.name} className="hover:bg-card/40">
-                <td className="px-3 py-2 font-medium text-foreground">{r.name}</td>
-                <td className="px-3 py-2">
-                  <Badge className="bg-muted text-foreground/90 border-input">{typeLabel(r.type)}</Badge>
-                </td>
-                <td className="px-3 py-2 text-muted-foreground font-mono text-xs">{r.schedule || '—'}</td>
-                <td className="px-3 py-2 text-muted-foreground tabular-nums">{r.email?.length ?? 0}</td>
-                <td className="px-3 py-2 text-muted-foreground tabular-nums">{r.keep ?? '—'}</td>
-                <td className="px-3 py-2">
-                  <div className="flex flex-wrap gap-1">
-                    <Button size="sm" onClick={() => setPreviewName(r.name)}>{t('preview')}</Button>
-                    <Button size="sm" variant="ghost" onClick={() => downloadRender(r.name, 'csv')}>CSV</Button>
-                    <Button size="sm" variant="ghost" onClick={() => downloadRender(r.name, 'json')}>JSON</Button>
-                    <Button size="sm" onClick={() => runNow.mutate(r.name)} disabled={runNow.isPending}>
-                      {t('run')}
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setArchiveName(r.name)}>{t('archive')}</Button>
-                    <Button size="sm" variant="ghost" onClick={() => setEditing(r)}>{t('edit')}</Button>
-                    <DeleteButton onDelete={() => remove.mutate(r.name)} />
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </Table>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  {[t('name'), t('type'), t('schedule'), t('recipients'), 'Keep', t('actions')].map((h, i) => <TableHead key={i}>{h}</TableHead>)}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((r) => (
+                  <TableRow key={r.name} className="hover:bg-card/40">
+                    <TableCell className="font-medium text-foreground">{r.name}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="bg-muted text-foreground/90 border-input">{typeLabel(r.type)}</Badge>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground font-mono text-xs">{r.schedule || '—'}</TableCell>
+                    <TableCell className="text-muted-foreground tabular-nums">{r.email?.length ?? 0}</TableCell>
+                    <TableCell className="text-muted-foreground tabular-nums">{r.keep ?? '—'}</TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-1">
+                        <Button size="sm" variant="outline" onClick={() => setPreviewName(r.name)}>{t('preview')}</Button>
+                        <Button size="sm" variant="ghost" onClick={() => downloadRender(r.name, 'csv')}>CSV</Button>
+                        <Button size="sm" variant="ghost" onClick={() => downloadRender(r.name, 'json')}>JSON</Button>
+                        <Button size="sm" variant="outline" onClick={() => runNow.mutate(r.name)} disabled={runNow.isPending}>
+                          {t('run')}
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setArchiveName(r.name)}>{t('archive')}</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setEditing(r)}>{t('edit')}</Button>
+                        <DeleteButton onDelete={() => remove.mutate(r.name)} />
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
         </Card>
       )}
 
@@ -139,7 +157,7 @@ function parseScheduleStr(s?: string): ScheduleParts {
   if (!s) return out
   const [body, at] = s.split('@')
   if (at) out.time = at
-  const [head, arg] = body.split(':')
+  const [head, arg] = (body ?? '').split(':')
   if (head === 'daily') out.freq = 'daily'
   else if (head === 'weekly') { out.freq = 'weekly'; if (arg) out.weekday = arg }
   else if (head === 'monthly') { out.freq = 'monthly'; if (arg) out.day = Number(arg) || 1 }
@@ -198,18 +216,23 @@ function ReportDialog({ existing, onClose }: { existing: Report | null; onClose:
   }
 
   return (
-    <Dialog open onClose={onClose} title={editing ? `${t('edit')}: ${existing!.name}` : t('create')} size="lg">
-      <form className="space-y-3" onSubmit={submit}>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label={t('name')} required>
-            <Input value={name} onChange={(e) => setName(e.target.value)} disabled={editing} autoFocus={!editing} />
-          </Field>
-          <Field label={t('type')}>
-            <Select value={type} onChange={(e) => setType(e.target.value as ReportType)}>
-              {REPORT_TYPES.map((ty) => <option key={ty} value={ty}>{typeLabel(ty)}</option>)}
-            </Select>
-          </Field>
-        </div>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader><DialogTitle>{editing ? `${t('edit')}: ${existing!.name}` : t('create')}</DialogTitle></DialogHeader>
+        <form className="space-y-3" onSubmit={submit}>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label={t('name')} required>
+              <Input value={name} onChange={(e) => setName(e.target.value)} disabled={editing} autoFocus={!editing} />
+            </Field>
+            <Field label={t('type')}>
+              <Select value={type} onValueChange={(v) => setType(v as ReportType)}>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {REPORT_TYPES.map((ty) => <SelectItem key={ty} value={ty}>{typeLabel(ty)}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </Field>
+          </div>
 
         {showSelector && (
           <Field label="Selector" hint="Label-Filter der einbezogenen Objekte, z.B. env=prod">
@@ -218,8 +241,11 @@ function ReportDialog({ existing, onClose }: { existing: Report | null; onClose:
         )}
         <div className="grid grid-cols-2 gap-3">
           <Field label="Zeitraum">
-            <Select value={windowDays} onChange={(e) => setWindowDays(Number(e.target.value))}>
-              {WINDOWS.map((w) => <option key={w.days} value={w.days}>{w.label}</option>)}
+            <Select value={String(windowDays)} onValueChange={(v) => setWindowDays(Number(v))}>
+              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {WINDOWS.map((w) => <SelectItem key={w.days} value={String(w.days)}>{w.label}</SelectItem>)}
+              </SelectContent>
             </Select>
           </Field>
           {showTarget && (
@@ -241,17 +267,23 @@ function ReportDialog({ existing, onClose }: { existing: Report | null; onClose:
           <div className="text-xs text-muted-foreground font-medium mb-2">{t('schedule')}</div>
           <div className="grid grid-cols-3 gap-2">
             <Field label="Frequenz">
-              <Select value={sched.freq} onChange={(e) => setSched({ ...sched, freq: e.target.value as ScheduleParts['freq'] })}>
-                <option value="">— {t('none')} —</option>
-                <option value="daily">täglich</option>
-                <option value="weekly">wöchentlich</option>
-                <option value="monthly">monatlich</option>
+              <Select value={sched.freq || NONE} onValueChange={(v) => setSched({ ...sched, freq: (v === NONE ? '' : v) as ScheduleParts['freq'] })}>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>— {t('none')} —</SelectItem>
+                  <SelectItem value="daily">täglich</SelectItem>
+                  <SelectItem value="weekly">wöchentlich</SelectItem>
+                  <SelectItem value="monthly">monatlich</SelectItem>
+                </SelectContent>
               </Select>
             </Field>
             {sched.freq === 'weekly' && (
               <Field label="Wochentag">
-                <Select value={sched.weekday} onChange={(e) => setSched({ ...sched, weekday: e.target.value })}>
-                  {WEEKDAYS.map((d) => <option key={d} value={d}>{WEEKDAY_DE[d]}</option>)}
+                <Select value={sched.weekday} onValueChange={(v) => setSched({ ...sched, weekday: v })}>
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {WEEKDAYS.map((d) => <SelectItem key={d} value={d}>{WEEKDAY_DE[d]}</SelectItem>)}
+                  </SelectContent>
                 </Select>
               </Field>
             )}
@@ -281,9 +313,10 @@ function ReportDialog({ existing, onClose }: { existing: Report | null; onClose:
           </Field>
         </div>
 
-        <FormError error={save.error} />
-        <SubmitRow onCancel={onClose} saving={save.isPending} label={editing ? t('save') : t('create')} disabled={!name.trim()} />
-      </form>
+          <FormError error={save.error} />
+          <SubmitRow onCancel={onClose} saving={save.isPending} label={editing ? t('save') : t('create')} disabled={!name.trim()} />
+        </form>
+      </DialogContent>
     </Dialog>
   )
 }
@@ -301,22 +334,25 @@ function PreviewDialog({ name, onClose }: { name: string; onClose: () => void })
     },
   })
   return (
-    <Dialog open onClose={onClose} title={`${t('preview')}: ${name}`} size="xl">
-      {isLoading && <Spinner />}
-      {error && <FormError error={error} />}
-      {data != null && (
-        <iframe
-          title={`report-${name}`}
-          sandbox=""
-          srcDoc={data}
-          className="w-full h-[70vh] bg-white rounded-lg border border-input"
-        />
-      )}
-      <div className="flex justify-end gap-2 pt-3">
-        <Button variant="ghost" onClick={() => downloadRender(name, 'csv')}>CSV</Button>
-        <Button variant="ghost" onClick={() => downloadRender(name, 'json')}>JSON</Button>
-        <Button onClick={onClose}>{t('close')}</Button>
-      </div>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader><DialogTitle>{`${t('preview')}: ${name}`}</DialogTitle></DialogHeader>
+        {isLoading && <Spinner />}
+        {error && <FormError error={error} />}
+        {data != null && (
+          <iframe
+            title={`report-${name}`}
+            sandbox=""
+            srcDoc={data}
+            className="w-full h-[70vh] bg-white rounded-lg border border-input"
+          />
+        )}
+        <div className="flex justify-end gap-2 pt-3">
+          <Button variant="ghost" onClick={() => downloadRender(name, 'csv')}>CSV</Button>
+          <Button variant="ghost" onClick={() => downloadRender(name, 'json')}>JSON</Button>
+          <Button variant="outline" onClick={onClose}>{t('close')}</Button>
+        </div>
+      </DialogContent>
     </Dialog>
   )
 }
@@ -332,32 +368,42 @@ function ArchiveDialog({ name, onClose }: { name: string; onClose: () => void })
   })
   const rows = data?.items ?? []
   return (
-    <Dialog open onClose={onClose} title={`${t('archive')}: ${name}`} size="lg">
-      {isLoading && <Spinner />}
-      {!isLoading && rows.length === 0 && <Empty text={t('empty')} />}
-      {rows.length > 0 && (
-        <Table head={['Slot', t('format'), 'Erstellt', '']}>
-          {rows.map((e) => (
-            <tr key={e.id} className="hover:bg-card/40">
-              <td className="px-3 py-2 font-mono text-xs text-foreground/90">{e.slot}</td>
-              <td className="px-3 py-2">
-                <Badge className="bg-muted text-foreground/90 border-input">{e.format}</Badge>
-              </td>
-              <td className="px-3 py-2 text-muted-foreground text-xs">{fmtTime(e.createdAt)}</td>
-              <td className="px-3 py-2">
-                <a
-                  href={`/api/v1/reports/${encodeURIComponent(name)}/archive/${encodeURIComponent(e.id)}`}
-                  className="text-primary hover:text-primary text-xs"
-                  download
-                >↓ {t('download')}</a>
-              </td>
-            </tr>
-          ))}
-        </Table>
-      )}
-      <div className="flex justify-end pt-3">
-        <Button onClick={onClose}>{t('close')}</Button>
-      </div>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader><DialogTitle>{`${t('archive')}: ${name}`}</DialogTitle></DialogHeader>
+        {isLoading && <Spinner />}
+        {!isLoading && rows.length === 0 && <Empty text={t('empty')} />}
+        {rows.length > 0 && (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                {['Slot', t('format'), 'Erstellt', ''].map((h, i) => <TableHead key={i}>{h}</TableHead>)}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((e) => (
+                <TableRow key={e.id} className="hover:bg-card/40">
+                  <TableCell className="font-mono text-xs text-foreground/90">{e.slot}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="bg-muted text-foreground/90 border-input">{e.format}</Badge>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground text-xs">{fmtTime(e.createdAt)}</TableCell>
+                  <TableCell>
+                    <a
+                      href={`/api/v1/reports/${encodeURIComponent(name)}/archive/${encodeURIComponent(e.id)}`}
+                      className="text-primary hover:text-primary text-xs"
+                      download
+                    >↓ {t('download')}</a>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+        <div className="flex justify-end pt-3">
+          <Button variant="outline" onClick={onClose}>{t('close')}</Button>
+        </div>
+      </DialogContent>
     </Dialog>
   )
 }

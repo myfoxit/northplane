@@ -4,8 +4,11 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { get, post, type ListResponse } from '../../api'
-import { Table, Empty, Dialog, Input, Badge } from '../ui'
-import { Field, FormError, SubmitRow, useSave } from '../forms'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
+import { Empty, Field, FormError, SubmitRow, useSave } from '@/components/kit'
 import { t } from '../../i18n'
 import { StatusBadge, TableActions } from './common'
 
@@ -21,15 +24,25 @@ export function TenantsTab() {
   return (
     <div className="space-y-4">
       <TableActions onCreate={() => setCreating(true)} label={t('create')} />
-      <Table head={[t('name'), 'Slug', t('status'), 'ID']}>
-        {(data ?? []).map((tn) => (
-          <tr key={tn.id}>
-            <td className="px-3 py-2 text-foreground">{tn.name}</td>
-            <td className="px-3 py-2 text-xs text-muted-foreground font-mono">{tn.slug}</td>
-            <td className="px-3 py-2">{tn.disabled ? <StatusBadge kind="disabled" /> : <StatusBadge kind="enabled" />}</td>
-            <td className="px-3 py-2 text-xs text-muted-foreground/70 font-mono">{tn.id}</td>
-          </tr>
-        ))}
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{t('name')}</TableHead>
+            <TableHead>Slug</TableHead>
+            <TableHead>{t('status')}</TableHead>
+            <TableHead>ID</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {(data ?? []).map((tn) => (
+            <TableRow key={tn.id}>
+              <TableCell className="px-3 py-2 text-foreground">{tn.name}</TableCell>
+              <TableCell className="px-3 py-2 text-xs text-muted-foreground font-mono">{tn.slug}</TableCell>
+              <TableCell className="px-3 py-2">{tn.disabled ? <StatusBadge kind="disabled" /> : <StatusBadge kind="enabled" />}</TableCell>
+              <TableCell className="px-3 py-2 text-xs text-muted-foreground/70 font-mono">{tn.id}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
       </Table>
       {!isLoading && (data?.length ?? 0) === 0 && <Empty text={t('empty')} />}
       {creating && <TenantDialog onClose={() => setCreating(false)} />}
@@ -45,18 +58,23 @@ function TenantDialog({ onClose }: { onClose: () => void }) {
     { invalidate: [[...TENANTS]], onDone: onClose },
   )
   return (
-    <Dialog open onClose={onClose} title={`${t('tenants')} — ${t('create')}`} size="md">
-      <form onSubmit={(e) => { e.preventDefault(); save.mutate(undefined) }} className="space-y-3">
-        <Field label={t('name')} required>
-          <Input value={name} onChange={(e) => setName(e.target.value)} required />
-        </Field>
-        <Field label="Slug" required hint="URL-tauglicher Kurzname">
-          <Input value={slug} onChange={(e) => setSlug(e.target.value)} required />
-        </Field>
-        <Badge className="bg-muted text-muted-foreground border-input">Mandanten können derzeit nicht gelöscht werden</Badge>
-        <FormError error={save.error} />
-        <SubmitRow onCancel={onClose} saving={save.isPending} disabled={!name || !slug} />
-      </form>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{`${t('tenants')} — ${t('create')}`}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={(e) => { e.preventDefault(); save.mutate(undefined) }} className="space-y-3">
+          <Field label={t('name')} required>
+            <Input value={name} onChange={(e) => setName(e.target.value)} required />
+          </Field>
+          <Field label="Slug" required hint="URL-tauglicher Kurzname">
+            <Input value={slug} onChange={(e) => setSlug(e.target.value)} required />
+          </Field>
+          <Badge variant="outline" className="bg-muted text-muted-foreground border-input">Mandanten können derzeit nicht gelöscht werden</Badge>
+          <FormError error={save.error} />
+          <SubmitRow onCancel={onClose} saving={save.isPending} disabled={!name || !slug} />
+        </form>
+      </DialogContent>
     </Dialog>
   )
 }

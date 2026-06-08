@@ -34,10 +34,10 @@ func (t ChannelType) IsTicket() bool {
 // TicketRef records the external ticket created for an alert (F-04.05).
 // Stored on the alert so resolution can auto-close the ticket.
 type TicketRef struct {
-	Channel   string `json:"channel"`            // NotificationChannel name
-	Type      string `json:"type"`               // servicenow|zendesk|jira|ticket
-	Ref       string `json:"ref"`                // provider id (sys_id, ticket id, issue key)
-	URL       string `json:"url,omitempty"`      // human link
+	Channel   string `json:"channel"`       // NotificationChannel name
+	Type      string `json:"type"`          // servicenow|zendesk|jira|ticket
+	Ref       string `json:"ref"`           // provider id (sys_id, ticket id, issue key)
+	URL       string `json:"url,omitempty"` // human link
 	AutoClose bool   `json:"autoClose,omitempty"`
 }
 
@@ -165,8 +165,8 @@ type EscalationPolicy struct {
 
 // EscalationTarget selects who/what a step notifies.
 type EscalationTarget struct {
-	Schedule     string `json:"schedule,omitempty"     yaml:"schedule,omitempty"`     // whoever is on call
-	EscalateTo   string `json:"escalateTo,omitempty"   yaml:"escalateTo,omitempty"`   // "" | "backup" (second in rotation)
+	Schedule     string `json:"schedule,omitempty"     yaml:"schedule,omitempty"`   // whoever is on call
+	EscalateTo   string `json:"escalateTo,omitempty"   yaml:"escalateTo,omitempty"` // "" | "backup" (second in rotation)
 	Contact      string `json:"contact,omitempty"      yaml:"contact,omitempty"`
 	ContactGroup string `json:"contactGroup,omitempty" yaml:"contactGroup,omitempty"`
 }
@@ -188,8 +188,8 @@ type ServiceNowAction struct {
 
 // TicketAction creates a ticket via a configured ticket channel.
 type TicketAction struct {
-	Channel   string            `json:"channel"             yaml:"channel"` // NotificationChannel name
-	AutoClose bool              `json:"autoClose,omitempty" yaml:"autoClose,omitempty"`
+	Channel   string `json:"channel"             yaml:"channel"` // NotificationChannel name
+	AutoClose bool   `json:"autoClose,omitempty" yaml:"autoClose,omitempty"`
 	// Params are merged into the provider payload (assignment_group,
 	// priority, tags …) — provider-specific, see channel docs.
 	Params map[string]string `json:"params,omitempty" yaml:"params,omitempty"`
@@ -211,11 +211,11 @@ type EscalationStep struct {
 type NotificationStatus string
 
 const (
-	NotifyPending   NotificationStatus = "pending"
-	NotifySent      NotificationStatus = "sent"
-	NotifyFailed    NotificationStatus = "failed"
-	NotifyDead      NotificationStatus = "dead" // moved to DLQ after retries
-	NotifySuppress  NotificationStatus = "suppressed"
+	NotifyPending  NotificationStatus = "pending"
+	NotifySent     NotificationStatus = "sent"
+	NotifyFailed   NotificationStatus = "failed"
+	NotifyDead     NotificationStatus = "dead" // moved to DLQ after retries
+	NotifySuppress NotificationStatus = "suppressed"
 )
 
 // NotificationRecord is the payload of notification events and the DLQ row.

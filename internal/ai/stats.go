@@ -16,7 +16,7 @@ import (
 // Baseline summarises a series' normal behaviour.
 type Baseline struct {
 	Mean   float64 `json:"mean"`
-	MAD    float64 `json:"mad"`    // median absolute deviation
+	MAD    float64 `json:"mad"` // median absolute deviation
 	StdDev float64 `json:"stdDev"`
 	// Seasonal[hour*7+weekday] = expected value (4-week window).
 	Seasonal []float64 `json:"-"`
@@ -70,10 +70,10 @@ func (b Baseline) SeasonalExpected(t time.Time) float64 {
 
 // Anomaly is a detected deviation.
 type Anomaly struct {
-	At       time.Time `json:"at"`
-	Value    float64   `json:"value"`
-	Expected float64   `json:"expected"`
-	Deviation float64  `json:"deviationMad"` // |x-expected| / MAD
+	At        time.Time `json:"at"`
+	Value     float64   `json:"value"`
+	Expected  float64   `json:"expected"`
+	Deviation float64   `json:"deviationMad"` // |x-expected| / MAD
 }
 
 // DetectAnomalies flags points beyond k×MAD from the seasonal baseline

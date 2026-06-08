@@ -50,10 +50,10 @@ func defaultAgentConfigPath() string {
 
 // agentConfig is /etc/northplane/agent.yaml.
 type agentConfig struct {
-	Server   string `yaml:"server"`   // https://northplane.example.net
-	Token    string `yaml:"token"`    // np_… (objects:write scope)
-	Hostname string `yaml:"hostname"` // defaults to os.Hostname
-	Insecure bool   `yaml:"insecure"`
+	Server   string        `yaml:"server"`   // https://northplane.example.net
+	Token    string        `yaml:"token"`    // np_… (objects:write scope)
+	Hostname string        `yaml:"hostname"` // defaults to os.Hostname
+	Insecure bool          `yaml:"insecure"`
 	Interval time.Duration `yaml:"interval"` // default 60s
 
 	// Checks: local plugin executions submitted as passive services.
@@ -71,9 +71,9 @@ type agentConfig struct {
 }
 
 type agentCheck struct {
-	Service string   `yaml:"service"`
-	Command string   `yaml:"command"`
-	Args    []string `yaml:"args"`
+	Service string        `yaml:"service"`
+	Command string        `yaml:"command"`
+	Args    []string      `yaml:"args"`
 	Timeout time.Duration `yaml:"timeout"`
 }
 
@@ -185,7 +185,7 @@ func submit(ctx context.Context, client *http.Client, cfg agentConfig, results [
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		return fmt.Errorf("HTTP %d", resp.StatusCode)
 	}

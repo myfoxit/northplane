@@ -6,7 +6,11 @@ import { Sparkles } from 'lucide-react'
 import { get, post, queryClient, fmtAgo, type ListResponse } from '../api'
 import type { Alert, AlertsSearch, Incident, Severity } from '../types'
 import { sevColor } from '../types'
-import { Button, Badge, Empty, Card, ErrorState } from '../components/ui'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardHeader, CardTitle, CardAction, CardContent } from '@/components/ui/card'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Empty, ErrorState } from '@/components/kit'
 import { AckDialog } from '../components/AckDialog'
 import { t } from '../i18n'
 
@@ -41,19 +45,24 @@ export function AlertsPage() {
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-lg font-bold">{t('alerts')} <span className="text-muted-foreground text-sm">({rows.length})</span></h1>
         <div className="flex gap-2">
-          <select value={severity} onChange={(e) => patchSearch({ severity: e.target.value || undefined })}
-            className="bg-card border border-input rounded-lg px-2 py-1 text-sm text-foreground/90">
-            <option value="">alle Severities</option>
-            <option value="critical">critical</option>
-            <option value="warning">warning</option>
-            <option value="info">info</option>
-          </select>
-          <select value={status} onChange={(e) => patchSearch({ status: e.target.value })}
-            className="bg-card border border-input rounded-lg px-2 py-1 text-sm text-foreground/90">
-            <option value="open,acked">offen + quittiert</option>
-            <option value="open">nur offen</option>
-            <option value="resolved,expired">geschlossen</option>
-          </select>
+          <Select value={severity || '__all__'}
+            onValueChange={(v) => patchSearch({ severity: v === '__all__' ? undefined : v })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">alle Severities</SelectItem>
+              <SelectItem value="critical">critical</SelectItem>
+              <SelectItem value="warning">warning</SelectItem>
+              <SelectItem value="info">info</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={status} onValueChange={(v) => patchSearch({ status: v })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="open,acked">offen + quittiert</SelectItem>
+              <SelectItem value="open">nur offen</SelectItem>
+              <SelectItem value="resolved,expired">geschlossen</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
       {isLoading && <Empty text={t('loading')} />}
@@ -61,7 +70,7 @@ export function AlertsPage() {
       <div className="space-y-1.5">
         {rows.map((a) => (
           <div key={a.id} className="flex items-center gap-3 bg-card/50 border border-border rounded-lg px-3 py-2 group">
-            <Badge className={sevColor(a.severity)}>{a.severity}</Badge>
+            <Badge variant="outline" className={sevColor(a.severity)}>{a.severity}</Badge>
             <div className="min-w-0 flex-1">
               <div className="text-sm text-foreground font-medium truncate">{a.title}</div>
               <div className="text-xs text-muted-foreground">
@@ -110,28 +119,34 @@ export function IncidentsPage() {
       {!isLoading && rows.length === 0 && <Empty text={t('empty')} />}
       <div className="grid lg:grid-cols-2 gap-3">
         {rows.map((inc) => (
-          <Card key={inc.id} title={
-            <span className="flex items-center gap-2">
-              <Badge className={sevColor(inc.severity)}>{inc.severity}</Badge>
-              <span className={inc.status === 'resolved' ? 'line-through text-muted-foreground' : ''}>{inc.title}</span>
-            </span>
-          } actions={
-            inc.status === 'open' ? (
-              <div className="flex gap-1">
-                <Button size="sm" variant="ghost" onClick={() => summarize.mutate(inc.id)}
-                  disabled={summarize.isPending} title="AI-Zusammenfassung" aria-label="AI-Zusammenfassung"><Sparkles size={14} /></Button>
-                <Button size="sm" onClick={() => resolve.mutate(inc.id)}>{t('resolve')}</Button>
+          <Card key={inc.id}>
+            <CardHeader>
+              <CardTitle>
+                <span className="flex items-center gap-2">
+                  <Badge variant="outline" className={sevColor(inc.severity)}>{inc.severity}</Badge>
+                  <span className={inc.status === 'resolved' ? 'line-through text-muted-foreground' : ''}>{inc.title}</span>
+                </span>
+              </CardTitle>
+              {inc.status === 'open' && (
+                <CardAction>
+                  <div className="flex gap-1">
+                    <Button size="sm" variant="ghost" onClick={() => summarize.mutate(inc.id)}
+                      disabled={summarize.isPending} title="AI-Zusammenfassung" aria-label="AI-Zusammenfassung"><Sparkles size={14} /></Button>
+                    <Button size="sm" onClick={() => resolve.mutate(inc.id)}>{t('resolve')}</Button>
+                  </div>
+                </CardAction>
+              )}
+            </CardHeader>
+            <CardContent>
+              <div className="text-xs text-muted-foreground mb-1">
+                {inc.createdBy} · {fmtAgo(inc.openedAt)} · {inc.impact}
               </div>
-            ) : undefined
-          }>
-            <div className="text-xs text-muted-foreground mb-1">
-              {inc.createdBy} · {fmtAgo(inc.openedAt)} · {inc.impact}
-            </div>
-            {inc.summary && <p className="text-sm text-foreground/90 whitespace-pre-wrap">{inc.summary}</p>}
-            {inc.ticketUrl && (
-              <a href={inc.ticketUrl} target="_blank" rel="noreferrer"
-                className="text-xs text-primary hover:underline">Ticket ↗</a>
-            )}
+              {inc.summary && <p className="text-sm text-foreground/90 whitespace-pre-wrap">{inc.summary}</p>}
+              {inc.ticketUrl && (
+                <a href={inc.ticketUrl} target="_blank" rel="noreferrer"
+                  className="text-xs text-primary hover:underline">Ticket ↗</a>
+              )}
+            </CardContent>
           </Card>
         ))}
       </div>

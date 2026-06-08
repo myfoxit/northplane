@@ -45,8 +45,20 @@ func SetVAPID(v *VAPID) { vapid = v }
 // PublicKeyB64 renders the uncompressed public key for the browser's
 // PushManager.subscribe(applicationServerKey).
 func (v *VAPID) PublicKeyB64() string {
-	pub := elliptic.Marshal(elliptic.P256(), v.Private.X, v.Private.Y)
-	return base64.RawURLEncoding.EncodeToString(pub)
+	return base64.RawURLEncoding.EncodeToString(vapidPublicBytes(v))
+}
+
+// vapidPublicBytes returns the uncompressed (0x04 || X || Y) P-256 public
+// key encoding required by RFC 8292, via crypto/ecdh (PublicKey.Bytes is
+// the non-deprecated equivalent of elliptic.Marshal for P-256). The key is
+// always a freshly generated P-256 key, so the conversion cannot fail in
+// practice; if it ever did, an empty slice is returned rather than a panic.
+func vapidPublicBytes(v *VAPID) []byte {
+	ecdhPub, err := v.Private.PublicKey.ECDH()
+	if err != nil {
+		return nil
+	}
+	return ecdhPub.Bytes()
 }
 
 // GenerateVAPID creates a fresh keypair.
@@ -204,7 +216,9 @@ func webPushSend(ctx context.Context, v *VAPID, sub *PushSubscription, plaintext
 	// aes128gcm body: salt | rs | idlen | keyid | ciphertext
 	body := &bytes.Buffer{}
 	body.Write(salt)
-	binary.Write(body, binary.BigEndian, uint32(4096))
+	// Record size into the in-memory buffer; a fixed-size uint32 into a
+	// bytes.Buffer cannot fail.
+	_ = binary.Write(body, binary.BigEndian, uint32(4096))
 	body.WriteByte(byte(len(asPub)))
 	body.Write(asPub)
 	body.Write(ciphertext)
@@ -217,7 +231,7 @@ func webPushSend(ctx context.Context, v *VAPID, sub *PushSubscription, plaintext
 	if err != nil {
 		return err
 	}
-	pub := elliptic.Marshal(elliptic.P256(), v.Private.X, v.Private.Y)
+	pub := vapidPublicBytes(v)
 	req.Header.Set("Content-Encoding", "aes128gcm")
 	req.Header.Set("TTL", "86400")
 	req.Header.Set("Urgency", "high")
@@ -227,7 +241,7 @@ func webPushSend(ctx context.Context, v *VAPID, sub *PushSubscription, plaintext
 		return err
 	}
 	defer resp.Body.Close()
-	io.Copy(io.Discard, io.LimitReader(resp.Body, 1024))
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1024)) // drain for keep-alive
 	if resp.StatusCode >= 300 {
 		return fmt.Errorf("push endpoint: HTTP %d", resp.StatusCode)
 	}
@@ -237,7 +251,12 @@ func webPushSend(ctx context.Context, v *VAPID, sub *PushSubscription, plaintext
 func hkdfExpand(prk, info []byte, length int) []byte {
 	out := make([]byte, length)
 	r := hkdf.Expand(sha256.New, prk, info)
-	io.ReadFull(r, out)
+	if _, err := io.ReadFull(r, out); err != nil {
+		// Only happens if length exceeds 255*HashLen; all call sites request
+		// 12/16/32 bytes, so a failure here would be a programming error that
+		// must not silently yield a short (weakened) key.
+		panic(fmt.Sprintf("webpush: hkdf expand %d bytes: %v", length, err))
+	}
 	return out
 }
 

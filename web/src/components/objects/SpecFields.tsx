@@ -5,9 +5,18 @@
 import { useQuery } from '@tanstack/react-query'
 import { get } from '../../api'
 import type { ObjectSpec } from '../../types'
-import { Field, Select, DurationInput, KVEditor, ListEditor } from '../forms'
-import { Input } from '../ui'
+import { useBuiltins, useResourceNames } from './specUtil'
+import { Field, DurationInput, KVEditor, ListEditor } from '@/components/kit'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
 import { t } from '../../i18n'
+
+// Radix SelectItem value cannot be "" — sentinel stands in for the
+// "inherit/all" empty option and maps back to '' on change.
+const NONE = '__none__'
 
 // ——— tri-state inheritance toggles ————————————————————————————————
 // EnableChecks/Notifications/FlapDetection are *bool in the Go model:
@@ -26,10 +35,13 @@ function TriField({ label, value, onChange }: {
 }) {
   return (
     <Field label={label}>
-      <Select value={triOf(value)} onChange={(e) => onChange(triVal(e.target.value as Tri))}>
-        <option value="inherit">Vererbt</option>
-        <option value="on">{t('enabled')}</option>
-        <option value="off">{t('disabled')}</option>
+      <Select value={triOf(value)} onValueChange={(v) => onChange(triVal(v as Tri))}>
+        <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="inherit">Vererbt</SelectItem>
+          <SelectItem value="on">{t('enabled')}</SelectItem>
+          <SelectItem value="off">{t('disabled')}</SelectItem>
+        </SelectContent>
       </Select>
     </Field>
   )
@@ -53,25 +65,6 @@ function joinRef(kind: string, rest: string): string {
   return `${kind}:${rest}`
 }
 
-export function useBuiltins() {
-  return useQuery({
-    queryKey: ['check-commands', 'builtins'],
-    queryFn: () => get<string[]>('/check-commands:builtins'),
-    staleTime: 5 * 60_000,
-  })
-}
-
-// Names of a resource collection (templates / time-periods / hosts) for
-// datalist suggestions.
-export function useResourceNames(base: string, queryKey: string[]) {
-  return useQuery({
-    queryKey,
-    queryFn: () => get<{ items: { name: string }[] | null }>(`/${base}?limit=500`)
-      .then((r) => (r.items ?? []).map((x) => x.name)),
-    staleTime: 60_000,
-  })
-}
-
 function CheckCommandField({ spec, patch }: { spec: ObjectSpec; patch: (p: Partial<ObjectSpec>) => void }) {
   const { data: builtins } = useBuiltins()
   const commands = useResourceNames('check-commands', ['resources', 'check-commands', 'names'])
@@ -80,12 +73,15 @@ function CheckCommandField({ spec, patch }: { spec: ObjectSpec; patch: (p: Parti
   return (
     <div className="grid grid-cols-[10rem_1fr] gap-2">
       <Field label={t('checkCommand')}>
-        <Select value={kind} onChange={(e) => patch({ checkCommand: joinRef(e.target.value, rest) })}>
-          <option value="builtin">builtin</option>
-          <option value="command">Kommando (definiert)</option>
-          <option value="exec">exec</option>
-          <option value="agent:exec">agent:exec</option>
-          <option value="passive">passive</option>
+        <Select value={kind} onValueChange={(v) => patch({ checkCommand: joinRef(v, rest) })}>
+          <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="builtin">builtin</SelectItem>
+            <SelectItem value="command">Kommando (definiert)</SelectItem>
+            <SelectItem value="exec">exec</SelectItem>
+            <SelectItem value="agent:exec">agent:exec</SelectItem>
+            <SelectItem value="passive">passive</SelectItem>
+          </SelectContent>
         </Select>
       </Field>
       <Field label={kind === 'builtin' ? 'Builtin-Check' : kind === 'command' ? 'Check-Kommando' : kind === 'passive' ? '—' : 'Kommando / Plugin'}>
@@ -264,10 +260,16 @@ export function SpecFields({ spec, onChange, kind, hideCommand }: {
         <TriField label={t('notifications')} value={spec.enableNotifications} onChange={(v) => patch({ enableNotifications: v })} />
         <TriField label={t('flapDetection')} value={spec.enableFlapDetection} onChange={(v) => patch({ enableFlapDetection: v })} />
         <Field label="Threshold-Modus">
-          <Select value={spec.thresholdMode ?? ''} onChange={(e) => patch({ thresholdMode: (e.target.value || undefined) as ObjectSpec['thresholdMode'] })}>
-            <option value="">Vererbt</option>
-            <option value="static">static</option>
-            <option value="adaptive">adaptive (KI)</option>
+          <Select
+            value={spec.thresholdMode || NONE}
+            onValueChange={(v) => patch({ thresholdMode: (v === NONE ? undefined : v) as ObjectSpec['thresholdMode'] })}
+          >
+            <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>Vererbt</SelectItem>
+              <SelectItem value="static">static</SelectItem>
+              <SelectItem value="adaptive">adaptive (KI)</SelectItem>
+            </SelectContent>
           </Select>
         </Field>
       </div>
@@ -297,34 +299,14 @@ export function SpecFields({ spec, onChange, kind, hideCommand }: {
       </Field>
 
       <Field label={t('runbook')} hint="Markdown">
-        <textarea
+        <Textarea
           value={spec.runbook ?? ''}
           onChange={(e) => patch({ runbook: e.target.value })}
           placeholder="## Runbook&#10;1. Prüfe …"
-          className="bg-card border border-input rounded-lg px-3 py-1.5 text-sm text-foreground w-full font-mono placeholder:text-muted-foreground focus:border-ring min-h-20"
+          className="font-mono min-h-20"
         />
       </Field>
     </div>
   )
 }
 
-// ——— serialisation helpers ———————————————————————————————————————
-// Strip empty strings / empty arrays / empty maps so the wire payload only
-// carries deliberate overrides (omitempty parity → keeps effective-config
-// inheritance clean). undefined fields are dropped by JSON.stringify.
-export function cleanSpec(spec: ObjectSpec): ObjectSpec {
-  const out: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(spec)) {
-    if (v === undefined || v === null || v === '') continue
-    if (Array.isArray(v) && v.length === 0) continue
-    if (typeof v === 'object' && !Array.isArray(v) && Object.keys(v as object).length === 0) continue
-    out[k] = v
-  }
-  return out as ObjectSpec
-}
-
-// A NPObject.spec is typed as Record<string, unknown>; narrow it for the
-// editor. Returns a shallow copy so edits never mutate the cache.
-export function specOf(raw: Record<string, unknown> | undefined): ObjectSpec {
-  return { ...(raw as ObjectSpec | undefined) }
-}
