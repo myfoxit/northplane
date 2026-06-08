@@ -107,6 +107,43 @@ jobs:
           go build -o bin/np ./cmd/np
           go build -o bin/np-agent ./cmd/np-agent
 
+  # End-to-end: build northplaned with the embedded UI, then drive the real
+  # --demo binary (Go backend + shadcn SPA) through Chromium with Playwright.
+  # global-setup boots an isolated demo server per run; "green" here means the
+  # whole product actually works through a browser, not just that it compiles.
+  e2e:
+    needs: ui
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/download-artifact@v4
+        with:
+          name: ui-dist
+          path: internal/web/dist
+      - name: build northplaned (embeds the UI)
+        run: go build -o bin/northplaned ./cmd/northplaned
+      - name: install web deps
+        run: cd web && npm ci
+      - name: install Playwright Chromium
+        run: cd web && npx playwright install --with-deps chromium
+      - name: run E2E suite
+        run: cd web && npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: web/playwright-report
+          retention-days: 7
+
   # Run the storage suite against the real PostgreSQL backend too (the
   # store is dual-backend; SQLite is always exercised in `test`).
   postgres:

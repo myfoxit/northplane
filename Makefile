@@ -2,7 +2,7 @@
 VERSION ?= 1.0.0-dev
 LDFLAGS  = -ldflags "-X main.version=$(VERSION)"
 
-.PHONY: all web build test race fmt docker clean dev dev-reset types types-check
+.PHONY: all web build test race fmt docker clean dev dev-reset types types-check e2e
 
 all: web build
 
@@ -59,6 +59,14 @@ test:
 # Race-enabled run of the whole suite (what CI runs).
 race:
 	go test -race ./...
+
+# End-to-end browser tests: rebuild the embedded UI + binary, then drive the
+# real --demo server through Chromium (Playwright). global-setup boots/teardowns
+# an isolated demo server, so this is the one command that proves the whole
+# product works end to end. First run installs the Chromium binary.
+e2e: web
+	go build $(LDFLAGS) -o bin/northplaned ./cmd/northplaned
+	cd web && npx playwright install chromium && npm run test:e2e
 
 fmt:
 	gofmt -w cmd internal
