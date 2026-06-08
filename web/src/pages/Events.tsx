@@ -4,7 +4,10 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { get, fmtTime, type ListResponse } from '../api'
 import type { NPEvent } from '../types'
 import { sevColor } from '../types'
-import { Badge, Empty, Input, ErrorState } from '../components/ui'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Empty, ErrorState } from '@/components/kit'
 import { t } from '../i18n'
 
 const eventTypes = ['', 'state_change', 'alert_opened', 'alert_resolved', 'notification',
@@ -31,10 +34,12 @@ export function EventsPage() {
           className="text-xs text-muted-foreground hover:text-foreground/90">⇩ NDJSON Export</a>
       </div>
       <div className="flex gap-2">
-        <select value={type} onChange={(e) => setType(e.target.value)}
-          className="bg-card border border-input rounded-lg px-2 py-1 text-sm text-foreground/90">
-          {eventTypes.map((et) => <option key={et} value={et}>{et || 'alle Typen'}</option>)}
-        </select>
+        <Select value={type || '__all__'} onValueChange={(v) => setType(v === '__all__' ? '' : v)}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {eventTypes.map((et) => <SelectItem key={et} value={et || '__all__'}>{et || 'alle Typen'}</SelectItem>)}
+          </SelectContent>
+        </Select>
         <Input placeholder="Object-ID…" value={objectId} onChange={(e) => setObjectId(e.target.value)}
           className="max-w-xs" />
       </div>
@@ -45,8 +50,8 @@ export function EventsPage() {
           <details key={e.id} className="group">
             <summary className="flex items-center gap-3 px-3 py-1.5 cursor-pointer hover:bg-muted/40 list-none">
               <span className="text-muted-foreground/70 text-xs tabular-nums w-36 shrink-0">{fmtTime(e.ts)}</span>
-              <Badge className="bg-muted text-muted-foreground border-input w-32 justify-center shrink-0">{e.type}</Badge>
-              {e.severity && <Badge className={sevColor(e.severity)}>{e.severity}</Badge>}
+              <Badge variant="outline" className="bg-muted text-muted-foreground border-input w-32 justify-center shrink-0">{e.type}</Badge>
+              {e.severity && <Badge variant="outline" className={sevColor(e.severity)}>{e.severity}</Badge>}
               <span className="text-muted-foreground text-xs truncate flex-1">
                 {String((e.payload as Record<string, unknown>)?.summary ??
                   (e.payload as Record<string, unknown>)?.output ??

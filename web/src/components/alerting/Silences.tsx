@@ -4,8 +4,15 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { get, post, del, fmtTime, type ListResponse } from '../../api'
 import type { Silence } from '../../types'
-import { Button, Dialog, Empty, Input, Table } from '../ui'
-import { Field, FormError, SubmitRow, DeleteButton, useSave } from '../forms'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table'
+import { Empty, Field, FormError, SubmitRow, DeleteButton, useSave } from '@/components/kit'
 import { t } from '../../i18n'
 import { DateTimeInput } from './common'
 import { localInputToIso, nowPlus } from './datetime'
@@ -27,22 +34,34 @@ export function SilencesTab() {
   return (
     <div className="space-y-3">
       <div className="flex justify-end">
-        <Button variant="primary" onClick={() => setCreating(true)}>{t('create')}</Button>
+        <Button variant="default" onClick={() => setCreating(true)}>{t('create')}</Button>
       </div>
       {(data?.length ?? 0) === 0 ? <Empty text="Keine aktiven Silences." /> : (
-        <Table head={['Selector', 'Regex', t('comment'), 'Läuft ab', 'Von', t('actions')]}>
-          {data!.map((s) => (
-            <tr key={s.id} className="hover:bg-muted/30">
-              <td className="px-3 py-2 font-mono text-xs text-foreground/90">{s.selector || '—'}</td>
-              <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{s.textRegex || '—'}</td>
-              <td className="px-3 py-2 text-sm text-foreground/90">{s.comment}</td>
-              <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">{fmtTime(s.expiresAt)}</td>
-              <td className="px-3 py-2 text-xs text-muted-foreground">{s.createdBy ?? '—'}</td>
-              <td className="px-3 py-2 text-right">
-                {s.id && <DeleteButton onDelete={() => remove.mutate(s.id!)} />}
-              </td>
-            </tr>
-          ))}
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Selector</TableHead>
+              <TableHead>Regex</TableHead>
+              <TableHead>{t('comment')}</TableHead>
+              <TableHead>Läuft ab</TableHead>
+              <TableHead>Von</TableHead>
+              <TableHead>{t('actions')}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data!.map((s) => (
+              <TableRow key={s.id}>
+                <TableCell className="font-mono text-xs text-foreground/90">{s.selector || '—'}</TableCell>
+                <TableCell className="font-mono text-xs text-muted-foreground">{s.textRegex || '—'}</TableCell>
+                <TableCell className="text-sm text-foreground/90">{s.comment}</TableCell>
+                <TableCell className="text-xs text-muted-foreground tabular-nums">{fmtTime(s.expiresAt)}</TableCell>
+                <TableCell className="text-xs text-muted-foreground">{s.createdBy ?? '—'}</TableCell>
+                <TableCell className="text-right">
+                  {s.id && <DeleteButton onDelete={() => remove.mutate(s.id!)} />}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
         </Table>
       )}
       {creating && <SilenceDialog onClose={() => setCreating(false)} />}
@@ -69,30 +88,35 @@ function SilenceDialog({ onClose }: { onClose: () => void }) {
   const onSubmit = (e: React.FormEvent) => { e.preventDefault(); save.mutate(undefined as unknown as void) }
 
   return (
-    <Dialog open onClose={onClose} title={`${t('silences')} ${t('create').toLowerCase()}`} size="md">
-      <form onSubmit={onSubmit} className="space-y-3">
-        <Field label="Selector" hint="Label-Selector — Selector oder Regex erforderlich">
-          <Input value={selector} onChange={(e) => setSelector(e.target.value)} placeholder="env=prod" />
-        </Field>
-        <Field label="Text-Regex" hint="passt auf Alarm-Titel">
-          <Input value={textRegex} onChange={(e) => setTextRegex(e.target.value)} placeholder="disk.*full" />
-        </Field>
-        <Field label={t('comment')} required>
-          <Input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Wartungsfenster DB" />
-        </Field>
-        <Field label="Läuft ab">
-          <div className="flex gap-1.5 mb-1.5">
-            {quick.map((q) => (
-              <Button key={q.label} size="sm" type="button" variant="ghost"
-                onClick={() => setExpires(nowPlus(q.ms))}>{q.label}</Button>
-            ))}
-          </div>
-          <DateTimeInput value={expires} onChange={setExpires} />
-        </Field>
-        <FormError error={save.error} />
-        <SubmitRow onCancel={onClose} saving={save.isPending}
-          disabled={!comment || (!selector && !textRegex) || !expires} label={t('create')} />
-      </form>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{`${t('silences')} ${t('create').toLowerCase()}`}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={onSubmit} className="space-y-3">
+          <Field label="Selector" hint="Label-Selector — Selector oder Regex erforderlich">
+            <Input value={selector} onChange={(e) => setSelector(e.target.value)} placeholder="env=prod" />
+          </Field>
+          <Field label="Text-Regex" hint="passt auf Alarm-Titel">
+            <Input value={textRegex} onChange={(e) => setTextRegex(e.target.value)} placeholder="disk.*full" />
+          </Field>
+          <Field label={t('comment')} required>
+            <Input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Wartungsfenster DB" />
+          </Field>
+          <Field label="Läuft ab">
+            <div className="flex gap-1.5 mb-1.5">
+              {quick.map((q) => (
+                <Button key={q.label} size="sm" type="button" variant="ghost"
+                  onClick={() => setExpires(nowPlus(q.ms))}>{q.label}</Button>
+              ))}
+            </div>
+            <DateTimeInput value={expires} onChange={setExpires} />
+          </Field>
+          <FormError error={save.error} />
+          <SubmitRow onCancel={onClose} saving={save.isPending}
+            disabled={!comment || (!selector && !textRegex) || !expires} label={t('create')} />
+        </form>
+      </DialogContent>
     </Dialog>
   )
 }

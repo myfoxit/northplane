@@ -1,7 +1,7 @@
 // Alerting configuration: rules (CEL) + groups + escalation policies
 // (CMP Alarmserver Webmin parity, SPEC §9.2/§9.4).
 import { useState } from 'react'
-import { TabBar } from '../components/ui'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { t } from '../i18n'
 import { RulesTab } from '../components/alerting/Rules'
 import { GroupsTab } from '../components/alerting/Groups'
@@ -21,7 +21,11 @@ export function AlertingConfigPage() {
   return (
     <div className="space-y-4">
       <h1 className="text-lg font-bold">{t('rules')}</h1>
-      <TabBar tabs={tabs} value={tab} onChange={setTab} labels={(tb) => labels[tb]} />
+      <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
+        <TabsList>
+          {tabs.map((tb) => <TabsTrigger key={tb} value={tb}>{labels[tb]}</TabsTrigger>)}
+        </TabsList>
+      </Tabs>
       {tab === 'rules' && <RulesTab />}
       {tab === 'groups' && <GroupsTab />}
       {tab === 'escalations' && <EscalationsTab />}

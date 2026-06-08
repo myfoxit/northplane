@@ -8,14 +8,25 @@ import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import { ArrowLeft, ArrowRight, Maximize2, X, LayoutGrid, Pencil, Radar, Loader2 } from 'lucide-react'
 import { APIError, resourceApi } from '../api'
 import type { DashboardDoc, DashboardWidget } from '../types'
-import { Button, Card, Dialog, Empty, Spinner, Badge, ErrorState } from '../components/ui'
-import { Field, Select, TextArea, Toggle, FormError, SubmitRow, useSave, DeleteButton } from '../components/forms'
-import { Input } from '../components/ui'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
+import { Switch } from '@/components/ui/switch'
+import { Label } from '@/components/ui/label'
+import { Empty, Spinner, ErrorState, Field, FormError, SubmitRow, useSave, DeleteButton } from '@/components/kit'
 import { WidgetBody, widgetTypeLabel } from '../components/dash/widgets'
 import { ObjectPicker, MetricPicker } from '../components/dash/pickers'
 import { t } from '../i18n'
 
 const dashApi = resourceApi<DashboardDoc>('dashboards')
+
+// Radix SelectItem value cannot be "" — sentinel for the table widget's
+// empty scope ("Hosts + Services"), mapped back to undefined in the config.
+const BOTH_SCOPE = '__both__'
 
 // ——— grid placement: Tailwind can't interpolate, so map to fixed classes ———
 const COL: Record<number, string> = {
@@ -69,7 +80,7 @@ export function DashboardsPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-bold">{t('dashboards')}</h1>
-        <Button variant="primary" onClick={() => { setName(''); setShared(false); setCreating(true) }}>
+        <Button variant="default" onClick={() => { setName(''); setShared(false); setCreating(true) }}>
           {t('newDashboard')}
         </Button>
       </div>
@@ -80,52 +91,60 @@ export function DashboardsPage() {
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {(data ?? []).map((d) => (
           <Card key={d.name}>
-            <div className="flex items-start justify-between gap-2">
-              <Link
-                to="/dashboards/$name" params={{ name: d.name }}
-                className="inline-flex items-center gap-1.5 font-semibold text-foreground hover:text-primary"
-              >
-                <LayoutGrid size={15} className="shrink-0" />{d.name}
-              </Link>
-              {d.shared && <Badge className="bg-sky-500/15 text-sky-400 border-sky-500/30">geteilt</Badge>}
-            </div>
-            <div className="text-xs text-muted-foreground mt-2">
-              {(d.spec?.widgets?.length ?? 0)} {t('widget')}
-            </div>
-            <div className="flex items-center justify-between mt-3">
-              <Link
-                to="/dashboards/$name" params={{ name: d.name }}
-                className="text-xs text-primary hover:text-primary inline-flex items-center gap-1"
-              >
-                Öffnen <ArrowRight size={14} />
-              </Link>
-              <DeleteButton onDelete={() => remove.mutate(d.name)} />
-            </div>
+            <CardContent>
+              <div className="flex items-start justify-between gap-2">
+                <Link
+                  to="/dashboards/$name" params={{ name: d.name }}
+                  className="inline-flex items-center gap-1.5 font-semibold text-foreground hover:text-primary"
+                >
+                  <LayoutGrid size={15} className="shrink-0" />{d.name}
+                </Link>
+                {d.shared && <Badge variant="outline" className="bg-sky-500/15 text-sky-400 border-sky-500/30">geteilt</Badge>}
+              </div>
+              <div className="text-xs text-muted-foreground mt-2">
+                {(d.spec?.widgets?.length ?? 0)} {t('widget')}
+              </div>
+              <div className="flex items-center justify-between mt-3">
+                <Link
+                  to="/dashboards/$name" params={{ name: d.name }}
+                  className="text-xs text-primary hover:text-primary inline-flex items-center gap-1"
+                >
+                  Öffnen <ArrowRight size={14} />
+                </Link>
+                <DeleteButton onDelete={() => remove.mutate(d.name)} />
+              </div>
+            </CardContent>
           </Card>
         ))}
       </div>
 
-      <Dialog open={creating} onClose={() => setCreating(false)} title={t('newDashboard')}>
-        <form
-          className="space-y-3"
-          onSubmit={(e) => {
-            e.preventDefault()
-            if (!name.trim()) return
-            create.mutate(
-              { name: name.trim(), shared, spec: { widgets: [defaultWidget('counters')] } },
-              { onSuccess: () => navigate({ to: '/dashboards/$name', params: { name: name.trim() } }) },
-            )
-          }}
-        >
-          <Field label={t('name')} required>
-            <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
-          </Field>
-          <Field label="Geteilt (für alle sichtbar)">
-            <Toggle checked={shared} onChange={setShared} label={shared ? 'ja' : 'nein'} />
-          </Field>
-          <FormError error={create.error} />
-          <SubmitRow onCancel={() => setCreating(false)} saving={create.isPending} label={t('create')} disabled={!name.trim()} />
-        </form>
+      <Dialog open={creating} onOpenChange={(o) => { if (!o) setCreating(false) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>{t('newDashboard')}</DialogTitle></DialogHeader>
+          <form
+            className="space-y-3"
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (!name.trim()) return
+              create.mutate(
+                { name: name.trim(), shared, spec: { widgets: [defaultWidget('counters')] } },
+                { onSuccess: () => navigate({ to: '/dashboards/$name', params: { name: name.trim() } }) },
+              )
+            }}
+          >
+            <Field label={t('name')} required>
+              <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+            </Field>
+            <Field label="Geteilt (für alle sichtbar)">
+              <Label className="cursor-pointer">
+                <Switch checked={shared} onCheckedChange={setShared} />
+                <span className="text-sm text-foreground/90">{shared ? 'ja' : 'nein'}</span>
+              </Label>
+            </Field>
+            <FormError error={create.error} />
+            <SubmitRow onCancel={() => setCreating(false)} saving={create.isPending} label={t('create')} disabled={!name.trim()} />
+          </form>
+        </DialogContent>
       </Dialog>
     </div>
   )
@@ -213,9 +232,9 @@ function DashboardView({ name, wallboard }: { name: string; wallboard: boolean }
           <div className="flex items-center gap-2 shrink-0">
             {editing ? (
               <>
-                <Button onClick={() => setAddOpen(true)}>+ {t('addWidget')}</Button>
+                <Button variant="outline" onClick={() => setAddOpen(true)}>+ {t('addWidget')}</Button>
                 <Button variant="ghost" onClick={cancelEdit}>{t('cancel')}</Button>
-                <Button variant="primary" onClick={() => save.mutate(widgets)} disabled={save.isPending}>
+                <Button variant="default" onClick={() => save.mutate(widgets)} disabled={save.isPending}>
                   {save.isPending ? <Loader2 className="animate-spin" size={14} /> : t('save')}
                 </Button>
               </>
@@ -225,7 +244,7 @@ function DashboardView({ name, wallboard }: { name: string; wallboard: boolean }
                   href={`/dashboards/${encodeURIComponent(name)}?wallboard`}
                   className="text-xs text-muted-foreground hover:text-foreground/90 px-2 py-1.5 inline-flex items-center gap-1"
                 ><Maximize2 size={14} /> {t('wallboard')}</a>
-                <Button onClick={startEdit}><Pencil size={14} /> {t('edit')}</Button>
+                <Button variant="outline" onClick={startEdit}><Pencil size={14} /> {t('edit')}</Button>
               </>
             )}
           </div>
@@ -290,13 +309,19 @@ function WidgetEditFields({ widget, onChange }: {
           <Input value={widget.title ?? ''} onChange={(e) => onChange({ title: e.target.value })} placeholder={widgetTypeLabel(widget.type)} />
         </Field>
         <Field label="Breite">
-          <Select value={widget.w ?? 6} onChange={(e) => onChange({ w: Number(e.target.value) })}>
-            {[3, 4, 6, 8, 12].map((n) => <option key={n} value={n}>{n}/12</option>)}
+          <Select value={String(widget.w ?? 6)} onValueChange={(v) => onChange({ w: Number(v) })}>
+            <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {[3, 4, 6, 8, 12].map((n) => <SelectItem key={n} value={String(n)}>{n}/12</SelectItem>)}
+            </SelectContent>
           </Select>
         </Field>
         <Field label="Höhe">
-          <Select value={widget.h ?? 1} onChange={(e) => onChange({ h: Number(e.target.value) })}>
-            {[1, 2, 3].map((n) => <option key={n} value={n}>{n}</option>)}
+          <Select value={String(widget.h ?? 1)} onValueChange={(v) => onChange({ h: Number(v) })}>
+            <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {[1, 2, 3].map((n) => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}
+            </SelectContent>
           </Select>
         </Field>
       </div>
@@ -320,8 +345,11 @@ function WidgetConfigFields({ widget, onChange }: {
             <MetricPicker objectId={widget.object} value={widget.metric} onChange={(metric) => onChange({ metric })} />
           </Field>
           <Field label="Zeitraum">
-            <Select value={widget.range ?? '3h'} onChange={(e) => onChange({ range: e.target.value })}>
-              {['1h', '3h', '24h', '7d'].map((r) => <option key={r} value={r}>{r}</option>)}
+            <Select value={widget.range ?? '3h'} onValueChange={(v) => onChange({ range: v })}>
+              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {['1h', '3h', '24h', '7d'].map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+              </SelectContent>
             </Select>
           </Field>
         </div>
@@ -345,9 +373,12 @@ function WidgetConfigFields({ widget, onChange }: {
       return (
         <Field label="Bereich">
           <Select value={widget.scope ?? 'services'}
-            onChange={(e) => onChange({ scope: e.target.value as 'services' | 'hosts' })}>
-            <option value="services">Services</option>
-            <option value="hosts">Hosts</option>
+            onValueChange={(v) => onChange({ scope: v as 'services' | 'hosts' })}>
+            <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="services">Services</SelectItem>
+              <SelectItem value="hosts">Hosts</SelectItem>
+            </SelectContent>
           </Select>
         </Field>
       )
@@ -355,11 +386,14 @@ function WidgetConfigFields({ widget, onChange }: {
       return (
         <div className="space-y-2">
           <Field label="Bereich">
-            <Select value={widget.scope ?? ''}
-              onChange={(e) => onChange({ scope: (e.target.value || undefined) as 'services' | 'hosts' | undefined })}>
-              <option value="">Hosts + Services</option>
-              <option value="hosts">Hosts</option>
-              <option value="services">Services</option>
+            <Select value={widget.scope ?? BOTH_SCOPE}
+              onValueChange={(v) => onChange({ scope: (v === BOTH_SCOPE ? undefined : v) as 'services' | 'hosts' | undefined })}>
+              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={BOTH_SCOPE}>Hosts + Services</SelectItem>
+                <SelectItem value="hosts">Hosts</SelectItem>
+                <SelectItem value="services">Services</SelectItem>
+              </SelectContent>
             </Select>
           </Field>
           <Field label="Selector (optional)">
@@ -417,7 +451,7 @@ function WidgetConfigFields({ widget, onChange }: {
     case 'markdown':
       return (
         <Field label="Text">
-          <TextArea value={widget.text ?? ''} onChange={(e) => onChange({ text: e.target.value })} rows={4} />
+          <Textarea value={widget.text ?? ''} onChange={(e) => onChange({ text: e.target.value })} rows={4} className="font-mono" />
         </Field>
       )
     default:
@@ -440,23 +474,29 @@ function AddWidgetDialog({ onClose, onAdd }: {
   const changeType = (next: DashboardWidget['type']) => setDraft(defaultWidget(next))
 
   return (
-    <Dialog open onClose={onClose} title={t('addWidget')} size="lg">
-      <div className="space-y-3">
-        <Field label={t('type')}>
-          <Select value={draft.type} onChange={(e) => changeType(e.target.value as DashboardWidget['type'])}>
-            {WIDGET_TYPES.map((tp) => <option key={tp} value={tp}>{widgetTypeLabel(tp)}</option>)}
-          </Select>
-        </Field>
-        <Field label="Titel (optional)">
-          <Input value={draft.title ?? ''} onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-            placeholder={widgetTypeLabel(draft.type)} />
-        </Field>
-        <WidgetConfigFields widget={draft} onChange={(patch) => setDraft((d) => ({ ...d, ...patch }))} />
-        <div className="flex justify-end gap-2 pt-2">
-          <Button variant="ghost" onClick={onClose}>{t('cancel')}</Button>
-          <Button variant="primary" onClick={() => onAdd(draft)}>{t('add')}</Button>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader><DialogTitle>{t('addWidget')}</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          <Field label={t('type')}>
+            <Select value={draft.type} onValueChange={(v) => changeType(v as DashboardWidget['type'])}>
+              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {WIDGET_TYPES.map((tp) => <SelectItem key={tp} value={tp}>{widgetTypeLabel(tp)}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Titel (optional)">
+            <Input value={draft.title ?? ''} onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+              placeholder={widgetTypeLabel(draft.type)} />
+          </Field>
+          <WidgetConfigFields widget={draft} onChange={(patch) => setDraft((d) => ({ ...d, ...patch }))} />
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="ghost" onClick={onClose}>{t('cancel')}</Button>
+            <Button variant="default" onClick={() => onAdd(draft)}>{t('add')}</Button>
+          </div>
         </div>
-      </div>
+      </DialogContent>
     </Dialog>
   )
 }

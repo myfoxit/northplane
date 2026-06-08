@@ -6,14 +6,31 @@ import { useQuery } from '@tanstack/react-query'
 import { X, Download, Phone } from 'lucide-react'
 import { get, post, fmtTime, resourceApi } from '../../api'
 import type { Schedule, Rotation, Contact, ScheduleOverride, OnCallNow } from '../../types'
-import { Badge, Button, Card, Dialog, Empty, Input, Table } from '../ui'
-import { Field, FormError, KVEditor, ListEditor, DurationInput, SubmitRow, DeleteButton, useSave } from '../forms'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import {
+  Card, CardAction, CardContent, CardHeader, CardTitle,
+} from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table'
+import { Empty, Field, FormError, KVEditor, ListEditor, DurationInput, SubmitRow, DeleteButton, useSave } from '@/components/kit'
 import { t } from '../../i18n'
 import { DateTimeInput } from './common'
 import { isoToLocalInput, localInputToIso, nowPlus } from './datetime'
 
 const schedulesApi = resourceApi<Schedule>('schedules')
 const contactsApi = resourceApi<Contact>('contacts')
+
+// Radix <SelectItem> cannot use "" — sentinel for the "no selection" option.
+const NONE = '__none__'
 
 interface Shift { contactId: string; layer?: string; start: string; end: string; override?: boolean }
 interface StatRow { contactId: string; contact: string; hours: number; weekendHours: number; overrides: number }
@@ -54,20 +71,36 @@ export function SchedulesManager() {
   }
 
   return (
-    <Card title={t('schedules')} actions={<Button size="sm" variant="primary" onClick={() => open()}>{t('create')}</Button>}>
-      {(data?.length ?? 0) === 0 ? <Empty text="Keine Dienstpläne." /> : (
-        <Table head={[t('name'), t('timezone'), 'Layer', t('actions')]}>
-          {data!.map((s) => (
-            <tr key={s.name} className="hover:bg-muted/30">
-              <td className="px-3 py-2 font-medium text-foreground">{s.name}</td>
-              <td className="px-3 py-2 text-xs text-muted-foreground font-mono">{s.timeZone}</td>
-              <td className="px-3 py-2 text-xs text-muted-foreground">{s.layers?.length ?? 0}</td>
-              <td className="px-3 py-2 text-right"><Button size="sm" onClick={() => open(s.name)}>{t('edit')}</Button></td>
-            </tr>
-          ))}
-        </Table>
-      )}
-      {editing && <ScheduleDialog state={editing} onClose={() => setEditing(null)} />}
+    <Card>
+      <CardHeader>
+        <CardTitle>{t('schedules')}</CardTitle>
+        <CardAction><Button size="sm" variant="default" onClick={() => open()}>{t('create')}</Button></CardAction>
+      </CardHeader>
+      <CardContent>
+        {(data?.length ?? 0) === 0 ? <Empty text="Keine Dienstpläne." /> : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t('name')}</TableHead>
+                <TableHead>{t('timezone')}</TableHead>
+                <TableHead>Layer</TableHead>
+                <TableHead>{t('actions')}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data!.map((s) => (
+                <TableRow key={s.name}>
+                  <TableCell className="font-medium text-foreground">{s.name}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground font-mono">{s.timeZone}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{s.layers?.length ?? 0}</TableCell>
+                  <TableCell className="text-right"><Button size="sm" variant="outline" onClick={() => open(s.name)}>{t('edit')}</Button></TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+        {editing && <ScheduleDialog state={editing} onClose={() => setEditing(null)} />}
+      </CardContent>
     </Card>
   )
 }
@@ -93,33 +126,38 @@ function ScheduleDialog({ state, onClose }: { state: { schedule: Schedule; etag:
   const onSubmit = (e: React.FormEvent) => { e.preventDefault(); save.mutate(s) }
 
   return (
-    <Dialog open onClose={onClose} title={isNew ? t('create') : `${t('edit')}: ${state.schedule.name}`} size="lg">
-      <form onSubmit={onSubmit} className="space-y-3">
-        <div className="grid grid-cols-2 gap-3">
-          <Field label={t('name')} required>
-            <Input value={s.name} disabled={!isNew} onChange={(e) => setS({ ...s, name: e.target.value })} placeholder="netops-primary" />
-          </Field>
-          <Field label={t('timezone')} hint="IANA-Zone">
-            <Input value={s.timeZone} onChange={(e) => setS({ ...s, timeZone: e.target.value })} placeholder="Europe/Berlin" />
-          </Field>
-        </div>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{isNew ? t('create') : `${t('edit')}: ${state.schedule.name}`}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={onSubmit} className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <Field label={t('name')} required>
+              <Input value={s.name} disabled={!isNew} onChange={(e) => setS({ ...s, name: e.target.value })} placeholder="netops-primary" />
+            </Field>
+            <Field label={t('timezone')} hint="IANA-Zone">
+              <Input value={s.timeZone} onChange={(e) => setS({ ...s, timeZone: e.target.value })} placeholder="Europe/Berlin" />
+            </Field>
+          </div>
 
-        <div className="space-y-2">
-          <span className="text-xs text-muted-foreground font-medium">Layer ({t('rotation')})</span>
-          {s.layers.map((layer, i) => (
-            <LayerCard key={i} index={i} layer={layer} suggestions={suggestions}
-              onChange={(l) => setLayer(i, l)}
-              onRemove={s.layers.length > 1 ? () => removeLayer(i) : undefined} />
-          ))}
-          <Button size="sm" type="button" onClick={addLayer}>+ Layer</Button>
-        </div>
+          <div className="space-y-2">
+            <span className="text-xs text-muted-foreground font-medium">Layer ({t('rotation')})</span>
+            {s.layers.map((layer, i) => (
+              <LayerCard key={i} index={i} layer={layer} suggestions={suggestions}
+                onChange={(l) => setLayer(i, l)}
+                onRemove={s.layers.length > 1 ? () => removeLayer(i) : undefined} />
+            ))}
+            <Button size="sm" variant="outline" type="button" onClick={addLayer}>+ Layer</Button>
+          </div>
 
-        <FormError error={save.error} />
-        <div className="flex items-center justify-between pt-2">
-          {!isNew ? <DeleteButton onDelete={() => remove.mutate(state.schedule.name)} /> : <span />}
-          <SubmitRow onCancel={onClose} saving={save.isPending} disabled={!s.name} />
-        </div>
-      </form>
+          <FormError error={save.error} />
+          <div className="flex items-center justify-between pt-2">
+            {!isNew ? <DeleteButton onDelete={() => remove.mutate(state.schedule.name)} /> : <span />}
+            <SubmitRow onCancel={onClose} saving={save.isPending} disabled={!s.name} />
+          </div>
+        </form>
+      </DialogContent>
     </Dialog>
   )
 }
@@ -130,45 +168,51 @@ function LayerCard({ index, layer, suggestions, onChange, onRemove }: {
 }) {
   const set = (patch: Partial<Rotation>) => onChange({ ...layer, ...patch })
   return (
-    <Card className="border-border/80">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-semibold text-muted-foreground">Layer {index + 1}</span>
-        {onRemove && <Button size="sm" variant="ghost" type="button" onClick={onRemove} title={t('remove')} aria-label={t('remove')}><X size={13} /></Button>}
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label={t('name')} hint="optional">
-          <Input value={layer.name ?? ''} onChange={(e) => set({ name: e.target.value || undefined })} placeholder="Woche" />
-        </Field>
-        <Field label="Rhythmus">
-          <select value={layer.unit} onChange={(e) => set({ unit: e.target.value as Rotation['unit'] })}
-            className="bg-card border border-input rounded-lg px-3 py-1.5 text-sm text-foreground w-full focus:border-ring cursor-pointer">
-            <option value="daily">täglich</option>
-            <option value="weekly">wöchentlich</option>
-            <option value="custom">benutzerdefiniert</option>
-          </select>
-        </Field>
-      </div>
-      <Field label="Teilnehmer" className="mt-2">
-        <ListEditor value={layer.participants} onChange={(v) => set({ participants: v })}
-          placeholder="Kontakt-Name" suggestions={suggestions} />
-      </Field>
-      <div className="grid grid-cols-2 gap-3 mt-2">
-        {layer.unit === 'custom' && (
-          <Field label="Schichtlänge">
-            <DurationInput value={layer.length ?? ''} onChange={(v) => set({ length: v || undefined })} placeholder="12h" />
+    <Card className="border-border/80 py-3 gap-3">
+      <CardContent className="px-3">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs font-semibold text-muted-foreground">Layer {index + 1}</span>
+          {onRemove && <Button size="sm" variant="ghost" type="button" onClick={onRemove} title={t('remove')} aria-label={t('remove')}><X size={13} /></Button>}
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label={t('name')} hint="optional">
+            <Input value={layer.name ?? ''} onChange={(e) => set({ name: e.target.value || undefined })} placeholder="Woche" />
           </Field>
-        )}
-        <Field label="Anker (Start der Rotation)">
-          <DateTimeInput value={isoToLocalInput(layer.anchor)} onChange={(v) => set({ anchor: localInputToIso(v) || layer.anchor })} />
+          <Field label="Rhythmus">
+            <Select value={layer.unit} onValueChange={(v) => set({ unit: v as Rotation['unit'] })}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="daily">täglich</SelectItem>
+                <SelectItem value="weekly">wöchentlich</SelectItem>
+                <SelectItem value="custom">benutzerdefiniert</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+        </div>
+        <Field label="Teilnehmer" className="mt-2">
+          <ListEditor value={layer.participants} onChange={(v) => set({ participants: v })}
+            placeholder="Kontakt-Name" suggestions={suggestions} />
         </Field>
-      </div>
-      <Field label="Einschränkung (Wochentag → HH:MM-HH:MM)" className="mt-2"
-        hint="z.B. mon → 08:00-17:00 (CSV für mehrere)">
-        <KVEditor
-          value={Object.fromEntries(Object.entries(layer.restriction ?? {}).map(([k, v]) => [k, v.join(',')]))}
-          onChange={(v) => set({ restriction: Object.fromEntries(Object.entries(v).map(([k, csv]) => [k, csv.split(',').map((x) => x.trim()).filter(Boolean)])) })}
-          keyPlaceholder="mon" valuePlaceholder="08:00-17:00" />
-      </Field>
+        <div className="grid grid-cols-2 gap-3 mt-2">
+          {layer.unit === 'custom' && (
+            <Field label="Schichtlänge">
+              <DurationInput value={layer.length ?? ''} onChange={(v) => set({ length: v || undefined })} placeholder="12h" />
+            </Field>
+          )}
+          <Field label="Anker (Start der Rotation)">
+            <DateTimeInput value={isoToLocalInput(layer.anchor)} onChange={(v) => set({ anchor: localInputToIso(v) || layer.anchor })} />
+          </Field>
+        </div>
+        <Field label="Einschränkung (Wochentag → HH:MM-HH:MM)" className="mt-2"
+          hint="z.B. mon → 08:00-17:00 (CSV für mehrere)">
+          <KVEditor
+            value={Object.fromEntries(Object.entries(layer.restriction ?? {}).map(([k, v]) => [k, v.join(',')]))}
+            onChange={(v) => set({ restriction: Object.fromEntries(Object.entries(v).map(([k, csv]) => [k, csv.split(',').map((x) => x.trim()).filter(Boolean)])) })}
+            keyPlaceholder="mon" valuePlaceholder="08:00-17:00" />
+        </Field>
+      </CardContent>
     </Card>
   )
 }
@@ -179,17 +223,24 @@ export function OnCallNowCards() {
   return (
     <div className="grid lg:grid-cols-3 gap-3">
       {(now ?? []).map((entry) => (
-        <Card key={entry.schedule} title={entry.schedule}
-          actions={<a className="text-xs text-muted-foreground hover:text-foreground/90 inline-flex items-center gap-1"
-            href={`/api/v1/schedules/${encodeURIComponent(entry.schedule)}/ics`}><Download size={13} /> ICS</a>}>
-          {(entry.contacts?.length ?? 0) === 0
-            ? <Empty text="niemand im Dienst" />
-            : entry.contacts.map((c) => (
-              <div key={c.id ?? c.name} className="py-1">
-                <div className="text-base font-semibold text-foreground inline-flex items-center gap-1.5"><Phone size={14} /> {c.name}</div>
-                <div className="text-xs text-muted-foreground">{c.email} {c.phone && `· ${c.phone}`}</div>
-              </div>
-            ))}
+        <Card key={entry.schedule}>
+          <CardHeader>
+            <CardTitle>{entry.schedule}</CardTitle>
+            <CardAction>
+              <a className="text-xs text-muted-foreground hover:text-foreground/90 inline-flex items-center gap-1"
+                href={`/api/v1/schedules/${encodeURIComponent(entry.schedule)}/ics`}><Download size={13} /> ICS</a>
+            </CardAction>
+          </CardHeader>
+          <CardContent>
+            {(entry.contacts?.length ?? 0) === 0
+              ? <Empty text="niemand im Dienst" />
+              : entry.contacts.map((c) => (
+                <div key={c.id ?? c.name} className="py-1">
+                  <div className="text-base font-semibold text-foreground inline-flex items-center gap-1.5"><Phone size={14} /> {c.name}</div>
+                  <div className="text-xs text-muted-foreground">{c.email} {c.phone && `· ${c.phone}`}</div>
+                </div>
+              ))}
+          </CardContent>
         </Card>
       ))}
       {(now?.length ?? 0) === 0 && <Empty text="Keine Bereitschaftspläne definiert." />}
@@ -213,24 +264,39 @@ export function ScheduleDetail({ schedule }: { schedule: string }) {
   })
 
   return (
-    <Card title={`${schedule} — 14 Tage`}
-      actions={<OverrideManager schedule={schedule} />}>
-      <TimelineBlocks shifts={shifts ?? []} nameOf={nameOf} />
-      {(stats?.length ?? 0) > 0 && (
-        <div className="mt-3">
-          <div className="text-xs text-muted-foreground font-medium mb-1">{t('hours')} pro Person (30 Tage)</div>
-          <Table head={['Kontakt', t('hours'), 'Wochenende', t('overrides')]}>
-            {stats!.map((row) => (
-              <tr key={row.contactId}>
-                <td className="px-3 py-1.5 text-foreground">{row.contact || nameOf(row.contactId)}</td>
-                <td className="px-3 py-1.5 tabular-nums text-foreground/90">{row.hours.toFixed(1)}</td>
-                <td className="px-3 py-1.5 tabular-nums text-muted-foreground">{row.weekendHours.toFixed(1)}</td>
-                <td className="px-3 py-1.5 tabular-nums text-muted-foreground">{row.overrides}</td>
-              </tr>
-            ))}
-          </Table>
-        </div>
-      )}
+    <Card>
+      <CardHeader>
+        <CardTitle>{`${schedule} — 14 Tage`}</CardTitle>
+        <CardAction><OverrideManager schedule={schedule} /></CardAction>
+      </CardHeader>
+      <CardContent>
+        <TimelineBlocks shifts={shifts ?? []} nameOf={nameOf} />
+        {(stats?.length ?? 0) > 0 && (
+          <div className="mt-3">
+            <div className="text-xs text-muted-foreground font-medium mb-1">{t('hours')} pro Person (30 Tage)</div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Kontakt</TableHead>
+                  <TableHead>{t('hours')}</TableHead>
+                  <TableHead>Wochenende</TableHead>
+                  <TableHead>{t('overrides')}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {stats!.map((row) => (
+                  <TableRow key={row.contactId}>
+                    <TableCell className="text-foreground">{row.contact || nameOf(row.contactId)}</TableCell>
+                    <TableCell className="tabular-nums text-foreground/90">{row.hours.toFixed(1)}</TableCell>
+                    <TableCell className="tabular-nums text-muted-foreground">{row.weekendHours.toFixed(1)}</TableCell>
+                    <TableCell className="tabular-nums text-muted-foreground">{row.overrides}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
     </Card>
   )
 }
@@ -268,7 +334,7 @@ function OverrideManager({ schedule }: { schedule: string }) {
   const [open, setOpen] = useState(false)
   return (
     <>
-      <Button size="sm" onClick={() => setOpen(true)}>{t('overrides')}</Button>
+      <Button size="sm" variant="outline" onClick={() => setOpen(true)}>{t('overrides')}</Button>
       {open && <OverrideDialog schedule={schedule} onClose={() => setOpen(false)} />}
     </>
   )
@@ -302,45 +368,53 @@ function OverrideDialog({ schedule, onClose }: { schedule: string; onClose: () =
   const onSubmit = (e: React.FormEvent) => { e.preventDefault(); save.mutate(undefined as unknown as void) }
 
   return (
-    <Dialog open onClose={onClose} title={`${t('overrides')}: ${schedule}`} size="lg">
-      <div className="space-y-4">
-        <form onSubmit={onSubmit} className="space-y-3 border border-border rounded-lg p-3 bg-card/40">
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Kontakt" required>
-              <select value={contactId} onChange={(e) => setContactId(e.target.value)}
-                className="bg-card border border-input rounded-lg px-3 py-1.5 text-sm text-foreground w-full focus:border-ring cursor-pointer">
-                <option value="">— wählen —</option>
-                {contacts.map((c) => <option key={c.name} value={c.id ?? c.name}>{c.name}</option>)}
-              </select>
-            </Field>
-            <Field label={t('reason')} hint="optional">
-              <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Urlaub" />
-            </Field>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label={t('from')}><DateTimeInput value={start} onChange={setStart} /></Field>
-            <Field label={t('to')}><DateTimeInput value={end} onChange={setEnd} /></Field>
-          </div>
-          <FormError error={save.error} />
-          <SubmitRow onCancel={onClose} saving={save.isPending} label={t('add')} disabled={!contactId} />
-        </form>
-
-        <div>
-          <div className="text-xs text-muted-foreground font-medium mb-1">Aktive Overrides</div>
-          {overrideShifts.length === 0 ? <Empty text="Keine Overrides." /> : (
-            <div className="space-y-1">
-              {overrideShifts.map((o, i) => (
-                <div key={i} className="flex items-center gap-2 bg-card/60 border border-border rounded-md px-3 py-1.5">
-                  <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/30">Override</Badge>
-                  <span className="text-sm text-foreground">{nameOf(o.contactId)}</span>
-                  <span className="text-xs text-muted-foreground ml-auto tabular-nums">{fmtTime(o.start)} – {fmtTime(o.end)}</span>
-                </div>
-              ))}
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{`${t('overrides')}: ${schedule}`}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <form onSubmit={onSubmit} className="space-y-3 border border-border rounded-lg p-3 bg-card/40">
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Kontakt" required>
+                <Select value={contactId ? contactId : NONE} onValueChange={(v) => setContactId(v === NONE ? '' : v)}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NONE}>— wählen —</SelectItem>
+                    {contacts.map((c) => <SelectItem key={c.name} value={c.id ?? c.name}>{c.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label={t('reason')} hint="optional">
+                <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Urlaub" />
+              </Field>
             </div>
-          )}
+            <div className="grid grid-cols-2 gap-3">
+              <Field label={t('from')}><DateTimeInput value={start} onChange={setStart} /></Field>
+              <Field label={t('to')}><DateTimeInput value={end} onChange={setEnd} /></Field>
+            </div>
+            <FormError error={save.error} />
+            <SubmitRow onCancel={onClose} saving={save.isPending} label={t('add')} disabled={!contactId} />
+          </form>
+
+          <div>
+            <div className="text-xs text-muted-foreground font-medium mb-1">Aktive Overrides</div>
+            {overrideShifts.length === 0 ? <Empty text="Keine Overrides." /> : (
+              <div className="space-y-1">
+                {overrideShifts.map((o, i) => (
+                  <div key={i} className="flex items-center gap-2 bg-card/60 border border-border rounded-md px-3 py-1.5">
+                    <Badge variant="outline" className="bg-amber-500/15 text-amber-400 border-amber-500/30">Override</Badge>
+                    <span className="text-sm text-foreground">{nameOf(o.contactId)}</span>
+                    <span className="text-xs text-muted-foreground ml-auto tabular-nums">{fmtTime(o.start)} – {fmtTime(o.end)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      </DialogContent>
     </Dialog>
   )
 }
-

@@ -10,10 +10,22 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { resourceApi } from '../../api'
 import type { EventSourceDef, Severity } from '../../types'
-import { Button, Table, Empty, Dialog, Input, Badge, Spinner } from '../ui'
-import { Field, FormError, SubmitRow, useSave, DeleteButton, Select, Toggle, KVEditor, DurationInput } from '../forms'
+import { Button } from '@/components/ui/button'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
+import { Label } from '@/components/ui/label'
+import { Empty, Spinner, Field, FormError, SubmitRow, useSave, DeleteButton, KVEditor, DurationInput } from '@/components/kit'
 import { t } from '../../i18n'
 import { TypeBadge, StatusBadge, TableActions, RowActions, secretHint } from './common'
+
+// Radix SelectItem value cannot be "" — sentinel for the "(Standard)"/"—"
+// empty config options. setCfg('', …) deletes the key, matching the old
+// native <option value=""> behaviour.
+const CFG_DEFAULT = '__default__'
 
 const sourcesApi = resourceApi<EventSourceDef>('event-sources')
 
@@ -27,23 +39,34 @@ export function SourcesTab() {
   return (
     <div className="space-y-4">
       <TableActions onCreate={() => setEditing('new')} label={t('create')} />
-      <Table head={[t('type'), t('name'), t('status'), 'Ingest', '']}>
-        {(data ?? []).map((s) => (
-          <tr key={s.name}>
-            <td className="px-3 py-2 w-28"><TypeBadge>{s.type}</TypeBadge></td>
-            <td className="px-3 py-2 text-foreground">{s.name}</td>
-            <td className="px-3 py-2">{s.enabled ? <StatusBadge kind="enabled" /> : <StatusBadge kind="disabled" />}</td>
-            <td className="px-3 py-2 text-xs text-muted-foreground font-mono truncate max-w-56">
-              {(s.type === 'webhook' || s.type === 'alertmanager') ? `/api/v1/ingest/${s.name}` : '—'}
-            </td>
-            <td className="px-3 py-2">
-              <RowActions>
-                <Button size="sm" variant="ghost" onClick={() => setEditing(s)}>{t('edit')}</Button>
-                <SourceDelete source={s} />
-              </RowActions>
-            </td>
-          </tr>
-        ))}
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{t('type')}</TableHead>
+            <TableHead>{t('name')}</TableHead>
+            <TableHead>{t('status')}</TableHead>
+            <TableHead>Ingest</TableHead>
+            <TableHead></TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {(data ?? []).map((s) => (
+            <TableRow key={s.name}>
+              <TableCell className="px-3 py-2 w-28"><TypeBadge>{s.type}</TypeBadge></TableCell>
+              <TableCell className="px-3 py-2 text-foreground">{s.name}</TableCell>
+              <TableCell className="px-3 py-2">{s.enabled ? <StatusBadge kind="enabled" /> : <StatusBadge kind="disabled" />}</TableCell>
+              <TableCell className="px-3 py-2 text-xs text-muted-foreground font-mono truncate max-w-56">
+                {(s.type === 'webhook' || s.type === 'alertmanager') ? `/api/v1/ingest/${s.name}` : '—'}
+              </TableCell>
+              <TableCell className="px-3 py-2">
+                <RowActions>
+                  <Button size="sm" variant="ghost" onClick={() => setEditing(s)}>{t('edit')}</Button>
+                  <SourceDelete source={s} />
+                </RowActions>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
       </Table>
       {!isLoading && (data?.length ?? 0) === 0 && <Empty text={t('empty')} />}
       {editing && (
@@ -71,7 +94,16 @@ function SourceDialog({ name, onClose }: { name: string | null; onClose: () => v
     enabled: !isNew,
   })
   if (!isNew && isLoading) {
-    return <Dialog open onClose={onClose} title={t('loading')} size="xl"><Spinner /></Dialog>
+    return (
+      <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>{t('loading')}</DialogTitle>
+          </DialogHeader>
+          <Spinner />
+        </DialogContent>
+      </Dialog>
+    )
   }
   return (
     <SourceForm
@@ -128,137 +160,169 @@ function SourceForm({ doc, etag, isNew, onClose }: {
   )
 
   return (
-    <Dialog open onClose={onClose} title={isNew ? t('create') : `${t('edit')}: ${doc.name}`} size="xl">
-      <form onSubmit={(e) => { e.preventDefault(); save.mutate(undefined) }} className="space-y-3">
-        <div className="grid grid-cols-2 gap-2">
-          <Field label={t('name')} required>
-            <Input value={name} onChange={(e) => setName(e.target.value)} required disabled={!isNew} />
-          </Field>
-          <Field label={t('type')}>
-            <Select value={type} onChange={(e) => setType(e.target.value)}>
-              {SOURCE_TYPES.map((ty) => <option key={ty} value={ty}>{ty}</option>)}
-            </Select>
-          </Field>
-        </div>
-        <Toggle checked={enabled} onChange={setEnabled} label={t('enabled')} />
-
-        <div className="grid grid-cols-2 gap-2">
-          <Field label="Rate-Limit (Events/s)" hint="0/leer = Standard">
-            <Input type="number" step="any" value={rateLimit} onChange={(e) => setRateLimit(e.target.value)} />
-          </Field>
-          <Field label="Burst">
-            <Input type="number" value={burst} onChange={(e) => setBurst(e.target.value)} />
-          </Field>
-        </div>
-
-        {/* HTTP ingress (webhook / alertmanager) */}
-        {isHTTP && (
-          <div className="border border-border rounded-lg p-3 space-y-2">
-            <div className="text-xs text-muted-foreground font-medium">Ingress ({type})</div>
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="Auth-Modus">
-                <Select value={authMode} onChange={(e) => setAuthMode(e.target.value as EventSourceDef['authMode'])}>
-                  {AUTH_MODES.map((m) => <option key={m} value={m}>{m}</option>)}
-                </Select>
-              </Field>
-              <Field label="Secret-Referenz" hint={secretHint}>
-                <Input value={secretRef} onChange={(e) => setSecretRef(e.target.value)} />
-              </Field>
-            </div>
-            <div className="text-[11px] text-muted-foreground">
-              Ingest-URL: <code className="text-muted-foreground">/api/v1/ingest/{name || '<name>'}</code>
-            </div>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-4xl">
+        <DialogHeader>
+          <DialogTitle>{isNew ? t('create') : `${t('edit')}: ${doc.name}`}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={(e) => { e.preventDefault(); save.mutate(undefined) }} className="space-y-3">
+          <div className="grid grid-cols-2 gap-2">
+            <Field label={t('name')} required>
+              <Input value={name} onChange={(e) => setName(e.target.value)} required disabled={!isNew} />
+            </Field>
+            <Field label={t('type')}>
+              <Select value={type} onValueChange={(v) => setType(v)}>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {SOURCE_TYPES.map((ty) => <SelectItem key={ty} value={ty}>{ty}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </Field>
           </div>
-        )}
-
-        {/* SNMP trap receiver */}
-        {type === 'snmp-trap' && (
-          <div className="border border-border rounded-lg p-3 space-y-2">
-            <div className="text-xs text-muted-foreground font-medium">SNMP-Trap</div>
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="Listen" hint="udp://:9162"><Input value={cfg('listen')} onChange={(e) => setCfg('listen', e.target.value)} placeholder="udp://:9162" /></Field>
-              <Field label="Community (v1/v2c)"><Input value={cfg('community')} onChange={(e) => setCfg('community', e.target.value)} /></Field>
-              <Field label="Severity">
-                <Select value={cfg('severity')} onChange={(e) => setCfg('severity', e.target.value)}>
-                  <option value="">(Standard)</option>
-                  {SEVERITIES.map((s) => <option key={s} value={s}>{s}</option>)}
-                </Select>
-              </Field>
-            </div>
-            <div className="text-xs text-muted-foreground pt-1">SNMPv3</div>
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="v3 User"><Input value={cfg('v3User')} onChange={(e) => setCfg('v3User', e.target.value)} /></Field>
-              <Field label="Auth-Protokoll">
-                <Select value={cfg('v3AuthProto')} onChange={(e) => setCfg('v3AuthProto', e.target.value)}>
-                  <option value="">—</option>
-                  {['MD5', 'SHA', 'SHA256'].map((x) => <option key={x} value={x}>{x}</option>)}
-                </Select>
-              </Field>
-              <Field label="Auth-Secret-Ref" hint={secretHint}><Input value={cfg('v3AuthSecretRef')} onChange={(e) => setCfg('v3AuthSecretRef', e.target.value)} /></Field>
-              <Field label="Priv-Protokoll">
-                <Select value={cfg('v3PrivProto')} onChange={(e) => setCfg('v3PrivProto', e.target.value)}>
-                  <option value="">—</option>
-                  {['DES', 'AES', 'AES256'].map((x) => <option key={x} value={x}>{x}</option>)}
-                </Select>
-              </Field>
-              <Field label="Priv-Secret-Ref" hint={secretHint}><Input value={cfg('v3PrivSecretRef')} onChange={(e) => setCfg('v3PrivSecretRef', e.target.value)} /></Field>
-            </div>
+          <div className="flex items-center gap-2">
+            <Switch id="source-enabled" checked={enabled} onCheckedChange={setEnabled} />
+            <Label htmlFor="source-enabled">{t('enabled')}</Label>
           </div>
-        )}
 
-        {/* IMAP / e-mail mailbox poller */}
-        {isMail && (
-          <div className="border border-border rounded-lg p-3 space-y-2">
-            <div className="text-xs text-muted-foreground font-medium">Postfach ({type})</div>
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="Host"><Input value={cfg('host')} onChange={(e) => setCfg('host', e.target.value)} /></Field>
-              <Field label="Port"><Input type="number" value={cfg('port')} onChange={(e) => setCfg('port', e.target.value)} /></Field>
-              <Field label="TLS">
-                <Select value={cfg('tls')} onChange={(e) => setCfg('tls', e.target.value)}>
-                  <option value="">(Standard)</option>
-                  <option value="on">on</option>
-                  <option value="off">off</option>
-                </Select>
-              </Field>
-              <Field label="Benutzername"><Input value={cfg('username')} onChange={(e) => setCfg('username', e.target.value)} /></Field>
-              <Field label="Passwort-Secret-Ref" hint={secretHint}><Input value={cfg('passwordSecretRef')} onChange={(e) => setCfg('passwordSecretRef', e.target.value)} /></Field>
-              <Field label="Ordner"><Input value={cfg('folder')} onChange={(e) => setCfg('folder', e.target.value)} placeholder="INBOX" /></Field>
-              <Field label="Poll-Intervall">
-                <DurationInput value={cfg('pollInterval')} onChange={(v) => setCfg('pollInterval', v)} placeholder="60s" />
-              </Field>
-              <Field label="Severity">
-                <Select value={cfg('severity')} onChange={(e) => setCfg('severity', e.target.value)}>
-                  <option value="">(Standard)</option>
-                  {SEVERITIES.map((s) => <option key={s} value={s}>{s}</option>)}
-                </Select>
-              </Field>
-            </div>
-            <Toggle checked={cfg('markSeen') === 'true'} onChange={(v) => setCfg('markSeen', v ? 'true' : '')} label="Gelesen markieren (markSeen)" />
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Rate-Limit (Events/s)" hint="0/leer = Standard">
+              <Input type="number" step="any" value={rateLimit} onChange={(e) => setRateLimit(e.target.value)} />
+            </Field>
+            <Field label="Burst">
+              <Input type="number" value={burst} onChange={(e) => setBurst(e.target.value)} />
+            </Field>
           </div>
-        )}
 
-        {/* CEL mapping — webhook only */}
-        {type === 'webhook' && (
-          <Field label="Mapping (CEL)" hint="NormEvent-Felder aus dem Roh-Payload">
-            <KVEditor value={mapping} onChange={setMapping} keyPlaceholder="severity" valuePlaceholder='body.level' />
+          {/* HTTP ingress (webhook / alertmanager) */}
+          {isHTTP && (
+            <div className="border border-border rounded-lg p-3 space-y-2">
+              <div className="text-xs text-muted-foreground font-medium">Ingress ({type})</div>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="Auth-Modus">
+                  <Select value={authMode} onValueChange={(v) => setAuthMode(v as EventSourceDef['authMode'])}>
+                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {AUTH_MODES.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Secret-Referenz" hint={secretHint}>
+                  <Input value={secretRef} onChange={(e) => setSecretRef(e.target.value)} />
+                </Field>
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                Ingest-URL: <code className="text-muted-foreground">/api/v1/ingest/{name || '<name>'}</code>
+              </div>
+            </div>
+          )}
+
+          {/* SNMP trap receiver */}
+          {type === 'snmp-trap' && (
+            <div className="border border-border rounded-lg p-3 space-y-2">
+              <div className="text-xs text-muted-foreground font-medium">SNMP-Trap</div>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="Listen" hint="udp://:9162"><Input value={cfg('listen')} onChange={(e) => setCfg('listen', e.target.value)} placeholder="udp://:9162" /></Field>
+                <Field label="Community (v1/v2c)"><Input value={cfg('community')} onChange={(e) => setCfg('community', e.target.value)} /></Field>
+                <Field label="Severity">
+                  <Select value={cfg('severity') || CFG_DEFAULT} onValueChange={(v) => setCfg('severity', v === CFG_DEFAULT ? '' : v)}>
+                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={CFG_DEFAULT}>(Standard)</SelectItem>
+                      {SEVERITIES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              </div>
+              <div className="text-xs text-muted-foreground pt-1">SNMPv3</div>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="v3 User"><Input value={cfg('v3User')} onChange={(e) => setCfg('v3User', e.target.value)} /></Field>
+                <Field label="Auth-Protokoll">
+                  <Select value={cfg('v3AuthProto') || CFG_DEFAULT} onValueChange={(v) => setCfg('v3AuthProto', v === CFG_DEFAULT ? '' : v)}>
+                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={CFG_DEFAULT}>—</SelectItem>
+                      {['MD5', 'SHA', 'SHA256'].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Auth-Secret-Ref" hint={secretHint}><Input value={cfg('v3AuthSecretRef')} onChange={(e) => setCfg('v3AuthSecretRef', e.target.value)} /></Field>
+                <Field label="Priv-Protokoll">
+                  <Select value={cfg('v3PrivProto') || CFG_DEFAULT} onValueChange={(v) => setCfg('v3PrivProto', v === CFG_DEFAULT ? '' : v)}>
+                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={CFG_DEFAULT}>—</SelectItem>
+                      {['DES', 'AES', 'AES256'].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Priv-Secret-Ref" hint={secretHint}><Input value={cfg('v3PrivSecretRef')} onChange={(e) => setCfg('v3PrivSecretRef', e.target.value)} /></Field>
+              </div>
+            </div>
+          )}
+
+          {/* IMAP / e-mail mailbox poller */}
+          {isMail && (
+            <div className="border border-border rounded-lg p-3 space-y-2">
+              <div className="text-xs text-muted-foreground font-medium">Postfach ({type})</div>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="Host"><Input value={cfg('host')} onChange={(e) => setCfg('host', e.target.value)} /></Field>
+                <Field label="Port"><Input type="number" value={cfg('port')} onChange={(e) => setCfg('port', e.target.value)} /></Field>
+                <Field label="TLS">
+                  <Select value={cfg('tls') || CFG_DEFAULT} onValueChange={(v) => setCfg('tls', v === CFG_DEFAULT ? '' : v)}>
+                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={CFG_DEFAULT}>(Standard)</SelectItem>
+                      <SelectItem value="on">on</SelectItem>
+                      <SelectItem value="off">off</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Benutzername"><Input value={cfg('username')} onChange={(e) => setCfg('username', e.target.value)} /></Field>
+                <Field label="Passwort-Secret-Ref" hint={secretHint}><Input value={cfg('passwordSecretRef')} onChange={(e) => setCfg('passwordSecretRef', e.target.value)} /></Field>
+                <Field label="Ordner"><Input value={cfg('folder')} onChange={(e) => setCfg('folder', e.target.value)} placeholder="INBOX" /></Field>
+                <Field label="Poll-Intervall">
+                  <DurationInput value={cfg('pollInterval')} onChange={(v) => setCfg('pollInterval', v)} placeholder="60s" />
+                </Field>
+                <Field label="Severity">
+                  <Select value={cfg('severity') || CFG_DEFAULT} onValueChange={(v) => setCfg('severity', v === CFG_DEFAULT ? '' : v)}>
+                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={CFG_DEFAULT}>(Standard)</SelectItem>
+                      {SEVERITIES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch id="source-markseen" checked={cfg('markSeen') === 'true'} onCheckedChange={(v) => setCfg('markSeen', v ? 'true' : '')} />
+                <Label htmlFor="source-markseen">Gelesen markieren (markSeen)</Label>
+              </div>
+            </div>
+          )}
+
+          {/* CEL mapping — webhook only */}
+          {type === 'webhook' && (
+            <Field label="Mapping (CEL)" hint="NormEvent-Felder aus dem Roh-Payload">
+              <KVEditor value={mapping} onChange={setMapping} keyPlaceholder="severity" valuePlaceholder='body.level' />
+            </Field>
+          )}
+
+          <Field label={t('labels')} hint="werden in jedes Event gemerged">
+            <KVEditor value={labels} onChange={setLabels} />
           </Field>
-        )}
 
-        <Field label={t('labels')} hint="werden in jedes Event gemerged">
-          <KVEditor value={labels} onChange={setLabels} />
-        </Field>
+          <Field label="Weitere Einstellungen" hint="zusätzliche Config-Schlüssel">
+            <KVEditor value={extra} onChange={setExtra} />
+          </Field>
 
-        <Field label="Weitere Einstellungen" hint="zusätzliche Config-Schlüssel">
-          <KVEditor value={extra} onChange={setExtra} />
-        </Field>
+          {isHTTP && type === 'alertmanager' && (
+            <Badge variant="outline" className="bg-muted text-muted-foreground border-input">Alertmanager-Webhook empfängt Prometheus-Alerts</Badge>
+          )}
 
-        {isHTTP && type === 'alertmanager' && (
-          <Badge className="bg-muted text-muted-foreground border-input">Alertmanager-Webhook empfängt Prometheus-Alerts</Badge>
-        )}
-
-        <FormError error={save.error} />
-        <SubmitRow onCancel={onClose} saving={save.isPending} disabled={!name} />
-      </form>
+          <FormError error={save.error} />
+          <SubmitRow onCancel={onClose} saving={save.isPending} disabled={!name} />
+        </form>
+      </DialogContent>
     </Dialog>
   )
 }

@@ -6,10 +6,16 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { get, type ListResponse } from '../../api'
 import type { NPObject } from '../../types'
-import { Select } from '../forms'
-import { Input } from '../ui'
+import { Input } from '@/components/ui/input'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
 
 interface SeriesMeta { id: number; objectId: string; metric: string; unit?: string }
+
+// Radix SelectItem value cannot be "" — sentinel stands in for the
+// empty/"choose" option and maps back to '' on change.
+const NONE = '__none__'
 
 // ObjectPicker: type-to-search box + a Select of matches. value is the
 // objectId; onChange also reports the matched object name for display.
@@ -30,20 +36,23 @@ export function ObjectPicker({ value, onChange }: {
     <div className="space-y-1.5">
       <Input placeholder="Objekt suchen…" value={q} onChange={(e) => setQ(e.target.value)} />
       <Select
-        value={value ?? ''}
-        onChange={(e) => {
-          const id = e.target.value
+        value={value || NONE}
+        onValueChange={(v) => {
+          const id = v === NONE ? '' : v
           const obj = items.find((o) => o.id === id)
           onChange(id, obj ? (obj.kind === 'service' && obj.hostName ? `${obj.hostName} / ${obj.name}` : obj.name) : undefined)
         }}
       >
-        <option value="">— Objekt wählen —</option>
-        {!hasValue && value && <option value={value}>{value}</option>}
-        {items.map((o) => (
-          <option key={o.id} value={o.id}>
-            {o.kind === 'service' && o.hostName ? `${o.hostName} / ${o.name}` : o.name}
-          </option>
-        ))}
+        <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value={NONE}>— Objekt wählen —</SelectItem>
+          {!hasValue && value && <SelectItem value={value}>{value}</SelectItem>}
+          {items.map((o) => (
+            <SelectItem key={o.id} value={o.id}>
+              {o.kind === 'service' && o.hostName ? `${o.hostName} / ${o.name}` : o.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
       </Select>
     </div>
   )
@@ -61,12 +70,19 @@ export function MetricPicker({ objectId, value, onChange }: {
   })
   const series = (data ?? []).filter((s) => !s.metric.startsWith('np_'))
   return (
-    <Select value={value ?? ''} onChange={(e) => onChange(e.target.value)} disabled={!objectId}>
-      <option value="">— alle Metriken —</option>
-      {value && !series.some((s) => s.metric === value) && <option value={value}>{value}</option>}
-      {series.map((s) => (
-        <option key={s.id} value={s.metric}>{s.metric}{s.unit ? ` (${s.unit})` : ''}</option>
-      ))}
+    <Select
+      value={value || NONE}
+      onValueChange={(v) => onChange(v === NONE ? '' : v)}
+      disabled={!objectId}
+    >
+      <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+      <SelectContent>
+        <SelectItem value={NONE}>— alle Metriken —</SelectItem>
+        {value && !series.some((s) => s.metric === value) && <SelectItem value={value}>{value}</SelectItem>}
+        {series.map((s) => (
+          <SelectItem key={s.id} value={s.metric}>{s.metric}{s.unit ? ` (${s.unit})` : ''}</SelectItem>
+        ))}
+      </SelectContent>
     </Select>
   )
 }

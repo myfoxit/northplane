@@ -3,7 +3,9 @@
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { post, queryClient } from '../api'
-import { Button, Dialog, Input } from './ui'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import { t } from '../i18n'
 
 export function AckDialog({ alertId, objectName, open, onClose }:
@@ -18,20 +20,25 @@ export function AckDialog({ alertId, objectName, open, onClose }:
     },
   })
   return (
-    <Dialog open={open} onClose={onClose} title={`${t('ack')}${objectName ? ` — ${objectName}` : ''}`}>
-      <p className="text-xs text-amber-400/90 mb-3">{t('ackConfirm')}</p>
-      <Input
-        placeholder={t('comment')} value={comment} autoFocus
-        onChange={(e) => setComment(e.target.value)}
-        onKeyDown={(e) => { if (e.key === 'Enter') ack.mutate() }}
-      />
-      {ack.isError && <p className="text-xs text-red-400 mt-2">{String(ack.error)}</p>}
-      <div className="flex justify-end gap-2 mt-4">
-        <Button variant="ghost" onClick={onClose}>{t('cancel')}</Button>
-        <Button variant="primary" onClick={() => ack.mutate()} disabled={ack.isPending}>
-          {t('ack')}
-        </Button>
-      </div>
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{`${t('ack')}${objectName ? ` — ${objectName}` : ''}`}</DialogTitle>
+        </DialogHeader>
+        <p className="text-xs text-amber-400/90 mb-3">{t('ackConfirm')}</p>
+        <Input
+          placeholder={t('comment')} value={comment} autoFocus
+          onChange={(e) => setComment(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') ack.mutate() }}
+        />
+        {ack.isError && <p className="text-xs text-red-400 mt-2">{String(ack.error)}</p>}
+        <div className="flex justify-end gap-2 mt-4">
+          <Button variant="ghost" onClick={onClose}>{t('cancel')}</Button>
+          <Button variant="default" onClick={() => ack.mutate()} disabled={ack.isPending}>
+            {t('ack')}
+          </Button>
+        </div>
+      </DialogContent>
     </Dialog>
   )
 }
@@ -56,24 +63,29 @@ export function DowntimeDialog({ objectId, objectName, open, onClose }:
     },
   })
   return (
-    <Dialog open={open} onClose={onClose} title={`${t('downtime')}${objectName ? ` — ${objectName}` : ''}`}>
-      <div className="space-y-3">
-        <div>
-          <label className="text-xs text-muted-foreground block mb-1">{t('hours')}</label>
-          <Input type="number" min="0.5" step="0.5" value={hours} onChange={(e) => setHours(e.target.value)} />
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{`${t('downtime')}${objectName ? ` — ${objectName}` : ''}`}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">{t('hours')}</label>
+            <Input type="number" min="0.5" step="0.5" value={hours} onChange={(e) => setHours(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">{t('comment')} *</label>
+            <Input value={comment} autoFocus onChange={(e) => setComment(e.target.value)} />
+          </div>
         </div>
-        <div>
-          <label className="text-xs text-muted-foreground block mb-1">{t('comment')} *</label>
-          <Input value={comment} autoFocus onChange={(e) => setComment(e.target.value)} />
+        {dt.isError && <p className="text-xs text-red-400 mt-2">{String(dt.error)}</p>}
+        <div className="flex justify-end gap-2 mt-4">
+          <Button variant="ghost" onClick={onClose}>{t('cancel')}</Button>
+          <Button variant="default" onClick={() => dt.mutate()} disabled={dt.isPending || !comment}>
+            {t('confirm')}
+          </Button>
         </div>
-      </div>
-      {dt.isError && <p className="text-xs text-red-400 mt-2">{String(dt.error)}</p>}
-      <div className="flex justify-end gap-2 mt-4">
-        <Button variant="ghost" onClick={onClose}>{t('cancel')}</Button>
-        <Button variant="primary" onClick={() => dt.mutate()} disabled={dt.isPending || !comment}>
-          {t('confirm')}
-        </Button>
-      </div>
+      </DialogContent>
     </Dialog>
   )
 }

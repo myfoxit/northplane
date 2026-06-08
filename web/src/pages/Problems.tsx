@@ -7,7 +7,9 @@ import { RefreshCw, Check } from 'lucide-react'
 import { get, post, queryClient, fmtAgo } from '../api'
 import type { ProblemRow, Alert } from '../types'
 import { stateLabel, stateIcon, stateColor } from '../types'
-import { Button, Empty, Badge, ErrorState } from '../components/ui'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Empty, ErrorState } from '@/components/kit'
 import { AckDialog, DowntimeDialog } from '../components/AckDialog'
 import { t } from '../i18n'
 
@@ -69,9 +71,9 @@ export function ProblemsPage() {
                 <div className="text-xs text-muted-foreground truncate">{p.state.output}</div>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
-                {p.state.ackedBy && <Badge className="bg-sky-500/10 text-sky-400 border-sky-800">{t('acked')}: {p.state.ackedBy}</Badge>}
-                {p.state.downtimeDepth > 0 && <Badge className="bg-muted text-muted-foreground border-input">{t('inDowntime')}</Badge>}
-                {p.state.flapping && <Badge className="bg-purple-500/10 text-purple-400 border-purple-800">{t('flapping')}</Badge>}
+                {p.state.ackedBy && <Badge variant="outline" className="bg-sky-500/10 text-sky-400 border-sky-800">{t('acked')}: {p.state.ackedBy}</Badge>}
+                {p.state.downtimeDepth > 0 && <Badge variant="outline" className="bg-muted text-muted-foreground border-input">{t('inDowntime')}</Badge>}
+                {p.state.flapping && <Badge variant="outline" className="bg-purple-500/10 text-purple-400 border-purple-800">{t('flapping')}</Badge>}
                 <span className="text-xs text-muted-foreground/70 tabular-nums w-16 text-right">{fmtAgo(p.state.lastHardChange)}</span>
               </div>
               <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">

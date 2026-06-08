@@ -5,9 +5,17 @@
 import { useQuery } from '@tanstack/react-query'
 import { get } from '../../api'
 import type { ObjectSpec } from '../../types'
-import { Field, Select, DurationInput, KVEditor, ListEditor } from '../forms'
-import { Input } from '../ui'
+import { Field, DurationInput, KVEditor, ListEditor } from '@/components/kit'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
 import { t } from '../../i18n'
+
+// Radix SelectItem value cannot be "" — sentinel stands in for the
+// "inherit/all" empty option and maps back to '' on change.
+const NONE = '__none__'
 
 // ——— tri-state inheritance toggles ————————————————————————————————
 // EnableChecks/Notifications/FlapDetection are *bool in the Go model:
@@ -26,10 +34,13 @@ function TriField({ label, value, onChange }: {
 }) {
   return (
     <Field label={label}>
-      <Select value={triOf(value)} onChange={(e) => onChange(triVal(e.target.value as Tri))}>
-        <option value="inherit">Vererbt</option>
-        <option value="on">{t('enabled')}</option>
-        <option value="off">{t('disabled')}</option>
+      <Select value={triOf(value)} onValueChange={(v) => onChange(triVal(v as Tri))}>
+        <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="inherit">Vererbt</SelectItem>
+          <SelectItem value="on">{t('enabled')}</SelectItem>
+          <SelectItem value="off">{t('disabled')}</SelectItem>
+        </SelectContent>
       </Select>
     </Field>
   )
@@ -80,12 +91,15 @@ function CheckCommandField({ spec, patch }: { spec: ObjectSpec; patch: (p: Parti
   return (
     <div className="grid grid-cols-[10rem_1fr] gap-2">
       <Field label={t('checkCommand')}>
-        <Select value={kind} onChange={(e) => patch({ checkCommand: joinRef(e.target.value, rest) })}>
-          <option value="builtin">builtin</option>
-          <option value="command">Kommando (definiert)</option>
-          <option value="exec">exec</option>
-          <option value="agent:exec">agent:exec</option>
-          <option value="passive">passive</option>
+        <Select value={kind} onValueChange={(v) => patch({ checkCommand: joinRef(v, rest) })}>
+          <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="builtin">builtin</SelectItem>
+            <SelectItem value="command">Kommando (definiert)</SelectItem>
+            <SelectItem value="exec">exec</SelectItem>
+            <SelectItem value="agent:exec">agent:exec</SelectItem>
+            <SelectItem value="passive">passive</SelectItem>
+          </SelectContent>
         </Select>
       </Field>
       <Field label={kind === 'builtin' ? 'Builtin-Check' : kind === 'command' ? 'Check-Kommando' : kind === 'passive' ? '—' : 'Kommando / Plugin'}>
@@ -264,10 +278,16 @@ export function SpecFields({ spec, onChange, kind, hideCommand }: {
         <TriField label={t('notifications')} value={spec.enableNotifications} onChange={(v) => patch({ enableNotifications: v })} />
         <TriField label={t('flapDetection')} value={spec.enableFlapDetection} onChange={(v) => patch({ enableFlapDetection: v })} />
         <Field label="Threshold-Modus">
-          <Select value={spec.thresholdMode ?? ''} onChange={(e) => patch({ thresholdMode: (e.target.value || undefined) as ObjectSpec['thresholdMode'] })}>
-            <option value="">Vererbt</option>
-            <option value="static">static</option>
-            <option value="adaptive">adaptive (KI)</option>
+          <Select
+            value={spec.thresholdMode || NONE}
+            onValueChange={(v) => patch({ thresholdMode: (v === NONE ? undefined : v) as ObjectSpec['thresholdMode'] })}
+          >
+            <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>Vererbt</SelectItem>
+              <SelectItem value="static">static</SelectItem>
+              <SelectItem value="adaptive">adaptive (KI)</SelectItem>
+            </SelectContent>
           </Select>
         </Field>
       </div>
@@ -297,11 +317,11 @@ export function SpecFields({ spec, onChange, kind, hideCommand }: {
       </Field>
 
       <Field label={t('runbook')} hint="Markdown">
-        <textarea
+        <Textarea
           value={spec.runbook ?? ''}
           onChange={(e) => patch({ runbook: e.target.value })}
           placeholder="## Runbook&#10;1. Prüfe …"
-          className="bg-card border border-input rounded-lg px-3 py-1.5 text-sm text-foreground w-full font-mono placeholder:text-muted-foreground focus:border-ring min-h-20"
+          className="font-mono min-h-20"
         />
       </Field>
     </div>

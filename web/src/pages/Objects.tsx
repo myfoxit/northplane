@@ -11,12 +11,20 @@ import { X, RefreshCw } from 'lucide-react'
 import { get, post, del, fmtTime, fmtAgo, queryClient, type ListResponse } from '../api'
 import type { NPObject, NPEvent, SeriesResult, ObjectSpec, ObjectsSearch } from '../types'
 import { stateLabel, stateIcon, stateColor } from '../types'
-import { Button, Card, Input, Empty, LabelChips, Badge, ErrorState } from '../components/ui'
-import { Select } from '../components/forms'
+import { Button } from '@/components/ui/button'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
+import { Empty, LabelChips, ErrorState } from '@/components/kit'
 import { Chart } from '../components/Chart'
 import { DowntimeDialog } from '../components/AckDialog'
 import { ObjectFormDialog, BatchAddDialog } from '../components/objects/ObjectForm'
 import { t } from '../i18n'
+
+// Radix SelectItem value cannot be "" — sentinel for the empty/all option,
+// mapped back to undefined in the URL filter handlers.
+const ALL = '__all__'
 
 // State filter options (URL token → label). Tokens match
 // stateLabel(kind, n).toLowerCase() so one filter serves both kinds.
@@ -106,23 +114,27 @@ export function ObjectsPage() {
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-lg font-bold">{t('objects')} <span className="text-muted-foreground text-sm">({rows.length})</span></h1>
         <div className="flex gap-2">
-          <Button onClick={() => setCreate('host')}>+ {t('newHost')}</Button>
-          <Button onClick={() => setCreate('service')}>+ {t('newService')}</Button>
+          <Button variant="outline" onClick={() => setCreate('host')}>+ {t('newHost')}</Button>
+          <Button variant="outline" onClick={() => setCreate('service')}>+ {t('newService')}</Button>
           <Button variant="ghost" onClick={() => setBatch(true)}>{t('batchAdd')}</Button>
         </div>
       </div>
       <div className="flex gap-2 flex-wrap">
         <Input placeholder={t('filter')} value={selector} onChange={(e) => setSelector(e.target.value)} className="max-w-xs" />
         <Input placeholder="Volltext…" value={query} onChange={(e) => setQuery(e.target.value)} className="max-w-xs" />
-        <Select value={kindFilter} className="w-36"
-          onChange={(e) => patchSearch({ kind: (e.target.value || undefined) as ObjectsSearch['kind'] })}>
-          <option value="">Hosts + Services</option>
-          <option value="host">Hosts</option>
-          <option value="service">Services</option>
+        <Select value={kindFilter || ALL} onValueChange={(v) => patchSearch({ kind: (v === ALL ? undefined : v) as ObjectsSearch['kind'] })}>
+          <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>Hosts + Services</SelectItem>
+            <SelectItem value="host">Hosts</SelectItem>
+            <SelectItem value="service">Services</SelectItem>
+          </SelectContent>
         </Select>
-        <Select value={stateFilter} className="w-36"
-          onChange={(e) => patchSearch({ state: e.target.value || undefined })}>
-          {STATE_FILTERS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+        <Select value={stateFilter || ALL} onValueChange={(v) => patchSearch({ state: v === ALL ? undefined : v })}>
+          <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {STATE_FILTERS.map(([v, label]) => <SelectItem key={v || ALL} value={v || ALL}>{label}</SelectItem>)}
+          </SelectContent>
         </Select>
         {(stateFilter || kindFilter) && (
           <Button variant="ghost" onClick={() => patchSearch({ state: undefined, kind: undefined })}>
@@ -246,74 +258,89 @@ export function ObjectDetailPage() {
           <div className="mt-1"><LabelChips labels={obj.labels} /></div>
         </div>
         <div className="flex gap-2 shrink-0 items-center">
-          <Button variant="primary" onClick={() => setEditOpen(true)}>{t('edit')}</Button>
-          <Button onClick={() => recheck.mutate()} disabled={recheck.isPending}><RefreshCw size={14} /> {t('checkNow')}</Button>
-          <Button onClick={() => setDtOpen(true)}>{t('downtime')}</Button>
+          <Button variant="default" onClick={() => setEditOpen(true)}>{t('edit')}</Button>
+          <Button variant="outline" onClick={() => recheck.mutate()} disabled={recheck.isPending}><RefreshCw size={14} /> {t('checkNow')}</Button>
+          <Button variant="outline" onClick={() => setDtOpen(true)}>{t('downtime')}</Button>
           <ObjectDeleteButton kind={obj.kind} size="md" onDelete={() => remove.mutate()} />
         </div>
       </div>
 
       {/* Interval / scheduling card (CMP Admin parity — check-interval
           management must be visible at a glance). */}
-      <Card title={`${t('interval')} & Scheduling`}>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-4 gap-y-2 text-sm">
-          <Cfg k={t('interval')} v={eff.interval} />
-          <Cfg k={t('retryInterval')} v={eff.retryInterval} />
-          <Cfg k={t('maxAttempts')} v={eff.maxCheckAttempts != null ? String(eff.maxCheckAttempts) : undefined} />
-          <Cfg k={t('timeout')} v={eff.timeout} />
-          <Cfg k={t('checkPeriod')} v={eff.checkPeriod} />
-          <Cfg k={t('checkCommand')} v={eff.checkCommand} mono />
-        </div>
+      <Card>
+        <CardHeader><CardTitle>{`${t('interval')} & Scheduling`}</CardTitle></CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-4 gap-y-2 text-sm">
+            <Cfg k={t('interval')} v={eff.interval} />
+            <Cfg k={t('retryInterval')} v={eff.retryInterval} />
+            <Cfg k={t('maxAttempts')} v={eff.maxCheckAttempts != null ? String(eff.maxCheckAttempts) : undefined} />
+            <Cfg k={t('timeout')} v={eff.timeout} />
+            <Cfg k={t('checkPeriod')} v={eff.checkPeriod} />
+            <Cfg k={t('checkCommand')} v={eff.checkCommand} mono />
+          </div>
+        </CardContent>
       </Card>
 
       <div className="grid lg:grid-cols-2 gap-4">
-        <Card title={t('state')}>
-          <dl className="text-sm space-y-1.5">
-            <Row k={t('output')} v={cs?.output} mono />
-            {cs?.longOutput && <Row k="Long" v={cs.longOutput} mono />}
-            {cs?.perfdata && <Row k="Perfdata" v={cs.perfdata} mono />}
-            <Row k="Last check" v={cs?.lastCheck ? `${fmtTime(cs.lastCheck)} (${fmtAgo(cs.lastCheck)} ago)` : '—'} />
-            <Row k="Next check" v={fmtTime(cs?.nextCheck)} />
-            <Row k="Last hard change" v={fmtTime(cs?.lastHardChange)} />
-            {cs?.ackedBy && <Row k={t('acked')} v={`${cs.ackedBy} — ${cs.ackComment ?? ''}`} />}
-            {(cs?.downtimeDepth ?? 0) > 0 && <Row k={t('downtime')} v="aktiv" />}
-            {cs?.flapping && <Row k="Flapping" v="ja" />}
-          </dl>
+        <Card>
+          <CardHeader><CardTitle>{t('state')}</CardTitle></CardHeader>
+          <CardContent>
+            <dl className="text-sm space-y-1.5">
+              <Row k={t('output')} v={cs?.output} mono />
+              {cs?.longOutput && <Row k="Long" v={cs.longOutput} mono />}
+              {cs?.perfdata && <Row k="Perfdata" v={cs.perfdata} mono />}
+              <Row k="Last check" v={cs?.lastCheck ? `${fmtTime(cs.lastCheck)} (${fmtAgo(cs.lastCheck)} ago)` : '—'} />
+              <Row k="Next check" v={fmtTime(cs?.nextCheck)} />
+              <Row k="Last hard change" v={fmtTime(cs?.lastHardChange)} />
+              {cs?.ackedBy && <Row k={t('acked')} v={`${cs.ackedBy} — ${cs.ackComment ?? ''}`} />}
+              {(cs?.downtimeDepth ?? 0) > 0 && <Row k={t('downtime')} v="aktiv" />}
+              {cs?.flapping && <Row k="Flapping" v="ja" />}
+            </dl>
+          </CardContent>
         </Card>
-        <Card title={`${t('effectiveConfig')}${effective?.templateChain?.length ? ` — ${t('templateChain')}: ${effective.templateChain.join(' → ')}` : ''}`}>
-          <pre className="text-xs text-muted-foreground overflow-auto max-h-64 font-mono">
-            {JSON.stringify(effective?.spec ?? obj.spec, null, 2)}
-          </pre>
+        <Card>
+          <CardHeader><CardTitle>{`${t('effectiveConfig')}${effective?.templateChain?.length ? ` — ${t('templateChain')}: ${effective.templateChain.join(' → ')}` : ''}`}</CardTitle></CardHeader>
+          <CardContent>
+            <pre className="text-xs text-muted-foreground overflow-auto max-h-64 font-mono">
+              {JSON.stringify(effective?.spec ?? obj.spec, null, 2)}
+            </pre>
+          </CardContent>
         </Card>
       </div>
 
       {(series?.length ?? 0) > 0 && (
-        <Card title={t('metrics')}>
-          <div className="grid lg:grid-cols-2 gap-6">
-            {series!.filter((s) => !s.series.metric.startsWith('np_')).map((s) => (
-              <Chart key={s.series.id} result={s} />
-            ))}
-          </div>
+        <Card>
+          <CardHeader><CardTitle>{t('metrics')}</CardTitle></CardHeader>
+          <CardContent>
+            <div className="grid lg:grid-cols-2 gap-6">
+              {series!.filter((s) => !s.series.metric.startsWith('np_')).map((s) => (
+                <Chart key={s.series.id} result={s} />
+              ))}
+            </div>
+          </CardContent>
         </Card>
       )}
 
-      <Card title={t('history')}>
-        {(events?.items?.length ?? 0) === 0
-          ? <Empty text={t('empty')} />
-          : (
-            <div className="space-y-1 text-sm">
-              {events!.items!.map((e) => (
-                <div key={e.id} className="flex gap-3 py-1 border-b border-border/50 last:border-0">
-                  <span className="text-muted-foreground/70 text-xs tabular-nums w-36 shrink-0">{fmtTime(e.ts)}</span>
-                  <Badge className="bg-muted text-muted-foreground border-input">{e.type}</Badge>
-                  <span className="text-muted-foreground text-xs truncate">
-                    {String((e.payload as Record<string, unknown>).output ??
-                      (e.payload as Record<string, unknown>).summary ?? JSON.stringify(e.payload))}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
+      <Card>
+        <CardHeader><CardTitle>{t('history')}</CardTitle></CardHeader>
+        <CardContent>
+          {(events?.items?.length ?? 0) === 0
+            ? <Empty text={t('empty')} />
+            : (
+              <div className="space-y-1 text-sm">
+                {events!.items!.map((e) => (
+                  <div key={e.id} className="flex gap-3 py-1 border-b border-border/50 last:border-0">
+                    <span className="text-muted-foreground/70 text-xs tabular-nums w-36 shrink-0">{fmtTime(e.ts)}</span>
+                    <Badge variant="outline" className="bg-muted text-muted-foreground border-input">{e.type}</Badge>
+                    <span className="text-muted-foreground text-xs truncate">
+                      {String((e.payload as Record<string, unknown>).output ??
+                        (e.payload as Record<string, unknown>).summary ?? JSON.stringify(e.payload))}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+        </CardContent>
       </Card>
       <DowntimeDialog open={dtOpen} objectId={obj.id} objectName={obj.name} onClose={() => setDtOpen(false)} />
       {editOpen && <ObjectFormDialog open kind={obj.kind} edit={obj} onClose={() => setEditOpen(false)} />}
@@ -346,16 +373,17 @@ export function ObjectDeleteButton({ kind, onDelete, size = 'sm' }: {
   kind: 'host' | 'service'; onDelete: () => void; size?: 'sm' | 'md'
 }) {
   const [arm, setArm] = useState(false)
+  const btnSize = size === 'md' ? 'default' : 'sm'
   if (!arm) {
-    return <Button size={size} variant="ghost" onClick={() => setArm(true)}>{t('delete')}</Button>
+    return <Button size={btnSize} variant="ghost" onClick={() => setArm(true)}>{t('delete')}</Button>
   }
   return (
     <span className="inline-flex items-center gap-1">
       {kind === 'host' && (
         <span className="text-[11px] text-amber-400">Löscht auch alle Services des Hosts?</span>
       )}
-      <Button size={size} variant="danger" onClick={() => { setArm(false); onDelete() }}>{t('deleteConfirm')}</Button>
-      <Button size={size} variant="ghost" onClick={() => setArm(false)}>{t('cancel')}</Button>
+      <Button size={btnSize} variant="destructive" onClick={() => { setArm(false); onDelete() }}>{t('deleteConfirm')}</Button>
+      <Button size={btnSize} variant="ghost" onClick={() => setArm(false)}>{t('cancel')}</Button>
     </span>
   )
 }

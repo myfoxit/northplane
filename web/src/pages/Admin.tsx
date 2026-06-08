@@ -10,7 +10,13 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { Sparkles } from 'lucide-react'
 import { get, post, del, queryClient, fmtTime, type ListResponse } from '../api'
 import type { AIAction } from '../types'
-import { Button, Card, Input, Empty, Badge, Table, TabBar } from '../components/ui'
+import { Button } from '@/components/ui/button'
+import { Card, CardHeader, CardTitle, CardAction, CardContent } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Empty } from '@/components/kit'
 import { t } from '../i18n'
 import { UsersTab } from '../components/admin/Users'
 import { RolesTab } from '../components/admin/Roles'
@@ -33,7 +39,11 @@ export function AdminPage() {
   return (
     <div className="space-y-4">
       <h1 className="text-lg font-bold">{t('admin')}</h1>
-      <TabBar tabs={tabs} value={tab} onChange={setTab} labels={(tb) => t(tb)} />
+      <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
+        <TabsList>
+          {tabs.map((tb) => <TabsTrigger key={tb} value={tb}>{t(tb)}</TabsTrigger>)}
+        </TabsList>
+      </Tabs>
       {tab === 'users' && <UsersTab />}
       {tab === 'roles' && <RolesTab />}
       {tab === 'contacts' && <ContactsTab />}
@@ -78,35 +88,45 @@ function TokensTab() {
   })
   return (
     <div className="space-y-4">
-      <Card title={t('newToken')}>
-        <div className="flex gap-2">
-          <Input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} className="max-w-48" />
-          <Input placeholder="scopes (kommagetrennt)" value={scopes} onChange={(e) => setScopes(e.target.value)} />
-          <Button variant="primary" onClick={() => create.mutate()} disabled={!name || create.isPending}>
-            {t('newToken')}
-          </Button>
-        </div>
-        {minted && (
-          <div className="mt-3 bg-amber-950/40 border border-amber-800/50 rounded-lg p-3">
-            <div className="text-xs text-amber-400 mb-1">Einmalig sichtbar — jetzt sichern:</div>
-            <code className="text-sm text-amber-200 break-all select-all">{minted}</code>
+      <Card>
+        <CardHeader><CardTitle>{t('newToken')}</CardTitle></CardHeader>
+        <CardContent>
+          <div className="flex gap-2">
+            <Input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} className="max-w-48" />
+            <Input placeholder="scopes (kommagetrennt)" value={scopes} onChange={(e) => setScopes(e.target.value)} />
+            <Button variant="default" onClick={() => create.mutate()} disabled={!name || create.isPending}>
+              {t('newToken')}
+            </Button>
           </div>
-        )}
+          {minted && (
+            <div className="mt-3 bg-amber-950/40 border border-amber-800/50 rounded-lg p-3">
+              <div className="text-xs text-amber-400 mb-1">Einmalig sichtbar — jetzt sichern:</div>
+              <code className="text-sm text-amber-200 break-all select-all">{minted}</code>
+            </div>
+          )}
+        </CardContent>
       </Card>
-      <Table head={['Name', 'Prefix', 'Scopes', 'Zuletzt', '']}>
-        {data?.items?.map((tok) => (
-          <tr key={tok.id}>
-            <td className="px-3 py-2 text-foreground">
-              <span className="inline-flex items-center gap-1">{tok.name}{tok.aiAgent && <Sparkles size={14} />}</span>
-            </td>
-            <td className="px-3 py-2 font-mono text-muted-foreground">np_{tok.prefix}…</td>
-            <td className="px-3 py-2 text-xs text-muted-foreground">{tok.scopes?.join(', ')}</td>
-            <td className="px-3 py-2 text-xs text-muted-foreground">{tok.lastUsedAt ? fmtTime(tok.lastUsedAt) : '—'}</td>
-            <td className="px-3 py-2 text-right">
-              <Button size="sm" variant="danger" onClick={() => revoke.mutate(tok.id)}>{t('revoke')}</Button>
-            </td>
-          </tr>
-        ))}
+      <Table>
+        <TableHeader>
+          <TableRow>
+            {['Name', 'Prefix', 'Scopes', 'Zuletzt', ''].map((h, i) => <TableHead key={i}>{h}</TableHead>)}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {data?.items?.map((tok) => (
+            <TableRow key={tok.id}>
+              <TableCell className="text-foreground">
+                <span className="inline-flex items-center gap-1">{tok.name}{tok.aiAgent && <Sparkles size={14} />}</span>
+              </TableCell>
+              <TableCell className="font-mono text-muted-foreground">np_{tok.prefix}…</TableCell>
+              <TableCell className="text-xs text-muted-foreground">{tok.scopes?.join(', ')}</TableCell>
+              <TableCell className="text-xs text-muted-foreground">{tok.lastUsedAt ? fmtTime(tok.lastUsedAt) : '—'}</TableCell>
+              <TableCell className="text-right">
+                <Button size="sm" variant="destructive" onClick={() => revoke.mutate(tok.id)}>{t('revoke')}</Button>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
       </Table>
     </div>
   )
@@ -139,22 +159,29 @@ function AuditTab() {
         {verify && <span className={`text-sm ${verify.startsWith('✓') ? 'text-emerald-400' : 'text-red-400'}`}>{verify}</span>}
         <a href="/api/v1/audit:export" className="text-xs text-muted-foreground hover:text-foreground/90 ml-auto">⇩ NDJSON (SIEM)</a>
       </div>
-      <Table head={['Seq', 'Zeit', 'Akteur', 'Aktion', 'Ressource']}>
-        {data?.items?.map((e) => (
-          <tr key={e.seq}>
-            <td className="px-3 py-1.5 text-muted-foreground/70 tabular-nums">{e.seq}</td>
-            <td className="px-3 py-1.5 text-muted-foreground text-xs tabular-nums">{fmtTime(e.ts)}</td>
-            <td className="px-3 py-1.5 text-xs">
-              <Badge className={e.actorType === 'ai_agent'
-                ? 'bg-purple-500/10 text-purple-400 border-purple-800'
-                : 'bg-muted text-muted-foreground border-input'}>
-                {e.actorType}
-              </Badge>
-            </td>
-            <td className="px-3 py-1.5 text-foreground/90 font-mono text-xs">{e.action}</td>
-            <td className="px-3 py-1.5 text-muted-foreground text-xs font-mono truncate max-w-48">{e.resource}</td>
-          </tr>
-        ))}
+      <Table>
+        <TableHeader>
+          <TableRow>
+            {['Seq', 'Zeit', 'Akteur', 'Aktion', 'Ressource'].map((h) => <TableHead key={h}>{h}</TableHead>)}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {data?.items?.map((e) => (
+            <TableRow key={e.seq}>
+              <TableCell className="text-muted-foreground/70 tabular-nums">{e.seq}</TableCell>
+              <TableCell className="text-muted-foreground text-xs tabular-nums">{fmtTime(e.ts)}</TableCell>
+              <TableCell className="text-xs">
+                <Badge variant="outline" className={e.actorType === 'ai_agent'
+                  ? 'bg-purple-500/10 text-purple-400 border-purple-800'
+                  : 'bg-muted text-muted-foreground border-input'}>
+                  {e.actorType}
+                </Badge>
+              </TableCell>
+              <TableCell className="text-foreground/90 font-mono text-xs">{e.action}</TableCell>
+              <TableCell className="text-muted-foreground text-xs font-mono truncate max-w-48">{e.resource}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
       </Table>
     </div>
   )
@@ -177,7 +204,7 @@ function AIQueueTab() {
       {rows.length === 0 && <Empty text="Keine AI-Aktionen." />}
       {rows.map((a) => (
         <div key={a.id} className="bg-card/50 border border-border rounded-lg px-3 py-2 flex items-center gap-3">
-          <Badge className={
+          <Badge variant="outline" className={
             a.status === 'proposed' ? 'bg-amber-500/10 text-amber-400 border-amber-800'
               : a.status === 'executed' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-800'
                 : 'bg-muted text-muted-foreground border-input'}>
@@ -190,7 +217,7 @@ function AIQueueTab() {
           <span className="text-xs text-muted-foreground/70">{a.actor} · {fmtTime(a.createdAt)}</span>
           {a.status === 'proposed' && (
             <div className="flex gap-1">
-              <Button size="sm" variant="primary" onClick={() => decide.mutate({ id: a.id, verb: 'approve' })}>
+              <Button size="sm" variant="default" onClick={() => decide.mutate({ id: a.id, verb: 'approve' })}>
                 {t('approve')}
               </Button>
               <Button size="sm" variant="ghost" onClick={() => decide.mutate({ id: a.id, verb: 'deny' })}>
@@ -216,12 +243,22 @@ function HealthTab() {
   })
   return (
     <div className="grid lg:grid-cols-2 gap-4">
-      <Card title="system/info">
-        <pre className="text-xs text-muted-foreground font-mono">{JSON.stringify(info, null, 2)}</pre>
+      <Card>
+        <CardHeader><CardTitle>system/info</CardTitle></CardHeader>
+        <CardContent>
+          <pre className="text-xs text-muted-foreground font-mono">{JSON.stringify(info, null, 2)}</pre>
+        </CardContent>
       </Card>
-      <Card title="system/health" actions={
-        <a href="/metrics" className="text-xs text-muted-foreground hover:text-foreground/90">OpenMetrics ↗</a>}>
-        <pre className="text-xs text-muted-foreground font-mono overflow-auto max-h-96">{JSON.stringify(health, null, 2)}</pre>
+      <Card>
+        <CardHeader>
+          <CardTitle>system/health</CardTitle>
+          <CardAction>
+            <a href="/metrics" className="text-xs text-muted-foreground hover:text-foreground/90">OpenMetrics ↗</a>
+          </CardAction>
+        </CardHeader>
+        <CardContent>
+          <pre className="text-xs text-muted-foreground font-mono overflow-auto max-h-96">{JSON.stringify(health, null, 2)}</pre>
+        </CardContent>
       </Card>
     </div>
   )

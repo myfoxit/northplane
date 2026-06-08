@@ -12,7 +12,8 @@ import type {
   Overview, ProblemRow, Alert, SeriesResult, DashboardWidget, NPObject, ObjectsSearch,
 } from '../../types'
 import { stateIcon, stateColor, stateLabel, sevColor } from '../../types'
-import { Tile, Badge, Empty, Spinner } from '../ui'
+import { Tile, Empty, Spinner } from '@/components/kit'
+import { Badge } from '@/components/ui/badge'
 import { Chart } from '../Chart'
 import { t } from '../../i18n'
 
@@ -133,7 +134,7 @@ function AlertsWidget({ widget }: { widget: DashboardWidget }) {
           key={a.id} to="/alerts"
           className="flex items-center gap-2 py-1.5 px-1 hover:bg-card/60 rounded text-sm"
         >
-          <Badge className={sevColor(a.severity)}>{a.severity}</Badge>
+          <Badge variant="outline" className={sevColor(a.severity)}>{a.severity}</Badge>
           <span className="text-foreground truncate flex-1">{a.title}</span>
           <span className="text-muted-foreground/70 text-xs tabular-nums shrink-0">{fmtAgo(a.openedAt)}</span>
         </Link>

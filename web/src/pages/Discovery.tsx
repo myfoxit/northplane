@@ -6,9 +6,12 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Check, X } from 'lucide-react'
 import { get, post, fmtTime, fmtAgo, type ListResponse } from '../api'
-import { Button, Card, Empty, Spinner, Table, Badge, ErrorState } from '../components/ui'
-import { Input } from '../components/ui'
-import { Field, ListEditor, FormError, useSave } from '../components/forms'
+import { Button } from '@/components/ui/button'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table'
+import { Empty, Spinner, ErrorState, Field, ListEditor, FormError, useSave } from '@/components/kit'
 import { t } from '../i18n'
 
 // Actual scan shape from internal/api/discovery.go.
@@ -36,9 +39,9 @@ interface BatchResult {
 }
 
 function statusBadge(s: Scan['status']) {
-  if (s === 'running') return <Badge className="bg-sky-500/15 text-sky-400 border-sky-500/30">läuft…</Badge>
-  if (s === 'failed') return <Badge className="bg-red-500/15 text-red-400 border-red-500/30">fehlgeschlagen</Badge>
-  return <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30">fertig</Badge>
+  if (s === 'running') return <Badge variant="outline" className="bg-sky-500/15 text-sky-400 border-sky-500/30">läuft…</Badge>
+  if (s === 'failed') return <Badge variant="outline" className="bg-red-500/15 text-red-400 border-red-500/30">fehlgeschlagen</Badge>
+  return <Badge variant="outline" className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30">fertig</Badge>
 }
 
 export function DiscoveryPage() {
@@ -79,48 +82,63 @@ export function DiscoveryPage() {
     <div className="space-y-4">
       <h1 className="text-lg font-bold">{t('discovery')}</h1>
 
-      <Card title={t('startScan')}>
-        <form className="space-y-3" onSubmit={submit}>
-          <div className="grid sm:grid-cols-2 gap-3">
-            <Field label={t('scanRange')} required hint="max. /20">
-              <Input value={cidr} onChange={(e) => setCidr(e.target.value)} placeholder="192.168.1.0/24" />
-            </Field>
-            <Field label="Ports (optional)" hint="Standard: 22,80,443,3389,5432,3306,8080">
-              <Input value={portsStr} onChange={(e) => setPortsStr(e.target.value)} placeholder="22,80,443" />
-            </Field>
-          </div>
-          <FormError error={start.error} />
-          <div className="flex justify-end">
-            <Button variant="primary" type="submit" disabled={start.isPending || !cidr.trim()}>
-              {start.isPending ? '…' : t('startScan')}
-            </Button>
-          </div>
-        </form>
+      <Card>
+        <CardHeader><CardTitle>{t('startScan')}</CardTitle></CardHeader>
+        <CardContent>
+          <form className="space-y-3" onSubmit={submit}>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <Field label={t('scanRange')} required hint="max. /20">
+                <Input value={cidr} onChange={(e) => setCidr(e.target.value)} placeholder="192.168.1.0/24" />
+              </Field>
+              <Field label="Ports (optional)" hint="Standard: 22,80,443,3389,5432,3306,8080">
+                <Input value={portsStr} onChange={(e) => setPortsStr(e.target.value)} placeholder="22,80,443" />
+              </Field>
+            </div>
+            <FormError error={start.error} />
+            <div className="flex justify-end">
+              <Button variant="default" type="submit" disabled={start.isPending || !cidr.trim()}>
+                {start.isPending ? '…' : t('startScan')}
+              </Button>
+            </div>
+          </form>
+        </CardContent>
       </Card>
 
-      <Card title="Scans">
-        {isLoading && <Spinner />}
-        {!isLoading && scans.length === 0 && <Empty text={t('empty')} />}
-        {scans.length > 0 && (
-          <Table head={[t('status'), 'CIDR', 'Gestartet', t('suggestions'), '']}>
-            {scans.map((s) => (
-              <tr key={s.id} className="hover:bg-card/40">
-                <td className="px-3 py-2">{statusBadge(s.status)}</td>
-                <td className="px-3 py-2 font-mono text-xs text-foreground/90">{s.cidr}</td>
-                <td className="px-3 py-2 text-muted-foreground text-xs" title={fmtTime(s.startedAt)}>
-                  {fmtAgo(s.startedAt)}
-                </td>
-                <td className="px-3 py-2 text-muted-foreground tabular-nums">{s.found?.length ?? 0}</td>
-                <td className="px-3 py-2">
-                  <Button size="sm" disabled={(s.found?.length ?? 0) === 0}
-                    onClick={() => setOpenScan(openScan === s.id ? null : s.id)}>
-                    {openScan === s.id ? 'schließen' : 'Vorschläge'}
-                  </Button>
-                </td>
-              </tr>
-            ))}
-          </Table>
-        )}
+      <Card>
+        <CardHeader><CardTitle>Scans</CardTitle></CardHeader>
+        <CardContent>
+          {isLoading && <Spinner />}
+          {!isLoading && scans.length === 0 && <Empty text={t('empty')} />}
+          {scans.length > 0 && (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  {[t('status'), 'CIDR', 'Gestartet', t('suggestions'), ''].map((h, i) => (
+                    <TableHead key={i}>{h}</TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {scans.map((s) => (
+                  <TableRow key={s.id} className="hover:bg-card/40">
+                    <TableCell className="px-3 py-2">{statusBadge(s.status)}</TableCell>
+                    <TableCell className="px-3 py-2 font-mono text-xs text-foreground/90">{s.cidr}</TableCell>
+                    <TableCell className="px-3 py-2 text-muted-foreground text-xs" title={fmtTime(s.startedAt)}>
+                      {fmtAgo(s.startedAt)}
+                    </TableCell>
+                    <TableCell className="px-3 py-2 text-muted-foreground tabular-nums">{s.found?.length ?? 0}</TableCell>
+                    <TableCell className="px-3 py-2">
+                      <Button size="sm" disabled={(s.found?.length ?? 0) === 0}
+                        onClick={() => setOpenScan(openScan === s.id ? null : s.id)}>
+                        {openScan === s.id ? 'schließen' : 'Vorschläge'}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
       </Card>
 
       {openScan && (() => {
@@ -180,59 +198,71 @@ function SuggestionPanel({ scan }: { scan: Scan }) {
   for (const r of result?.results ?? []) resultByName[r.name] = r
 
   return (
-    <Card title={`${t('suggestions')} — ${scan.cidr}`}>
-      <div className="grid sm:grid-cols-2 gap-3 mb-3">
-        <Field label={t('folder')} hint="Zielordner der neuen Hosts">
-          <Input value={folder} onChange={(e) => setFolder(e.target.value)} placeholder="/discovered" />
-        </Field>
-        <Field label="Templates (optional)" hint="auf alle Hosts anwenden">
-          <ListEditor value={templates} onChange={setTemplates} placeholder="linux-server" />
-        </Field>
-      </div>
-
-      <Table head={['', 'Adresse', 'Hostname', 'Offene Ports', 'Vorgeschlagene Checks', 'Ergebnis']}>
-        {hits.map((h) => {
-          const name = (h.hostname || h.address).replace(/\.$/, '')
-          const res = resultByName[name]
-          return (
-            <tr key={h.address} className="hover:bg-card/40">
-              <td className="px-3 py-2">
-                <input type="checkbox" checked={picked.has(h.address)} onChange={() => toggle(h.address)} />
-              </td>
-              <td className="px-3 py-2 font-mono text-xs text-foreground/90">{h.address}</td>
-              <td className="px-3 py-2 text-muted-foreground text-xs">{h.hostname?.replace(/\.$/, '') || '—'}</td>
-              <td className="px-3 py-2">
-                <div className="flex flex-wrap gap-1">
-                  {(h.openPorts ?? []).map((p) => (
-                    <span key={p} className="text-[11px] bg-muted text-foreground/90 rounded px-1.5 py-0.5 font-mono">{p}</span>
-                  ))}
-                </div>
-              </td>
-              <td className="px-3 py-2 text-muted-foreground text-xs">
-                {(h.suggest ?? []).join(', ') || '—'}
-              </td>
-              <td className="px-3 py-2 text-xs">
-                {res?.id && <span className="text-emerald-400 inline-flex items-center gap-1"><Check size={13} /> angelegt</span>}
-                {res?.error && <span className="text-red-400 inline-flex items-center gap-1" title={res.error}><X size={13} /> {res.error}</span>}
-                {!res && <span className="text-muted-foreground/70">—</span>}
-              </td>
-            </tr>
-          )
-        })}
-      </Table>
-
-      <FormError error={accept.error} />
-      {result && (
-        <div className="text-sm text-muted-foreground mt-2">
-          {result.created} angelegt · {result.failed} fehlgeschlagen
+    <Card>
+      <CardHeader><CardTitle>{`${t('suggestions')} — ${scan.cidr}`}</CardTitle></CardHeader>
+      <CardContent>
+        <div className="grid sm:grid-cols-2 gap-3 mb-3">
+          <Field label={t('folder')} hint="Zielordner der neuen Hosts">
+            <Input value={folder} onChange={(e) => setFolder(e.target.value)} placeholder="/discovered" />
+          </Field>
+          <Field label="Templates (optional)" hint="auf alle Hosts anwenden">
+            <ListEditor value={templates} onChange={setTemplates} placeholder="linux-server" />
+          </Field>
         </div>
-      )}
-      <div className="flex items-center justify-between pt-3">
-        <span className="text-xs text-muted-foreground">{picked.size} von {hits.length} ausgewählt</span>
-        <Button variant="primary" onClick={submit} disabled={accept.isPending || picked.size === 0}>
-          {accept.isPending ? '…' : t('acceptSelected')}
-        </Button>
-      </div>
+
+        <Table>
+          <TableHeader>
+            <TableRow>
+              {['', 'Adresse', 'Hostname', 'Offene Ports', 'Vorgeschlagene Checks', 'Ergebnis'].map((h, i) => (
+                <TableHead key={i}>{h}</TableHead>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {hits.map((h) => {
+              const name = (h.hostname || h.address).replace(/\.$/, '')
+              const res = resultByName[name]
+              return (
+                <TableRow key={h.address} className="hover:bg-card/40">
+                  <TableCell className="px-3 py-2">
+                    <input type="checkbox" checked={picked.has(h.address)} onChange={() => toggle(h.address)} />
+                  </TableCell>
+                  <TableCell className="px-3 py-2 font-mono text-xs text-foreground/90">{h.address}</TableCell>
+                  <TableCell className="px-3 py-2 text-muted-foreground text-xs">{h.hostname?.replace(/\.$/, '') || '—'}</TableCell>
+                  <TableCell className="px-3 py-2">
+                    <div className="flex flex-wrap gap-1">
+                      {(h.openPorts ?? []).map((p) => (
+                        <span key={p} className="text-[11px] bg-muted text-foreground/90 rounded px-1.5 py-0.5 font-mono">{p}</span>
+                      ))}
+                    </div>
+                  </TableCell>
+                  <TableCell className="px-3 py-2 text-muted-foreground text-xs">
+                    {(h.suggest ?? []).join(', ') || '—'}
+                  </TableCell>
+                  <TableCell className="px-3 py-2 text-xs">
+                    {res?.id && <span className="text-emerald-400 inline-flex items-center gap-1"><Check size={13} /> angelegt</span>}
+                    {res?.error && <span className="text-red-400 inline-flex items-center gap-1" title={res.error}><X size={13} /> {res.error}</span>}
+                    {!res && <span className="text-muted-foreground/70">—</span>}
+                  </TableCell>
+                </TableRow>
+              )
+            })}
+          </TableBody>
+        </Table>
+
+        <FormError error={accept.error} />
+        {result && (
+          <div className="text-sm text-muted-foreground mt-2">
+            {result.created} angelegt · {result.failed} fehlgeschlagen
+          </div>
+        )}
+        <div className="flex items-center justify-between pt-3">
+          <span className="text-xs text-muted-foreground">{picked.size} von {hits.length} ausgewählt</span>
+          <Button variant="default" onClick={submit} disabled={accept.isPending || picked.size === 0}>
+            {accept.isPending ? '…' : t('acceptSelected')}
+          </Button>
+        </div>
+      </CardContent>
     </Card>
   )
 }

@@ -3,8 +3,19 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { resourceApi } from '../../api'
 import type { AlertGroup } from '../../types'
-import { Badge, Button, Dialog, Empty, ErrorState, Input, Table } from '../ui'
-import { Field, FormError, ListEditor, DurationInput, SubmitRow, DeleteButton, useSave } from '../forms'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table'
+import { Empty, ErrorState, Field, FormError, ListEditor, DurationInput, SubmitRow, DeleteButton, useSave } from '@/components/kit'
 import { t } from '../../i18n'
 
 const groupsApi = resourceApi<AlertGroup>('alert-groups')
@@ -31,20 +42,32 @@ export function GroupsTab() {
   return (
     <div className="space-y-3">
       <div className="flex justify-end">
-        <Button variant="primary" onClick={() => open()}>{t('create')}</Button>
+        <Button variant="default" onClick={() => open()}>{t('create')}</Button>
       </div>
       {(data?.length ?? 0) === 0 ? <Empty text={t('empty')} /> : (
-        <Table head={[t('name'), 'Group-By', 'Fenster', 'Aggregat', 'Min', t('actions')]}>
-          {data!.map((g) => (
-            <tr key={g.name} className="hover:bg-muted/30">
-              <td className="px-3 py-2 font-medium text-foreground">{g.name}</td>
-              <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{g.groupBy.join(', ') || '—'}</td>
-              <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{g.window}</td>
-              <td className="px-3 py-2"><Badge className="bg-muted text-foreground/90 border-input">{g.aggregate ?? 'count'}</Badge></td>
-              <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">{g.minCount ?? '—'}</td>
-              <td className="px-3 py-2 text-right"><Button size="sm" onClick={() => open(g.name)}>{t('edit')}</Button></td>
-            </tr>
-          ))}
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t('name')}</TableHead>
+              <TableHead>Group-By</TableHead>
+              <TableHead>Fenster</TableHead>
+              <TableHead>Aggregat</TableHead>
+              <TableHead>Min</TableHead>
+              <TableHead>{t('actions')}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data!.map((g) => (
+              <TableRow key={g.name}>
+                <TableCell className="font-medium text-foreground">{g.name}</TableCell>
+                <TableCell className="font-mono text-xs text-muted-foreground">{g.groupBy.join(', ') || '—'}</TableCell>
+                <TableCell className="font-mono text-xs text-muted-foreground">{g.window}</TableCell>
+                <TableCell><Badge variant="outline" className="bg-muted text-foreground/90 border-input">{g.aggregate ?? 'count'}</Badge></TableCell>
+                <TableCell className="text-xs text-muted-foreground tabular-nums">{g.minCount ?? '—'}</TableCell>
+                <TableCell className="text-right"><Button size="sm" variant="outline" onClick={() => open(g.name)}>{t('edit')}</Button></TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
         </Table>
       )}
       {editing && <GroupDialog state={editing} onClose={() => setEditing(null)} />}
@@ -67,39 +90,48 @@ function GroupDialog({ state, onClose }: { state: { group: AlertGroup; etag: num
   const onSubmit = (e: React.FormEvent) => { e.preventDefault(); save.mutate(g) }
 
   return (
-    <Dialog open onClose={onClose} title={isNew ? t('create') : `${t('edit')}: ${state.group.name}`} size="md">
-      <form onSubmit={onSubmit} className="space-y-3">
-        <Field label={t('name')} required>
-          <Input value={g.name} disabled={!isNew} onChange={(e) => set({ name: e.target.value })} placeholder="per-host-flood" />
-        </Field>
-        <Field label="Group-By (Label-Keys)">
-          <ListEditor value={g.groupBy} onChange={(v) => set({ groupBy: v })} placeholder="host" />
-        </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Fenster">
-            <DurationInput value={g.window} onChange={(v) => set({ window: v })} placeholder="5m" />
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{isNew ? t('create') : `${t('edit')}: ${state.group.name}`}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={onSubmit} className="space-y-3">
+          <Field label={t('name')} required>
+            <Input value={g.name} disabled={!isNew} onChange={(e) => set({ name: e.target.value })} placeholder="per-host-flood" />
           </Field>
-          <Field label="Aggregat">
-            <select value={g.aggregate ?? 'count'} onChange={(e) => set({ aggregate: e.target.value as AlertGroup['aggregate'] })}
-              className="bg-card border border-input rounded-lg px-3 py-1.5 text-sm text-foreground w-full focus:border-ring cursor-pointer">
-              {aggregates.map((a) => <option key={a} value={a}>{a}</option>)}
-            </select>
+          <Field label="Group-By (Label-Keys)">
+            <ListEditor value={g.groupBy} onChange={(v) => set({ groupBy: v })} placeholder="host" />
           </Field>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Wert-Pfad" hint="optional (für min/max/avg/sum/median)">
-            <Input value={g.valuePath ?? ''} onChange={(e) => set({ valuePath: e.target.value || undefined })} placeholder="payload.value" />
-          </Field>
-          <Field label="Min. Anzahl" hint="optional">
-            <Input type="number" value={g.minCount ?? ''} onChange={(e) => set({ minCount: e.target.value ? Number(e.target.value) : undefined })} placeholder="3" />
-          </Field>
-        </div>
-        <FormError error={save.error} />
-        <div className="flex items-center justify-between pt-2">
-          {!isNew ? <DeleteButton onDelete={() => remove.mutate(state.group.name)} /> : <span />}
-          <SubmitRow onCancel={onClose} saving={save.isPending} disabled={!g.name} />
-        </div>
-      </form>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Fenster">
+              <DurationInput value={g.window} onChange={(v) => set({ window: v })} placeholder="5m" />
+            </Field>
+            <Field label="Aggregat">
+              <Select value={g.aggregate ?? 'count'} onValueChange={(v) => set({ aggregate: v as AlertGroup['aggregate'] })}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {aggregates.map((a) => <SelectItem key={a} value={a}>{a}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Wert-Pfad" hint="optional (für min/max/avg/sum/median)">
+              <Input value={g.valuePath ?? ''} onChange={(e) => set({ valuePath: e.target.value || undefined })} placeholder="payload.value" />
+            </Field>
+            <Field label="Min. Anzahl" hint="optional">
+              <Input type="number" value={g.minCount ?? ''} onChange={(e) => set({ minCount: e.target.value ? Number(e.target.value) : undefined })} placeholder="3" />
+            </Field>
+          </div>
+          <FormError error={save.error} />
+          <div className="flex items-center justify-between pt-2">
+            {!isNew ? <DeleteButton onDelete={() => remove.mutate(state.group.name)} /> : <span />}
+            <SubmitRow onCancel={onClose} saving={save.isPending} disabled={!g.name} />
+          </div>
+        </form>
+      </DialogContent>
     </Dialog>
   )
 }

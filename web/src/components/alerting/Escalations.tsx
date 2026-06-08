@@ -8,8 +8,19 @@ import { post, resourceApi } from '../../api'
 import type {
   EscalationPolicy, EscalationStep, Schedule, Contact, ContactGroup, Channel,
 } from '../../types'
-import { Button, Card, Dialog, Empty, ErrorState, Input, Table } from '../ui'
-import { Field, FormError, DurationInput, SubmitRow, DeleteButton, useSave } from '../forms'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table'
+import { Empty, ErrorState, Field, FormError, DurationInput, SubmitRow, DeleteButton, useSave } from '@/components/kit'
 import { t } from '../../i18n'
 import { ChannelPicker, ToggleRow } from './common'
 
@@ -18,6 +29,9 @@ const schedulesApi = resourceApi<Schedule>('schedules')
 const contactsApi = resourceApi<Contact>('contacts')
 const groupsApi = resourceApi<ContactGroup>('contact-groups')
 const channelsApi = resourceApi<Channel>('channels')
+
+// Radix <SelectItem> cannot use "" — sentinel for the "no selection" option.
+const NONE = '__none__'
 
 type NotifyKind = 'schedule' | 'contact' | 'contactGroup'
 
@@ -57,20 +71,30 @@ export function EscalationsTab() {
   return (
     <div className="space-y-3">
       <div className="flex justify-end">
-        <Button variant="primary" onClick={() => open()}>{t('create')}</Button>
+        <Button variant="default" onClick={() => open()}>{t('create')}</Button>
       </div>
       {(policies?.length ?? 0) === 0 ? <Empty text={t('empty')} /> : (
-        <Table head={[t('name'), t('steps'), 'Stufen-Übersicht', t('actions')]}>
-          {policies!.map((p) => (
-            <tr key={p.name} className="hover:bg-muted/30">
-              <td className="px-3 py-2 font-medium text-foreground">{p.name}</td>
-              <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">{p.steps?.length ?? 0}</td>
-              <td className="px-3 py-2 text-xs text-muted-foreground font-mono truncate">
-                {(p.steps ?? []).map((s) => `+${s.after}`).join(' → ') || '—'}
-              </td>
-              <td className="px-3 py-2 text-right"><Button size="sm" onClick={() => open(p.name)}>{t('edit')}</Button></td>
-            </tr>
-          ))}
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t('name')}</TableHead>
+              <TableHead>{t('steps')}</TableHead>
+              <TableHead>Stufen-Übersicht</TableHead>
+              <TableHead>{t('actions')}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {policies!.map((p) => (
+              <TableRow key={p.name}>
+                <TableCell className="font-medium text-foreground">{p.name}</TableCell>
+                <TableCell className="text-xs text-muted-foreground tabular-nums">{p.steps?.length ?? 0}</TableCell>
+                <TableCell className="text-xs text-muted-foreground font-mono truncate">
+                  {(p.steps ?? []).map((s) => `+${s.after}`).join(' → ') || '—'}
+                </TableCell>
+                <TableCell className="text-right"><Button size="sm" variant="outline" onClick={() => open(p.name)}>{t('edit')}</Button></TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
         </Table>
       )}
       {editing && <PolicyDialog state={editing} pickers={pickers} onClose={() => setEditing(null)} />}
@@ -114,46 +138,51 @@ function PolicyDialog({ state, pickers, onClose }: {
   const onSubmit = (e: React.FormEvent) => { e.preventDefault(); save.mutate(p) }
 
   return (
-    <Dialog open onClose={onClose} title={isNew ? t('create') : `${t('edit')}: ${state.policy.name}`} size="lg">
-      <form onSubmit={onSubmit} className="space-y-3">
-        <Field label={t('name')} required>
-          <Input value={p.name} disabled={!isNew} onChange={(e) => setP({ ...p, name: e.target.value })} placeholder="standard-oncall" />
-        </Field>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{isNew ? t('create') : `${t('edit')}: ${state.policy.name}`}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={onSubmit} className="space-y-3">
+          <Field label={t('name')} required>
+            <Input value={p.name} disabled={!isNew} onChange={(e) => setP({ ...p, name: e.target.value })} placeholder="standard-oncall" />
+          </Field>
 
-        <div className="space-y-2">
-          <span className="text-xs text-muted-foreground font-medium">{t('steps')}</span>
-          {p.steps.map((step, i) => (
-            <StepCard
-              key={i} index={i} step={step} pickers={pickers}
-              onChange={(s) => setStep(i, s)}
-              onRemove={() => removeStep(i)}
-              onUp={i > 0 ? () => move(i, -1) : undefined}
-              onDown={i < p.steps.length - 1 ? () => move(i, 1) : undefined}
-            />
-          ))}
-          <Button size="sm" type="button" onClick={addStep}>+ Stufe</Button>
-        </div>
-
-        <FormError error={save.error} />
-
-        {/* Simulator */}
-        <div className="border border-border rounded-lg p-3 bg-card/40 space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-foreground/90">{t('simulate')} — wer wird wann benachrichtigt</span>
-            <Button size="sm" type="button" onClick={simulate} disabled={isNew} title={isNew ? 'Erst speichern' : undefined}>
-              {t('simulate')}
-            </Button>
+          <div className="space-y-2">
+            <span className="text-xs text-muted-foreground font-medium">{t('steps')}</span>
+            {p.steps.map((step, i) => (
+              <StepCard
+                key={i} index={i} step={step} pickers={pickers}
+                onChange={(s) => setStep(i, s)}
+                onRemove={() => removeStep(i)}
+                onUp={i > 0 ? () => move(i, -1) : undefined}
+                onDown={i < p.steps.length - 1 ? () => move(i, 1) : undefined}
+              />
+            ))}
+            <Button size="sm" variant="outline" type="button" onClick={addStep}>+ Stufe</Button>
           </div>
-          {isNew && <p className="text-[11px] text-muted-foreground">Policy zuerst speichern, dann simulieren.</p>}
-          <FormError error={simErr} />
-          {sim && <SimTimeline steps={sim.steps} />}
-        </div>
 
-        <div className="flex items-center justify-between pt-2">
-          {!isNew ? <DeleteButton onDelete={() => remove.mutate(state.policy.name)} /> : <span />}
-          <SubmitRow onCancel={onClose} saving={save.isPending} disabled={!p.name} />
-        </div>
-      </form>
+          <FormError error={save.error} />
+
+          {/* Simulator */}
+          <div className="border border-border rounded-lg p-3 bg-card/40 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-foreground/90">{t('simulate')} — wer wird wann benachrichtigt</span>
+              <Button size="sm" variant="outline" type="button" onClick={simulate} disabled={isNew} title={isNew ? 'Erst speichern' : undefined}>
+                {t('simulate')}
+              </Button>
+            </div>
+            {isNew && <p className="text-[11px] text-muted-foreground">Policy zuerst speichern, dann simulieren.</p>}
+            <FormError error={simErr} />
+            {sim && <SimTimeline steps={sim.steps} />}
+          </div>
+
+          <div className="flex items-center justify-between pt-2">
+            {!isNew ? <DeleteButton onDelete={() => remove.mutate(state.policy.name)} /> : <span />}
+            <SubmitRow onCancel={onClose} saving={save.isPending} disabled={!p.name} />
+          </div>
+        </form>
+      </DialogContent>
     </Dialog>
   )
 }
@@ -176,98 +205,124 @@ function StepCard({ index, step, pickers, onChange, onRemove, onUp, onDown }: {
   const showAction = step.action?.webhook !== undefined
 
   return (
-    <Card className="border-border/80">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-semibold text-muted-foreground">Stufe {index + 1}</span>
-        <div className="flex gap-1">
-          {onUp && <Button size="sm" variant="ghost" type="button" onClick={onUp} title="hoch" aria-label="hoch"><ArrowUp size={13} /></Button>}
-          {onDown && <Button size="sm" variant="ghost" type="button" onClick={onDown} title="runter" aria-label="runter"><ArrowDown size={13} /></Button>}
-          <Button size="sm" variant="ghost" type="button" onClick={onRemove} title={t('remove')} aria-label={t('remove')}><X size={13} /></Button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Nach" hint="Verzögerung ab Alarm">
-          <DurationInput value={step.after} onChange={(v) => set({ after: v })} placeholder="0s" />
-        </Field>
-        <div className="flex items-end pb-1">
-          <ToggleRow label="Nur falls nicht quittiert" checked={step.unlessAcked ?? false} onChange={(v) => set({ unlessAcked: v })} />
-        </div>
-      </div>
-
-      {/* Notify target */}
-      <div className="mt-2">
-        <span className="text-xs text-muted-foreground font-medium">Benachrichtigen</span>
-        <div className="flex gap-4 mt-1 mb-1.5">
-          {(['schedule', 'contact', 'contactGroup'] as NotifyKind[]).map((k) => (
-            <label key={k} className="flex items-center gap-1.5 text-sm text-foreground/90 cursor-pointer">
-              <input type="radio" checked={notifyKind === k} onChange={() => setNotify(k)} />
-              {k === 'schedule' ? 'Dienstplan' : k === 'contact' ? 'Kontakt' : 'Kontaktgruppe'}
-            </label>
-          ))}
-        </div>
-        {notifyKind === 'schedule' && (
-          <div className="grid grid-cols-2 gap-3">
-            <select value={step.notify?.schedule ?? ''} onChange={(e) => set({ notify: { ...step.notify, schedule: e.target.value } })}
-              className="bg-card border border-input rounded-lg px-3 py-1.5 text-sm text-foreground w-full focus:border-ring cursor-pointer">
-              <option value="">— Dienstplan wählen —</option>
-              {pickers.schedules.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}
-            </select>
-            <select value={step.notify?.escalateTo ?? ''} onChange={(e) => set({ notify: { ...step.notify, escalateTo: e.target.value || undefined } })}
-              className="bg-card border border-input rounded-lg px-3 py-1.5 text-sm text-foreground w-full focus:border-ring cursor-pointer"
-              title="Wen aus der Rotation">
-              <option value="">Primär</option>
-              <option value="backup">Backup (2.)</option>
-            </select>
+    <Card className="border-border/80 py-3 gap-3">
+      <CardContent className="px-3">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs font-semibold text-muted-foreground">Stufe {index + 1}</span>
+          <div className="flex gap-1">
+            {onUp && <Button size="sm" variant="ghost" type="button" onClick={onUp} title="hoch" aria-label="hoch"><ArrowUp size={13} /></Button>}
+            {onDown && <Button size="sm" variant="ghost" type="button" onClick={onDown} title="runter" aria-label="runter"><ArrowDown size={13} /></Button>}
+            <Button size="sm" variant="ghost" type="button" onClick={onRemove} title={t('remove')} aria-label={t('remove')}><X size={13} /></Button>
           </div>
-        )}
-        {notifyKind === 'contact' && (
-          <select value={step.notify?.contact ?? ''} onChange={(e) => set({ notify: { contact: e.target.value } })}
-            className="bg-card border border-input rounded-lg px-3 py-1.5 text-sm text-foreground w-full focus:border-ring cursor-pointer">
-            <option value="">— Kontakt wählen —</option>
-            {pickers.contacts.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
-          </select>
-        )}
-        {notifyKind === 'contactGroup' && (
-          <select value={step.notify?.contactGroup ?? ''} onChange={(e) => set({ notify: { contactGroup: e.target.value } })}
-            className="bg-card border border-input rounded-lg px-3 py-1.5 text-sm text-foreground w-full focus:border-ring cursor-pointer">
-            <option value="">— Gruppe wählen —</option>
-            {pickers.groups.map((g) => <option key={g.name} value={g.name}>{g.name}</option>)}
-          </select>
-        )}
-      </div>
+        </div>
 
-      <div className="mt-2">
-        <span className="text-xs text-muted-foreground font-medium">{t('channels')}</span>
-        <div className="mt-1"><ChannelPicker value={step.channels ?? []} onChange={(v) => set({ channels: v })} /></div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 mt-2">
-        <Field label="Wiederholen alle" hint="optional">
-          <DurationInput value={step.repeatEvery ?? ''} onChange={(v) => set({ repeatEvery: v || undefined })} placeholder="10m" />
-        </Field>
-        <Field label="Max. Wiederholungen" hint="optional">
-          <Input type="number" value={step.maxRepeats ?? ''} onChange={(e) => set({ maxRepeats: e.target.value ? Number(e.target.value) : undefined })} placeholder="3" />
-        </Field>
-      </div>
-
-      {/* Action webhook */}
-      <div className="mt-2">
-        <ToggleRow
-          label="Aktion: Webhook auslösen"
-          checked={showAction}
-          onChange={(on) => set({ action: on ? { webhook: '' } : undefined })}
-        />
-        {showAction && (
-          <div className="mt-1">
-            <select value={step.action?.webhook ?? ''} onChange={(e) => set({ action: { webhook: e.target.value } })}
-              className="bg-card border border-input rounded-lg px-3 py-1.5 text-sm text-foreground w-full focus:border-ring cursor-pointer">
-              <option value="">— Webhook-Kanal wählen —</option>
-              {pickers.channels.filter((c) => c.type === 'webhook').map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
-            </select>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Nach" hint="Verzögerung ab Alarm">
+            <DurationInput value={step.after} onChange={(v) => set({ after: v })} placeholder="0s" />
+          </Field>
+          <div className="flex items-end pb-1">
+            <ToggleRow label="Nur falls nicht quittiert" checked={step.unlessAcked ?? false} onChange={(v) => set({ unlessAcked: v })} />
           </div>
-        )}
-      </div>
+        </div>
+
+        {/* Notify target */}
+        <div className="mt-2">
+          <span className="text-xs text-muted-foreground font-medium">Benachrichtigen</span>
+          <div className="flex gap-4 mt-1 mb-1.5">
+            {(['schedule', 'contact', 'contactGroup'] as NotifyKind[]).map((k) => (
+              <label key={k} className="flex items-center gap-1.5 text-sm text-foreground/90 cursor-pointer">
+                <input type="radio" checked={notifyKind === k} onChange={() => setNotify(k)} />
+                {k === 'schedule' ? 'Dienstplan' : k === 'contact' ? 'Kontakt' : 'Kontaktgruppe'}
+              </label>
+            ))}
+          </div>
+          {notifyKind === 'schedule' && (
+            <div className="grid grid-cols-2 gap-3">
+              <Select value={step.notify?.schedule ? step.notify.schedule : NONE}
+                onValueChange={(v) => set({ notify: { ...step.notify, schedule: v === NONE ? '' : v } })}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>— Dienstplan wählen —</SelectItem>
+                  {pickers.schedules.map((s) => <SelectItem key={s.name} value={s.name}>{s.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={step.notify?.escalateTo ? step.notify.escalateTo : NONE}
+                onValueChange={(v) => set({ notify: { ...step.notify, escalateTo: v === NONE ? undefined : v } })}>
+                <SelectTrigger className="w-full" title="Wen aus der Rotation">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>Primär</SelectItem>
+                  <SelectItem value="backup">Backup (2.)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {notifyKind === 'contact' && (
+            <Select value={step.notify?.contact ? step.notify.contact : NONE}
+              onValueChange={(v) => set({ notify: { contact: v === NONE ? '' : v } })}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>— Kontakt wählen —</SelectItem>
+                {pickers.contacts.map((c) => <SelectItem key={c.name} value={c.name}>{c.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          )}
+          {notifyKind === 'contactGroup' && (
+            <Select value={step.notify?.contactGroup ? step.notify.contactGroup : NONE}
+              onValueChange={(v) => set({ notify: { contactGroup: v === NONE ? '' : v } })}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>— Gruppe wählen —</SelectItem>
+                {pickers.groups.map((g) => <SelectItem key={g.name} value={g.name}>{g.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+
+        <div className="mt-2">
+          <span className="text-xs text-muted-foreground font-medium">{t('channels')}</span>
+          <div className="mt-1"><ChannelPicker value={step.channels ?? []} onChange={(v) => set({ channels: v })} /></div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 mt-2">
+          <Field label="Wiederholen alle" hint="optional">
+            <DurationInput value={step.repeatEvery ?? ''} onChange={(v) => set({ repeatEvery: v || undefined })} placeholder="10m" />
+          </Field>
+          <Field label="Max. Wiederholungen" hint="optional">
+            <Input type="number" value={step.maxRepeats ?? ''} onChange={(e) => set({ maxRepeats: e.target.value ? Number(e.target.value) : undefined })} placeholder="3" />
+          </Field>
+        </div>
+
+        {/* Action webhook */}
+        <div className="mt-2">
+          <ToggleRow
+            label="Aktion: Webhook auslösen"
+            checked={showAction}
+            onChange={(on) => set({ action: on ? { webhook: '' } : undefined })}
+          />
+          {showAction && (
+            <div className="mt-1">
+              <Select value={step.action?.webhook ? step.action.webhook : NONE}
+                onValueChange={(v) => set({ action: { webhook: v === NONE ? '' : v } })}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>— Webhook-Kanal wählen —</SelectItem>
+                  {pickers.channels.filter((c) => c.type === 'webhook').map((c) => <SelectItem key={c.name} value={c.name}>{c.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </div>
+      </CardContent>
     </Card>
   )
 }
