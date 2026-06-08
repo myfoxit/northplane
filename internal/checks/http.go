@@ -256,8 +256,8 @@ type FlowStep struct {
 	Headers map[string]string `json:"headers,omitempty"`
 	Body    string            `json:"body,omitempty"`
 	// Assertions:
-	ExpectStatus int    `json:"expectStatus,omitempty"`
-	ExpectRegex  string `json:"expectRegex,omitempty"`
+	ExpectStatus int     `json:"expectStatus,omitempty"`
+	ExpectRegex  string  `json:"expectRegex,omitempty"`
 	MaxSeconds   float64 `json:"maxSeconds,omitempty"`
 	// Extraction into flow variables:
 	Extract map[string]string `json:"extract,omitempty"` // var → regex (group 1) | "json:path.to.field"

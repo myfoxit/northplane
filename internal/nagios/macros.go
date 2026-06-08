@@ -12,12 +12,12 @@ import (
 // MacroContext carries everything macro expansion can reference
 // (SPEC §8.2). All fields optional; absent values expand to "".
 type MacroContext struct {
-	Host        *model.Object
-	HostState   *model.CheckState
-	Service     *model.Object
+	Host         *model.Object
+	HostState    *model.CheckState
+	Service      *model.Object
 	ServiceState *model.CheckState
-	HostSpec    *model.ObjectSpec // effective specs (templates resolved)
-	ServiceSpec *model.ObjectSpec
+	HostSpec     *model.ObjectSpec // effective specs (templates resolved)
+	ServiceSpec  *model.ObjectSpec
 
 	Args []string // $ARG1$..$ARG32$
 

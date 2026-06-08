@@ -68,17 +68,17 @@ type Vars map[string]string
 
 // Object is a Host or Service (unified storage, SPEC §6.5).
 type Object struct {
-	ID        string    `json:"id"`
-	TenantID  string    `json:"tenantId"`
-	Kind      Kind      `json:"kind"`
-	Name      string    `json:"name"`
-	HostID    string    `json:"hostId,omitempty"` // services only
-	Folder    string    `json:"folder"`
-	Labels    Labels    `json:"labels"`
+	ID        string     `json:"id"`
+	TenantID  string     `json:"tenantId"`
+	Kind      Kind       `json:"kind"`
+	Name      string     `json:"name"`
+	HostID    string     `json:"hostId,omitempty"` // services only
+	Folder    string     `json:"folder"`
+	Labels    Labels     `json:"labels"`
 	Spec      ObjectSpec `json:"spec"`
-	Version   int64     `json:"version"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	Version   int64      `json:"version"`
+	CreatedAt time.Time  `json:"createdAt"`
+	UpdatedAt time.Time  `json:"updatedAt"`
 }
 
 // ThresholdMode selects static vs. AI-baselined thresholds (SPEC §6.2/§10.6).
@@ -106,8 +106,8 @@ type ObjectSpec struct {
 	Timeout          Duration `json:"timeout,omitempty"          yaml:"timeout,omitempty"`
 	CheckPeriod      string   `json:"checkPeriod,omitempty"      yaml:"checkPeriod,omitempty"`
 
-	NotificationPeriod  string   `json:"notificationPeriod,omitempty" yaml:"notificationPeriod,omitempty"`
-	EnableNotifications *bool    `json:"enableNotifications,omitempty" yaml:"enableNotifications,omitempty"`
+	NotificationPeriod  string `json:"notificationPeriod,omitempty" yaml:"notificationPeriod,omitempty"`
+	EnableNotifications *bool  `json:"enableNotifications,omitempty" yaml:"enableNotifications,omitempty"`
 	// Contacts / ContactGroups are notified directly on hard state
 	// changes (Nagios contact_groups semantics — SPEC §9, F-04) without
 	// requiring an alert rule. Resolution honours NotificationPeriod,
@@ -118,7 +118,7 @@ type ObjectSpec struct {
 	// NotifyOn filters which hard transitions notify: "warning",
 	// "critical", "unknown" (services), "down", "unreachable" (hosts),
 	// "recovery". Empty = all problem states + recovery (Nagios default).
-	NotifyOn []string `json:"notifyOn,omitempty" yaml:"notifyOn,omitempty"`
+	NotifyOn            []string `json:"notifyOn,omitempty" yaml:"notifyOn,omitempty"`
 	EnableChecks        *bool    `json:"enableChecks,omitempty"        yaml:"enableChecks,omitempty"`
 	EnableFlapDetection *bool    `json:"enableFlapDetection,omitempty" yaml:"enableFlapDetection,omitempty"`
 	FlapThresholdLow    float64  `json:"flapThresholdLow,omitempty"    yaml:"flapThresholdLow,omitempty"`  // % (default 25)
@@ -271,15 +271,15 @@ const (
 // CheckCommand is a reusable command definition with $ARGn$ substitution
 // (SPEC §8.2).
 type CheckCommand struct {
-	ID        string      `json:"id"`
-	TenantID  string      `json:"tenantId"`
-	Name      string      `json:"name"`
-	Type      CommandType `json:"type"`
+	ID       string      `json:"id"`
+	TenantID string      `json:"tenantId"`
+	Name     string      `json:"name"`
+	Type     CommandType `json:"type"`
 	// Line is the command line for exec commands; argv[0] is resolved
 	// against the plugins directory unless absolute. For builtin commands
 	// it names the check ("icmp", "http", …).
 	Line      []string  `json:"line"`
-	Env       bool      `json:"env"`            // export NAGIOS_*/NORTHPLANE_* env macros (§8.2)
+	Env       bool      `json:"env"` // export NAGIOS_*/NORTHPLANE_* env macros (§8.2)
 	Timeout   Duration  `json:"timeout,omitempty"`
 	Version   int64     `json:"version"`
 	CreatedAt time.Time `json:"createdAt"`
@@ -307,16 +307,16 @@ func ParseCommandRef(ref string) (CommandType, string, error) {
 // TimePeriod is a Nagios-style time period ("24x7", business hours)
 // with weekday ranges and date exceptions.
 type TimePeriod struct {
-	ID        string              `json:"id"`
-	TenantID  string              `json:"tenantId"`
-	Name      string              `json:"name"`
-	Alias     string              `json:"alias,omitempty"`
-	Days      map[string][]string `json:"days,omitempty"`       // "monday" → ["09:00-17:00", …]
+	ID         string              `json:"id"`
+	TenantID   string              `json:"tenantId"`
+	Name       string              `json:"name"`
+	Alias      string              `json:"alias,omitempty"`
+	Days       map[string][]string `json:"days,omitempty"`       // "monday" → ["09:00-17:00", …]
 	Exceptions map[string][]string `json:"exceptions,omitempty"` // "2026-12-24" → ["00:00-00:00"] (closed) or ranges
-	Exclude   []string            `json:"exclude,omitempty"`    // names of periods subtracted from this one
-	Version   int64               `json:"version"`
-	CreatedAt time.Time           `json:"createdAt"`
-	UpdatedAt time.Time           `json:"updatedAt"`
+	Exclude    []string            `json:"exclude,omitempty"`    // names of periods subtracted from this one
+	Version    int64               `json:"version"`
+	CreatedAt  time.Time           `json:"createdAt"`
+	UpdatedAt  time.Time           `json:"updatedAt"`
 }
 
 var weekdayNames = map[string]time.Weekday{

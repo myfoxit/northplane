@@ -60,11 +60,11 @@ func New(cat *catalog.Catalog, log *slog.Logger) *Scheduler {
 		log = slog.Default()
 	}
 	return &Scheduler{
-		cat:     cat,
-		log:     log,
-		wheel:   make([][]*entry, wheelSlots),
-		entries: map[string]*entry{},
-		Out:     make(chan Job, 4096),
+		cat:      cat,
+		log:      log,
+		wheel:    make([][]*entry, wheelSlots),
+		entries:  map[string]*entry{},
+		Out:      make(chan Job, 4096),
 		Priority: make(chan Job, 256),
 	}
 }

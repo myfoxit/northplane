@@ -17,25 +17,25 @@ func newID() string { return model.NewID() }
 // entities (objects, alerts, events, …) have dedicated tables; these are
 // configuration documents read at evaluation time and cached in memory.
 const (
-	KindTemplate        = "template"
-	KindCheckCommand    = "check-command"
-	KindTimePeriod      = "time-period"
-	KindAlertRule       = "alert-rule"
-	KindAlertGroup      = "alert-group"
+	KindTemplate         = "template"
+	KindCheckCommand     = "check-command"
+	KindTimePeriod       = "time-period"
+	KindAlertRule        = "alert-rule"
+	KindAlertGroup       = "alert-group"
 	KindEscalationPolicy = "escalation-policy"
-	KindSchedule        = "schedule"
-	KindOverride        = "override"
-	KindContact         = "contact"
-	KindContactGroup    = "contact-group"
-	KindChannel         = "channel"
-	KindEventSource     = "event-source"
-	KindBusinessService = "business-service"
-	KindDashboard       = "dashboard"
-	KindReport          = "report"
-	KindRole            = "role"
-	KindWebhookSub      = "webhook-subscription"
-	KindSavedFilter     = "saved-filter"
-	KindStaticGroup     = "static-group" // Nagios import fidelity (SPEC §6.2)
+	KindSchedule         = "schedule"
+	KindOverride         = "override"
+	KindContact          = "contact"
+	KindContactGroup     = "contact-group"
+	KindChannel          = "channel"
+	KindEventSource      = "event-source"
+	KindBusinessService  = "business-service"
+	KindDashboard        = "dashboard"
+	KindReport           = "report"
+	KindRole             = "role"
+	KindWebhookSub       = "webhook-subscription"
+	KindSavedFilter      = "saved-filter"
+	KindStaticGroup      = "static-group" // Nagios import fidelity (SPEC §6.2)
 )
 
 // ResourceEnvelope wraps a stored document.

@@ -134,9 +134,9 @@ type parser struct {
 	pos int
 }
 
-func (p *parser) eof() bool     { return p.pos >= len(p.in) }
-func (p *parser) rest() string  { return p.in[p.pos:] }
-func (p *parser) peek() byte    { return p.in[p.pos] }
+func (p *parser) eof() bool    { return p.pos >= len(p.in) }
+func (p *parser) rest() string { return p.in[p.pos:] }
+func (p *parser) peek() byte   { return p.in[p.pos] }
 func (p *parser) skipSpace() {
 	for !p.eof() && (p.peek() == ' ' || p.peek() == '\t') {
 		p.pos++

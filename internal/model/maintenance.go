@@ -25,12 +25,12 @@ type Downtime struct {
 	FlexDuration Duration `json:"duration,omitempty"`
 	TriggeredBy  string   `json:"triggeredBy,omitempty"` // parent downtime id (chains, §6.3)
 	// Recurrence: RRULE subset ("FREQ=WEEKLY;BYDAY=SA", §6.3).
-	RRule     string    `json:"rrule,omitempty"`
-	Comment   string    `json:"comment"`
-	CreatedBy string    `json:"createdBy"`
+	RRule     string     `json:"rrule,omitempty"`
+	Comment   string     `json:"comment"`
+	CreatedBy string     `json:"createdBy"`
 	StartedAt *time.Time `json:"startedAt,omitempty"` // flexible: trigger time
-	Version   int64     `json:"version"`
-	CreatedAt time.Time `json:"createdAt"`
+	Version   int64      `json:"version"`
+	CreatedAt time.Time  `json:"createdAt"`
 }
 
 // ActiveAt reports whether the downtime suppresses at t.

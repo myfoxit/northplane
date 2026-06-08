@@ -18,9 +18,9 @@ func TestTransitions(t *testing.T) {
 		recovered  bool
 	}
 	cases := []struct {
-		name  string
+		name   string
 		maxAtt int
-		steps []step
+		steps  []step
 	}{
 		{
 			name: "ok stays ok", maxAtt: 3,

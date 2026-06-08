@@ -232,18 +232,18 @@ func firstLine(s string) string {
 // --- commands ---
 
 type objView struct {
-	ID     string            `json:"id"`
-	Kind   string            `json:"kind"`
-	Name   string            `json:"name"`
-	HostName string          `json:"hostName"`
-	Folder string            `json:"folder"`
-	Labels map[string]string `json:"labels"`
-	State  *struct {
-		State     int    `json:"state"`
-		StateType string `json:"stateType"`
-		Output    string `json:"output"`
-		AckedBy   string `json:"ackedBy"`
-		DowntimeDepth int `json:"downtimeDepth"`
+	ID       string            `json:"id"`
+	Kind     string            `json:"kind"`
+	Name     string            `json:"name"`
+	HostName string            `json:"hostName"`
+	Folder   string            `json:"folder"`
+	Labels   map[string]string `json:"labels"`
+	State    *struct {
+		State         int    `json:"state"`
+		StateType     string `json:"stateType"`
+		Output        string `json:"output"`
+		AckedBy       string `json:"ackedBy"`
+		DowntimeDepth int    `json:"downtimeDepth"`
 	} `json:"state"`
 }
 

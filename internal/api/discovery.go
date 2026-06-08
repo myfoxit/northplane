@@ -20,15 +20,15 @@ import (
 // ICMP sweeps need privileges; the TCP fallback covers the common case.
 
 type discoveryScan struct {
-	ID        string    `json:"id"`
-	TenantID  string    `json:"tenantId"`
-	CIDR      string    `json:"cidr"`
-	Ports     []int     `json:"ports"`
-	Status    string    `json:"status"` // running|done|failed
-	StartedAt time.Time `json:"startedAt"`
-	DoneAt    *time.Time `json:"doneAt,omitempty"`
+	ID        string         `json:"id"`
+	TenantID  string         `json:"tenantId"`
+	CIDR      string         `json:"cidr"`
+	Ports     []int          `json:"ports"`
+	Status    string         `json:"status"` // running|done|failed
+	StartedAt time.Time      `json:"startedAt"`
+	DoneAt    *time.Time     `json:"doneAt,omitempty"`
 	Found     []discoveryHit `json:"found,omitempty"`
-	Error     string    `json:"error,omitempty"`
+	Error     string         `json:"error,omitempty"`
 }
 
 type discoveryHit struct {

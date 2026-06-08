@@ -11,11 +11,11 @@ func TestInRangesOvernight(t *testing.T) {
 	day := func(h, m int) time.Time { return time.Date(2026, 6, 1, h, m, 0, 0, time.UTC) }
 	r := []string{"19:00-07:00"}
 	cases := map[time.Time]bool{
-		day(20, 0): true,  // evening
-		day(2, 0):  true,  // small hours
-		day(6, 59): true,  // just before handover
-		day(7, 0):  false, // exactly at end → out
-		day(12, 0): false, // afternoon
+		day(20, 0):  true,  // evening
+		day(2, 0):   true,  // small hours
+		day(6, 59):  true,  // just before handover
+		day(7, 0):   false, // exactly at end → out
+		day(12, 0):  false, // afternoon
 		day(18, 59): false,
 	}
 	for ts, want := range cases {

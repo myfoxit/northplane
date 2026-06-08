@@ -32,8 +32,8 @@ func TestCorruptBlockNoOOM(t *testing.T) {
 		t.Skip("no block flushed")
 	}
 	corrupt := append([]byte(nil), blockMagic[:]...)
-	corrupt = append(corrupt, make([]byte, 16)...)          // ws/we
-	corrupt = append(corrupt, 0xFF, 0xFF, 0xFF, 0xFF)       // n = ~4 billion
+	corrupt = append(corrupt, make([]byte, 16)...)    // ws/we
+	corrupt = append(corrupt, 0xFF, 0xFF, 0xFF, 0xFF) // n = ~4 billion
 	if err := os.WriteFile(blocks[0], corrupt, 0o640); err != nil {
 		t.Fatal(err)
 	}

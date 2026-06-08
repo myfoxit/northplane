@@ -10,11 +10,11 @@ import (
 // Perf is one parsed perfdata token:
 // 'label'=value[UOM];[warn];[crit];[min];[max] (SPEC §8.3).
 type Perf struct {
-	Label string  `json:"label"`
-	Value float64 `json:"value"`
-	UOM   string  `json:"uom,omitempty"` // original unit
-	Warn  string  `json:"warn,omitempty"`
-	Crit  string  `json:"crit,omitempty"`
+	Label string   `json:"label"`
+	Value float64  `json:"value"`
+	UOM   string   `json:"uom,omitempty"` // original unit
+	Warn  string   `json:"warn,omitempty"`
+	Crit  string   `json:"crit,omitempty"`
 	Min   *float64 `json:"min,omitempty"`
 	Max   *float64 `json:"max,omitempty"`
 

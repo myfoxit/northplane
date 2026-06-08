@@ -263,7 +263,7 @@ func ICS(s *Schedule, shifts []OnCallShift, contactName func(id string) string) 
 
 type stringsBuilder struct{ b []byte }
 
-func (s *stringsBuilder) line(l string) { s.b = append(s.b, l...); s.b = append(s.b, '\r', '\n') }
+func (s *stringsBuilder) line(l string)  { s.b = append(s.b, l...); s.b = append(s.b, '\r', '\n') }
 func (s *stringsBuilder) String() string { return string(s.b) }
 
 func icsEscape(s string) string {

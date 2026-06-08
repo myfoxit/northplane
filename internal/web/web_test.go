@@ -219,4 +219,3 @@ func TestSetupRateLimited(t *testing.T) {
 		t.Fatalf("expected throttling after %v attempts, got %d", loginBurst+1, last.Code)
 	}
 }
-

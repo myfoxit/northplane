@@ -651,7 +651,7 @@ func (a *API) exportBundle(ctx context.Context, tenantID, folder string) ([]bund
 	}
 	for _, o := range objs {
 		doc := bundle.Doc{
-			Kind: strings.Title(string(o.Kind)),
+			Kind:     strings.Title(string(o.Kind)),
 			Metadata: bundle.Metadata{Name: o.Name, Folder: o.Folder, Labels: o.Labels},
 		}
 		if o.Kind == model.KindService {

@@ -21,8 +21,8 @@ import (
 
 // Message is a provider-agnostic chat message.
 type Message struct {
-	Role    string    `json:"role"` // system|user|assistant|tool
-	Content string    `json:"content"`
+	Role    string `json:"role"` // system|user|assistant|tool
+	Content string `json:"content"`
 	// ToolCalls present on assistant turns; ToolResults on tool turns.
 	ToolCalls   []ToolCall   `json:"toolCalls,omitempty"`
 	ToolResults []ToolResult `json:"toolResults,omitempty"`
@@ -51,11 +51,11 @@ type ToolResult struct {
 
 // Completion is one model turn.
 type Completion struct {
-	Text      string     `json:"text"`
-	ToolCalls []ToolCall `json:"toolCalls,omitempty"`
-	StopReason string    `json:"stopReason"`
-	InputTokens  int64   `json:"inputTokens"`
-	OutputTokens int64   `json:"outputTokens"`
+	Text         string     `json:"text"`
+	ToolCalls    []ToolCall `json:"toolCalls,omitempty"`
+	StopReason   string     `json:"stopReason"`
+	InputTokens  int64      `json:"inputTokens"`
+	OutputTokens int64      `json:"outputTokens"`
 }
 
 // Provider is the LLM backend.
@@ -79,7 +79,7 @@ func NewProvider(cfg config.AIConfig) Provider {
 			ep = "https://api.anthropic.com"
 		}
 		return &anthropicProvider{endpoint: ep, apiKey: apiKey,
-			model: orModel(cfg.Model, "claude-sonnet-4-6"),
+			model:     orModel(cfg.Model, "claude-sonnet-4-6"),
 			modelDeep: orModel(cfg.ModelDeep, cfg.Model)}
 	case "openai-compat", "azure-openai":
 		return &openAIProvider{endpoint: cfg.Endpoint, apiKey: apiKey,
@@ -114,14 +114,14 @@ func (p *anthropicProvider) Complete(ctx context.Context, system string, msgs []
 		model = p.modelDeep
 	}
 	type aContent struct {
-		Type    string          `json:"type"`
-		Text    string          `json:"text,omitempty"`
-		ID      string          `json:"id,omitempty"`
-		Name    string          `json:"name,omitempty"`
-		Input   json.RawMessage `json:"input,omitempty"`
-		ToolUseID string        `json:"tool_use_id,omitempty"`
-		Content string          `json:"content,omitempty"`
-		IsError bool            `json:"is_error,omitempty"`
+		Type      string          `json:"type"`
+		Text      string          `json:"text,omitempty"`
+		ID        string          `json:"id,omitempty"`
+		Name      string          `json:"name,omitempty"`
+		Input     json.RawMessage `json:"input,omitempty"`
+		ToolUseID string          `json:"tool_use_id,omitempty"`
+		Content   string          `json:"content,omitempty"`
+		IsError   bool            `json:"is_error,omitempty"`
 	}
 	type aMessage struct {
 		Role    string     `json:"role"`
@@ -186,8 +186,8 @@ func (p *anthropicProvider) Complete(ctx context.Context, system string, msgs []
 		return nil, fmt.Errorf("anthropic: HTTP %d: %s", resp.StatusCode, truncate(string(respBody), 300))
 	}
 	var out struct {
-		Content []aContent `json:"content"`
-		StopReason string  `json:"stop_reason"`
+		Content    []aContent `json:"content"`
+		StopReason string     `json:"stop_reason"`
 		Usage      struct {
 			InputTokens  int64 `json:"input_tokens"`
 			OutputTokens int64 `json:"output_tokens"`

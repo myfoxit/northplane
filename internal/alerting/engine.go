@@ -189,7 +189,7 @@ func dedupKey(r *model.AlertRule, e *model.Event, view map[string]any) string {
 	}
 	var buf bytes.Buffer
 	_ = tpl.Execute(&buf, map[string]any{
-		"event": view,
+		"event":  view,
 		"object": map[string]any{"id": e.ObjectID},
 		"rule":   map[string]any{"name": r.Name},
 	})
@@ -668,9 +668,9 @@ func (en *Engine) persistAndFanout(ctx context.Context, e *model.Event) {
 // TestRule evaluates a rule against demo events or a historical range
 // (SPEC §9.2 / F-05.04) without side effects.
 type TestResult struct {
-	Matched   int                `json:"matched"`
-	WouldOpen []*model.Alert     `json:"wouldOpen"`
-	Samples   []map[string]any   `json:"sampleViews,omitempty"`
+	Matched   int              `json:"matched"`
+	WouldOpen []*model.Alert   `json:"wouldOpen"`
+	Samples   []map[string]any `json:"sampleViews,omitempty"`
 }
 
 // TestRule runs the hypothetical evaluation.

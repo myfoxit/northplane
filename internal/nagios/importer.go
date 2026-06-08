@@ -302,21 +302,21 @@ func parseIcinga2File(path string) ([]*nagiosObject, []Deviation, error) {
 
 // directive → advice for known-unmappable Nagios settings.
 var unmappable = map[string]string{
-	"obsess_over_service":  "OCSP-Pipeline entfällt — Webhook-Subscription auf state_change-Events verwenden",
-	"obsess_over_services": "OCSP-Pipeline entfällt — Webhook-Subscription auf state_change-Events verwenden",
-	"obsess_over_host":     "OCHP entfällt — Webhook-Subscription verwenden",
-	"event_handler":        "Event-Handler → Webhook-Subscription oder AlertRule + Webhook-Kanal",
-	"stalking_options":     "Stalking entfällt — Event-Log erfasst jede Änderung ohnehin",
-	"failure_prediction_enabled": "obsolet (auch in Nagios)",
-	"process_perf_data":    "Perfdata fließt immer in die NP-TSDB (kein Schalter nötig)",
+	"obsess_over_service":          "OCSP-Pipeline entfällt — Webhook-Subscription auf state_change-Events verwenden",
+	"obsess_over_services":         "OCSP-Pipeline entfällt — Webhook-Subscription auf state_change-Events verwenden",
+	"obsess_over_host":             "OCHP entfällt — Webhook-Subscription verwenden",
+	"event_handler":                "Event-Handler → Webhook-Subscription oder AlertRule + Webhook-Kanal",
+	"stalking_options":             "Stalking entfällt — Event-Log erfasst jede Änderung ohnehin",
+	"failure_prediction_enabled":   "obsolet (auch in Nagios)",
+	"process_perf_data":            "Perfdata fließt immer in die NP-TSDB (kein Schalter nötig)",
 	"retain_status_information":    "Zustand ist immer persistent (SQLite/PostgreSQL)",
 	"retain_nonstatus_information": "Zustand ist immer persistent",
-	"parallelize_check":    "obsolet — Scheduler parallelisiert immer",
-	"is_volatile":          "volatile Services → AlertRule mit pendingFor=0 je Event",
-	"low_flap_threshold":   "→ spec.flapThresholdLow",
-	"high_flap_threshold":  "→ spec.flapThresholdHigh",
-	"notification_options": "Filterung → EscalationPolicy/AlertRule-Severity",
-	"first_notification_delay": "→ AlertRule.pendingFor",
+	"parallelize_check":            "obsolet — Scheduler parallelisiert immer",
+	"is_volatile":                  "volatile Services → AlertRule mit pendingFor=0 je Event",
+	"low_flap_threshold":           "→ spec.flapThresholdLow",
+	"high_flap_threshold":          "→ spec.flapThresholdHigh",
+	"notification_options":         "Filterung → EscalationPolicy/AlertRule-Severity",
+	"first_notification_delay":     "→ AlertRule.pendingFor",
 }
 
 // interval converts Nagios time units (interval_length=60) to seconds.

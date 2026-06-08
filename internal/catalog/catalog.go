@@ -21,12 +21,12 @@ type Entry struct {
 	Effective model.ObjectSpec
 	Chain     []string // template chain
 	// Exec resolution:
-	Class     model.CommandType
-	Builtin   string   // builtin check name
-	Argv      []string // what to run (exec: argv incl. path; builtin: flags) — unexpanded macros
-	MacroArgs []string // $ARG1$… values (the object's args, SPEC §8.2)
-	EnvOn     bool
-	Host      *Entry // services: their host
+	Class      model.CommandType
+	Builtin    string   // builtin check name
+	Argv       []string // what to run (exec: argv incl. path; builtin: flags) — unexpanded macros
+	MacroArgs  []string // $ARG1$… values (the object's args, SPEC §8.2)
+	EnvOn      bool
+	Host       *Entry // services: their host
 	TimePeriod *model.TimePeriod
 }
 
@@ -34,27 +34,27 @@ type Entry struct {
 type Catalog struct {
 	store *storage.Store
 
-	mu       sync.RWMutex
-	entries  map[string]*Entry            // object id →
-	byName   map[string]string            // tenant/kind/hostID/name → id
-	children map[string][]string          // host id → service ids
-	parents  map[string][]string          // host id → parent host ids
-	templates map[string]*model.Template  // tenant/name →
-	commands map[string]*model.CheckCommand
-	periods  map[string]*model.TimePeriod
+	mu        sync.RWMutex
+	entries   map[string]*Entry          // object id →
+	byName    map[string]string          // tenant/kind/hostID/name → id
+	children  map[string][]string        // host id → service ids
+	parents   map[string][]string        // host id → parent host ids
+	templates map[string]*model.Template // tenant/name →
+	commands  map[string]*model.CheckCommand
+	periods   map[string]*model.TimePeriod
 }
 
 // New creates an empty catalog.
 func New(store *storage.Store) *Catalog {
 	return &Catalog{
-		store:    store,
-		entries:  map[string]*Entry{},
-		byName:   map[string]string{},
-		children: map[string][]string{},
-		parents:  map[string][]string{},
+		store:     store,
+		entries:   map[string]*Entry{},
+		byName:    map[string]string{},
+		children:  map[string][]string{},
+		parents:   map[string][]string{},
 		templates: map[string]*model.Template{},
-		commands: map[string]*model.CheckCommand{},
-		periods:  map[string]*model.TimePeriod{},
+		commands:  map[string]*model.CheckCommand{},
+		periods:   map[string]*model.TimePeriod{},
 	}
 }
 

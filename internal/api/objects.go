@@ -31,8 +31,8 @@ type ObjectBody struct {
 // ObjectView decorates an object with live state.
 type ObjectView struct {
 	*model.Object
-	HostName string             `json:"hostName,omitempty"`
-	State    *model.CheckState  `json:"state,omitempty"`
+	HostName string            `json:"hostName,omitempty"`
+	State    *model.CheckState `json:"state,omitempty"`
 }
 
 func (a *API) registerObjects() {

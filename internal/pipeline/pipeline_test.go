@@ -209,9 +209,9 @@ func TestSoftHardRetryCadence(t *testing.T) {
 	// closed port → CRITICAL
 	obj := &model.Object{TenantID: model.DefaultTenant, Kind: model.KindService, Name: "down-svc",
 		Spec: model.ObjectSpec{Address: "127.0.0.1", CheckCommand: "builtin:tcp",
-			Args:          []string{"-p", "1"}, // port 1: closed
-			Interval:      model.Duration(time.Hour),
-			RetryInterval: model.Duration(300 * time.Millisecond),
+			Args:             []string{"-p", "1"}, // port 1: closed
+			Interval:         model.Duration(time.Hour),
+			RetryInterval:    model.Duration(300 * time.Millisecond),
 			MaxCheckAttempts: 3, Timeout: model.Duration(2 * time.Second)}}
 	host := &model.Object{TenantID: model.DefaultTenant, Kind: model.KindHost, Name: "down-host",
 		Spec: model.ObjectSpec{Address: "127.0.0.1", CheckCommand: "passive"}}

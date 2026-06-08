@@ -88,8 +88,8 @@ func TestRangeSemantics(t *testing.T) {
 		violated bool
 	}{
 		{"10", 5, false}, {"10", 11, true}, {"10", -1, true}, // 0:10
-		{"10:", 9, true}, {"10:", 10, false},                 // 10:inf
-		{"~:10", -99, false}, {"~:10", 11, true},             // -inf:10
+		{"10:", 9, true}, {"10:", 10, false}, // 10:inf
+		{"~:10", -99, false}, {"~:10", 11, true}, // -inf:10
 		{"5:8", 6, false}, {"5:8", 9, true},
 		{"@5:8", 6, true}, {"@5:8", 9, false}, // inverted
 	}

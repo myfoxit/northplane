@@ -17,12 +17,12 @@ import (
 )
 
 type env struct {
-	store *storage.Store
-	bus   *eventbus.Bus
-	eng   *alerting.Engine
-	esc   *escalation.Engine
-	mgr   *notify.Manager
-	sent  *atomic.Int64
+	store    *storage.Store
+	bus      *eventbus.Bus
+	eng      *alerting.Engine
+	esc      *escalation.Engine
+	mgr      *notify.Manager
+	sent     *atomic.Int64
 	lastBody atomic.Value
 }
 
@@ -82,7 +82,7 @@ func setup(t *testing.T) (*env, context.Context) {
 		},
 	})
 	mustPut(storage.KindAlertRule, "disk-critical-prod", model.AlertRule{
-		Match: `event.type == "state_change" && event.labels.env == "prod" && event.state == "CRITICAL"`,
+		Match:            `event.type == "state_change" && event.labels.env == "prod" && event.state == "CRITICAL"`,
 		Severity:         model.SevCritical,
 		DedupKey:         `{{ .event.object }}/disk`,
 		EscalationPolicy: "prod-infra",
@@ -257,7 +257,9 @@ func TestSilenceSuppressesChain(t *testing.T) {
 	}
 }
 
-func contains(s, sub string) bool { return len(s) >= len(sub) && (s == sub || len(sub) == 0 || indexOf(s, sub) >= 0) }
+func contains(s, sub string) bool {
+	return len(s) >= len(sub) && (s == sub || len(sub) == 0 || indexOf(s, sub) >= 0)
+}
 
 func indexOf(s, sub string) int {
 	for i := 0; i+len(sub) <= len(s); i++ {
