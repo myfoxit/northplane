@@ -110,6 +110,14 @@ const invalidations: Record<string, string[][]> = {
   flapping_end: [['problems'], ['objects']],
 }
 
+// Event types the client consumes — sent as ?types= so the server doesn't
+// push (and buffer) unrelated tenant events, which is what arms a `resync`
+// when the per-subscriber buffer overflows.
+const streamTypes = Object.keys(invalidations).join(',')
+// All live query keys, for a `resync` (missed-events signal): refresh just
+// these through the throttled flush instead of nuking the whole query cache.
+const liveKeys = Array.from(new Set(Object.values(invalidations).flat().map((k) => k[0])))
+
 export function useLiveUpdates(onEvent?: (type: string, data: unknown) => void) {
   const handler = useRef(onEvent)
   handler.current = onEvent
@@ -129,7 +137,7 @@ export function useLiveUpdates(onEvent?: (type: string, data: unknown) => void) 
 
     const connect = () => {
       if (closed) return
-      es = new EventSource('/api/v1/stream')
+      es = new EventSource('/api/v1/stream?types=' + encodeURIComponent(streamTypes))
       es.onopen = () => { backoff = 1000 }
       es.onerror = () => {
         es?.close()
@@ -142,7 +150,13 @@ export function useLiveUpdates(onEvent?: (type: string, data: unknown) => void) 
           try { handler.current?.(type, JSON.parse((ev as MessageEvent).data)) } catch { /* ignore */ }
         })
       }
-      es.addEventListener('resync', () => queryClient.invalidateQueries())
+      es.addEventListener('resync', () => {
+        // Missed events: refresh the live keys via the same throttled,
+        // visibility-gated flush — not invalidateQueries() with no key,
+        // which refetches every mounted query at once.
+        for (const key of liveKeys) pending.add(key)
+        if (!flushTimer) flushTimer = window.setTimeout(flush, 400)
+      })
     }
     connect()
     const onVisible = () => { if (!document.hidden) flush() }

@@ -29,6 +29,26 @@ DEMO=${NP_DEV_DEMO:-1}
 PORT=${LISTEN##*:}
 mkdir -p "$DEV_DIR"
 
+# ── single instance ────────────────────────────────────────────────────
+# A second `make dev` must not run concurrently: two watcher loops both
+# kill "whatever listens" on the API port and start their own, so the
+# backend flaps and every request hangs/ECONNREFUSEs. Take over from a
+# previous run by killing its process (its EXIT trap tears down its vite +
+# backend), then claim the lock.
+LOCK="$DEV_DIR/dev.pid"
+if [ -f "$LOCK" ]; then
+  OLD=$(cat "$LOCK" 2>/dev/null || true)
+  if [ -n "${OLD:-}" ] && [ "$OLD" != "$$" ] && kill -0 "$OLD" 2>/dev/null; then
+    echo "[dev] another dev session (pid $OLD) is running — taking over…"
+    kill "$OLD" 2>/dev/null || true
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+      kill -0 "$OLD" 2>/dev/null || break
+      sleep 0.2
+    done
+  fi
+fi
+echo $$ > "$LOCK"
+
 # ── one-time bootstrap: secret key + config ────────────────────────────
 if [ ! -f "$DEV_DIR/secret.key" ]; then
   head -c 32 /dev/urandom | xxd -p -c 64 > "$DEV_DIR/secret.key"
@@ -98,6 +118,7 @@ cleanup() {
   stop_backend
   [ -n "$VITE_PID" ] && kill_tree "$VITE_PID"
   pkill -f "tail -n +1 -f $DEV_DIR/" 2>/dev/null || true
+  rm -f "$LOCK"
   wait 2>/dev/null || true
   echo "[dev] stopped."
 }
