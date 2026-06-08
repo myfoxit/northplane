@@ -53,8 +53,10 @@ if [ ! -f internal/web/dist/index.html ]; then
   echo '<!doctype html><title>Northplane</title>' > internal/web/dist/index.html
 fi
 
-# frontend deps
-if [ ! -d web/node_modules ]; then
+# frontend deps — (re)install when node_modules is missing OR the lockfile
+# changed (e.g. after a git pull that added a dependency), so a stale tree
+# doesn't fail Vite with "module not found".
+if [ ! -d web/node_modules ] || [ web/package-lock.json -nt web/node_modules/.package-lock.json ]; then
   echo "[dev] installing frontend dependencies (npm ci)…"
   (cd web && npm ci --silent)
 fi
@@ -133,12 +135,15 @@ start_backend() {
   BACKEND_PID=$!
 }
 
-# wait_healthy polls /healthz; fails fast if the process died (bad
-# config, port conflict) so a broken start is loud, not silent.
+# wait_healthy polls /readyz (storage + eventbus ready), not /healthz
+# (which goes green the instant the listener binds, before the DB can
+# serve) so the first proxied request after a restart doesn't race
+# warm-up. Fails fast if the process died (bad config, port conflict) so
+# a broken start is loud, not silent.
 wait_healthy() {
   local n=0
   while [ "$n" -lt 100 ]; do
-    curl -sf -o /dev/null "http://$LISTEN/healthz" 2>/dev/null && return 0
+    curl -sf -o /dev/null "http://$LISTEN/readyz" 2>/dev/null && return 0
     kill -0 "$BACKEND_PID" 2>/dev/null || return 1
     n=$((n + 1))
     sleep 0.1

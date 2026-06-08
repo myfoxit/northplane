@@ -4,9 +4,10 @@
 // backend grammar: daily[@HH:MM] | weekly:<weekday>[@HH:MM] | monthly[:day][@HH:MM].
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Check } from 'lucide-react'
 import { get, post, resourceApi, fmtTime, type ListResponse } from '../api'
 import type { Report, ReportType } from '../types'
-import { Button, Card, Dialog, Empty, Spinner, Table, Badge } from '../components/ui'
+import { Button, Card, Dialog, Empty, Spinner, Table, Badge, ErrorState } from '../components/ui'
 import { Input } from '../components/ui'
 import { Field, Select, ListEditor, FormError, SubmitRow, useSave, DeleteButton } from '../components/forms'
 import { t } from '../i18n'
@@ -51,7 +52,7 @@ async function downloadRender(name: string, format: 'csv' | 'json') {
 }
 
 export function ReportsPage() {
-  const { data, isLoading } = useQuery({ queryKey: reportApi.queryKey, queryFn: reportApi.list })
+  const { data, isLoading, isError, error, refetch } = useQuery({ queryKey: reportApi.queryKey, queryFn: reportApi.list })
   const [editing, setEditing] = useState<Report | null>(null) // null = closed
   const [creating, setCreating] = useState(false)
   const [previewName, setPreviewName] = useState<string | null>(null)
@@ -69,6 +70,9 @@ export function ReportsPage() {
   )
 
   const rows = data ?? []
+  if (isError && !data) {
+    return <div className="p-8"><ErrorState error={error} onRetry={() => refetch()} /></div>
+  }
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -76,8 +80,8 @@ export function ReportsPage() {
         <Button variant="primary" onClick={() => setCreating(true)}>{t('create')}</Button>
       </div>
       {toast && (
-        <div className="text-sm text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-3 py-2">
-          ✓ {toast}
+        <div className="text-sm text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-3 py-2 flex items-center gap-1.5">
+          <Check size={14} /> {toast}
         </div>
       )}
 
@@ -87,14 +91,14 @@ export function ReportsPage() {
         <Card>
           <Table head={[t('name'), t('type'), t('schedule'), t('recipients'), 'Keep', t('actions')]}>
             {rows.map((r) => (
-              <tr key={r.name} className="hover:bg-slate-900/40">
-                <td className="px-3 py-2 font-medium text-slate-200">{r.name}</td>
+              <tr key={r.name} className="hover:bg-card/40">
+                <td className="px-3 py-2 font-medium text-foreground">{r.name}</td>
                 <td className="px-3 py-2">
-                  <Badge className="bg-slate-800 text-slate-300 border-slate-700">{typeLabel(r.type)}</Badge>
+                  <Badge className="bg-muted text-foreground/90 border-input">{typeLabel(r.type)}</Badge>
                 </td>
-                <td className="px-3 py-2 text-slate-400 font-mono text-xs">{r.schedule || '—'}</td>
-                <td className="px-3 py-2 text-slate-400 tabular-nums">{r.email?.length ?? 0}</td>
-                <td className="px-3 py-2 text-slate-400 tabular-nums">{r.keep ?? '—'}</td>
+                <td className="px-3 py-2 text-muted-foreground font-mono text-xs">{r.schedule || '—'}</td>
+                <td className="px-3 py-2 text-muted-foreground tabular-nums">{r.email?.length ?? 0}</td>
+                <td className="px-3 py-2 text-muted-foreground tabular-nums">{r.keep ?? '—'}</td>
                 <td className="px-3 py-2">
                   <div className="flex flex-wrap gap-1">
                     <Button size="sm" onClick={() => setPreviewName(r.name)}>{t('preview')}</Button>
@@ -226,15 +230,15 @@ function ReportDialog({ existing, onClose }: { existing: Report | null; onClose:
           )}
         </div>
         {showSelector && (
-          <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+          <label className="flex items-center gap-2 text-sm text-foreground/90 cursor-pointer">
             <input type="checkbox" checked={includeDowntimes}
               onChange={(e) => setIncludeDowntimes(e.target.checked)} />
             Geplante Downtimes mitzählen
           </label>
         )}
 
-        <div className="border-t border-slate-800 pt-3">
-          <div className="text-xs text-slate-400 font-medium mb-2">{t('schedule')}</div>
+        <div className="border-t border-border pt-3">
+          <div className="text-xs text-muted-foreground font-medium mb-2">{t('schedule')}</div>
           <div className="grid grid-cols-3 gap-2">
             <Field label="Frequenz">
               <Select value={sched.freq} onChange={(e) => setSched({ ...sched, freq: e.target.value as ScheduleParts['freq'] })}>
@@ -264,7 +268,7 @@ function ReportDialog({ existing, onClose }: { existing: Report | null; onClose:
             )}
           </div>
           {sched.freq !== '' && (
-            <div className="text-[11px] text-slate-500 mt-1 font-mono">→ {composeSchedule(sched)}</div>
+            <div className="text-[11px] text-muted-foreground mt-1 font-mono">→ {composeSchedule(sched)}</div>
           )}
         </div>
 
@@ -305,7 +309,7 @@ function PreviewDialog({ name, onClose }: { name: string; onClose: () => void })
           title={`report-${name}`}
           sandbox=""
           srcDoc={data}
-          className="w-full h-[70vh] bg-white rounded-lg border border-slate-700"
+          className="w-full h-[70vh] bg-white rounded-lg border border-input"
         />
       )}
       <div className="flex justify-end gap-2 pt-3">
@@ -334,16 +338,16 @@ function ArchiveDialog({ name, onClose }: { name: string; onClose: () => void })
       {rows.length > 0 && (
         <Table head={['Slot', t('format'), 'Erstellt', '']}>
           {rows.map((e) => (
-            <tr key={e.id} className="hover:bg-slate-900/40">
-              <td className="px-3 py-2 font-mono text-xs text-slate-300">{e.slot}</td>
+            <tr key={e.id} className="hover:bg-card/40">
+              <td className="px-3 py-2 font-mono text-xs text-foreground/90">{e.slot}</td>
               <td className="px-3 py-2">
-                <Badge className="bg-slate-800 text-slate-300 border-slate-700">{e.format}</Badge>
+                <Badge className="bg-muted text-foreground/90 border-input">{e.format}</Badge>
               </td>
-              <td className="px-3 py-2 text-slate-400 text-xs">{fmtTime(e.createdAt)}</td>
+              <td className="px-3 py-2 text-muted-foreground text-xs">{fmtTime(e.createdAt)}</td>
               <td className="px-3 py-2">
                 <a
                   href={`/api/v1/reports/${encodeURIComponent(name)}/archive/${encodeURIComponent(e.id)}`}
-                  className="text-blue-400 hover:text-blue-300 text-xs"
+                  className="text-primary hover:text-primary text-xs"
                   download
                 >↓ {t('download')}</a>
               </td>

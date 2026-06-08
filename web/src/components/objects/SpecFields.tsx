@@ -142,8 +142,8 @@ function NotifyOnChips({ kind, value, onChange }: {
           key={tok} type="button" onClick={() => toggle(tok)}
           className={`px-2 py-0.5 rounded-full text-xs border transition-colors ${
             active(tok)
-              ? 'bg-blue-500/20 border-blue-500/60 text-blue-300'
-              : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'
+              ? 'bg-primary/20 border-primary/60 text-primary'
+              : 'bg-card border-input text-muted-foreground hover:border-input'
           }`}
         >
           {tok}
@@ -203,8 +203,8 @@ export function SpecFields({ spec, onChange, kind, hideCommand }: {
       )}
 
       {/* INTERVALS — the heart of CMP check-interval management. */}
-      <div className="border border-slate-800 rounded-lg p-3 space-y-3">
-        <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{t('interval')} &amp; Scheduling</div>
+      <div className="border border-border rounded-lg p-3 space-y-3">
+        <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('interval')} &amp; Scheduling</div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           <Field label={t('interval')} hint="z.B. 60s, 5m">
             <DurationInput value={spec.interval ?? ''} onChange={(v) => patch({ interval: v })} placeholder="60s" />
@@ -235,8 +235,8 @@ export function SpecFields({ spec, onChange, kind, hideCommand }: {
           referenced groups/contacts are notified directly on hard state
           changes; notifyOn filters the transitions, the period gates the
           time window. */}
-      <div className="border border-slate-800 rounded-lg p-3 space-y-3">
-        <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{t('notifications')}</div>
+      <div className="border border-border rounded-lg p-3 space-y-3">
+        <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('notifications')}</div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <Field label="Kontaktgruppen" hint="Direkt benachrichtigt bei harten Statuswechseln">
             <ListEditor value={spec.contactGroups ?? []} onChange={(v) => patch({ contactGroups: v })}
@@ -301,7 +301,7 @@ export function SpecFields({ spec, onChange, kind, hideCommand }: {
           value={spec.runbook ?? ''}
           onChange={(e) => patch({ runbook: e.target.value })}
           placeholder="## Runbook&#10;1. Prüfe …"
-          className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 w-full font-mono placeholder:text-slate-500 focus:outline-none focus:border-blue-500 min-h-20"
+          className="bg-card border border-input rounded-lg px-3 py-1.5 text-sm text-foreground w-full font-mono placeholder:text-muted-foreground focus:border-ring min-h-20"
         />
       </Field>
     </div>

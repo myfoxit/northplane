@@ -2,6 +2,7 @@
 // object or a selector, fixed or flexible, optionally recurring (RRULE).
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { X } from 'lucide-react'
 import { get, post, del, fmtTime, type ListResponse } from '../../api'
 import type { Downtime, NPObject } from '../../types'
 import { Badge, Button, Dialog, Empty, Input, Table } from '../ui'
@@ -26,12 +27,12 @@ export function DowntimesTab() {
       {(data?.length ?? 0) === 0 ? <Empty text="Keine geplanten Downtimes." /> : (
         <Table head={[t('target'), t('type'), 'Fenster', 'RRULE', t('comment'), t('actions')]}>
           {data!.map((d) => (
-            <tr key={d.id} className="hover:bg-slate-800/30">
-              <td className="px-3 py-2 font-mono text-xs text-slate-300">{d.objectId || d.selector || '—'}</td>
-              <td className="px-3 py-2"><Badge className="bg-slate-800 text-slate-300 border-slate-700">{d.type}</Badge></td>
-              <td className="px-3 py-2 text-xs text-slate-400 tabular-nums">{fmtTime(d.start)} – {fmtTime(d.end)}</td>
-              <td className="px-3 py-2 font-mono text-[11px] text-slate-500">{d.rrule || '—'}</td>
-              <td className="px-3 py-2 text-sm text-slate-300">{d.comment}</td>
+            <tr key={d.id} className="hover:bg-muted/30">
+              <td className="px-3 py-2 font-mono text-xs text-foreground/90">{d.objectId || d.selector || '—'}</td>
+              <td className="px-3 py-2"><Badge className="bg-muted text-foreground/90 border-input">{d.type}</Badge></td>
+              <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">{fmtTime(d.start)} – {fmtTime(d.end)}</td>
+              <td className="px-3 py-2 font-mono text-[11px] text-muted-foreground">{d.rrule || '—'}</td>
+              <td className="px-3 py-2 text-sm text-foreground/90">{d.comment}</td>
               <td className="px-3 py-2 text-right">
                 {d.id && <DeleteButton onDelete={() => remove.mutate(d.id!)} />}
               </td>
@@ -76,12 +77,12 @@ function DowntimeDialog({ onClose }: { onClose: () => void }) {
     <Dialog open onClose={onClose} title={`${t('downtimes')} ${t('create').toLowerCase()}`} size="md">
       <form onSubmit={onSubmit} className="space-y-3">
         <div>
-          <span className="text-xs text-slate-400 font-medium">{t('target')}</span>
+          <span className="text-xs text-muted-foreground font-medium">{t('target')}</span>
           <div className="flex gap-4 mt-1 mb-2">
-            <label className="flex items-center gap-1.5 text-sm text-slate-300 cursor-pointer">
+            <label className="flex items-center gap-1.5 text-sm text-foreground/90 cursor-pointer">
               <input type="radio" checked={targetKind === 'object'} onChange={() => setTargetKind('object')} /> Objekt
             </label>
-            <label className="flex items-center gap-1.5 text-sm text-slate-300 cursor-pointer">
+            <label className="flex items-center gap-1.5 text-sm text-foreground/90 cursor-pointer">
               <input type="radio" checked={targetKind === 'selector'} onChange={() => setTargetKind('selector')} /> Selector
             </label>
           </div>
@@ -93,7 +94,7 @@ function DowntimeDialog({ onClose }: { onClose: () => void }) {
         <div className="grid grid-cols-2 gap-3">
           <Field label={t('type')}>
             <select value={type} onChange={(e) => setType(e.target.value as 'fixed' | 'flexible')}
-              className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 w-full focus:outline-none focus:border-blue-500 cursor-pointer">
+              className="bg-card border border-input rounded-lg px-3 py-1.5 text-sm text-foreground w-full focus:border-ring cursor-pointer">
               <option value="fixed">fixed</option>
               <option value="flexible">flexible</option>
             </select>
@@ -139,19 +140,19 @@ function ObjectPicker({ value, onChange }: { value: string; onChange: (id: strin
       <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Objekt suchen…" />
       {value && (
         <div className="flex items-center gap-2 text-xs">
-          <Badge className="bg-blue-500/15 text-blue-400 border-blue-500/30">{chosen?.name ?? value}</Badge>
-          <button type="button" className="text-slate-500 hover:text-red-400" onClick={() => onChange('')}>✕</button>
+          <Badge className="bg-primary/15 text-primary border-primary/30">{chosen?.name ?? value}</Badge>
+          <button type="button" aria-label={t('remove')} className="text-muted-foreground hover:text-red-400" onClick={() => onChange('')}><X size={13} /></button>
         </div>
       )}
       {q.length > 0 && (data?.length ?? 0) > 0 && (
-        <div className="max-h-40 overflow-y-auto border border-slate-800 rounded-lg divide-y divide-slate-800/70">
+        <div className="max-h-40 overflow-y-auto border border-border rounded-lg divide-y divide-border/70">
           {data!.map((o) => (
             <button key={o.id} type="button"
               onClick={() => { onChange(o.id); setQ('') }}
-              className="w-full text-left px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800/50 flex items-center gap-2">
-              <span className="text-[10px] text-slate-500 uppercase">{o.kind}</span>
+              className="w-full text-left px-3 py-1.5 text-sm text-foreground/90 hover:bg-muted/50 flex items-center gap-2">
+              <span className="text-[10px] text-muted-foreground uppercase">{o.kind}</span>
               <span className="truncate">{o.name}</span>
-              {o.hostName && <span className="text-xs text-slate-600">@ {o.hostName}</span>}
+              {o.hostName && <span className="text-xs text-muted-foreground/70">@ {o.hostName}</span>}
             </button>
           ))}
         </div>

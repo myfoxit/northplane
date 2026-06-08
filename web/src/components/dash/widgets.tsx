@@ -6,6 +6,7 @@
 import type { ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
+import { Check } from 'lucide-react'
 import { get, post, fmtAgo, type ListResponse } from '../../api'
 import type {
   Overview, ProblemRow, Alert, SeriesResult, DashboardWidget, NPObject, ObjectsSearch,
@@ -92,22 +93,22 @@ function ProblemsWidget({ widget }: { widget: DashboardWidget }) {
   })
   const rows = data?.items ?? []
   if (isLoading) return <Spinner />
-  if (rows.length === 0) return <div className="text-emerald-500/80 text-sm p-3">✓ {t('noProblems')}</div>
+  if (rows.length === 0) return <div className="text-emerald-500/80 text-sm p-3 flex items-center gap-1.5"><Check size={14} /> {t('noProblems')}</div>
   return (
-    <div className="divide-y divide-slate-800/60">
+    <div className="divide-y divide-border/60">
       {rows.slice(0, limit).map((p) => (
         <Link
           key={p.object.id} to="/objects/$id" params={{ id: p.object.id }}
-          className="flex items-center gap-2 py-1.5 px-1 hover:bg-slate-900/60 rounded text-sm"
+          className="flex items-center gap-2 py-1.5 px-1 hover:bg-card/60 rounded text-sm"
         >
           <span className={`${stateColor(p.object.kind, p.state.state)} font-bold w-6 text-center shrink-0`}>
             {stateIcon(p.object.kind, p.state.state)}
           </span>
-          <span className="text-slate-200 font-medium truncate max-w-[40%]">
+          <span className="text-foreground font-medium truncate max-w-[40%]">
             {p.object.kind === 'service' && p.object.hostName ? `${p.object.hostName} / ` : ''}{p.object.name}
           </span>
-          <span className="text-slate-500 truncate flex-1">{p.state.output}</span>
-          <span className="text-slate-600 text-xs tabular-nums shrink-0">{fmtAgo(p.state.lastHardChange)}</span>
+          <span className="text-muted-foreground truncate flex-1">{p.state.output}</span>
+          <span className="text-muted-foreground/70 text-xs tabular-nums shrink-0">{fmtAgo(p.state.lastHardChange)}</span>
         </Link>
       ))}
     </div>
@@ -124,17 +125,17 @@ function AlertsWidget({ widget }: { widget: DashboardWidget }) {
   })
   const rows = data?.items ?? []
   if (isLoading) return <Spinner />
-  if (rows.length === 0) return <div className="text-emerald-500/80 text-sm p-3">✓ {t('empty')}</div>
+  if (rows.length === 0) return <div className="text-emerald-500/80 text-sm p-3 flex items-center gap-1.5"><Check size={14} /> {t('empty')}</div>
   return (
-    <div className="divide-y divide-slate-800/60">
+    <div className="divide-y divide-border/60">
       {rows.slice(0, limit).map((a) => (
         <Link
           key={a.id} to="/alerts"
-          className="flex items-center gap-2 py-1.5 px-1 hover:bg-slate-900/60 rounded text-sm"
+          className="flex items-center gap-2 py-1.5 px-1 hover:bg-card/60 rounded text-sm"
         >
           <Badge className={sevColor(a.severity)}>{a.severity}</Badge>
-          <span className="text-slate-200 truncate flex-1">{a.title}</span>
-          <span className="text-slate-600 text-xs tabular-nums shrink-0">{fmtAgo(a.openedAt)}</span>
+          <span className="text-foreground truncate flex-1">{a.title}</span>
+          <span className="text-muted-foreground/70 text-xs tabular-nums shrink-0">{fmtAgo(a.openedAt)}</span>
         </Link>
       ))}
     </div>
@@ -176,12 +177,12 @@ export function BpiTreeLines({ nodes, depth = 0 }: { nodes: BSNode[]; depth?: nu
           <div key={n.service.id}>
             <div className="flex items-center gap-2 py-1 text-sm" style={{ paddingLeft: depth * 14 }}>
               <span className={`${m.color} font-bold w-4 text-center shrink-0`}>{m.icon}</span>
-              <span className="text-slate-200 truncate">{n.service.name}</span>
+              <span className="text-foreground truncate">{n.service.name}</span>
               {typeof n.service.slaTarget === 'number' && n.service.slaTarget > 0 && (
-                <span className="text-slate-600 text-xs">SLA {n.service.slaTarget}%</span>
+                <span className="text-muted-foreground/70 text-xs">SLA {n.service.slaTarget}%</span>
               )}
               {n.causes && n.causes.length > 0 && depth === 0 && (
-                <span className="text-slate-600 text-xs truncate">↳ {n.causes.join(', ')}</span>
+                <span className="text-muted-foreground/70 text-xs truncate">↳ {n.causes.join(', ')}</span>
               )}
             </div>
             {n.children && n.children.length > 0 && <BpiTreeLines nodes={n.children} depth={depth + 1} />}
@@ -219,7 +220,7 @@ function BpiWidget({ widget }: { widget: DashboardWidget }) {
 // MarkdownWidget: plain whitespace-preserving text (NO raw HTML — XSS-safe).
 function MarkdownWidget({ widget }: { widget: DashboardWidget }) {
   return (
-    <div className="whitespace-pre-wrap text-sm text-slate-300 leading-relaxed">
+    <div className="whitespace-pre-wrap text-sm text-foreground/90 leading-relaxed">
       {widget.text || ''}
     </div>
   )
@@ -302,7 +303,7 @@ function GaugeWidget({ widget }: { widget: DashboardWidget }) {
         </text>
       </svg>
       {(warn !== null || crit !== null) && (
-        <div className="text-[10px] text-slate-500 tabular-nums">
+        <div className="text-[10px] text-muted-foreground tabular-nums">
           {warn !== null && <span className="text-amber-400/80">warn {warn}</span>}
           {warn !== null && crit !== null && ' · '}
           {crit !== null && <span className="text-red-400/80">crit {crit}</span>}
@@ -363,11 +364,11 @@ function DonutWidget({ widget }: { widget: DashboardWidget }) {
       <div className="space-y-1">
         {segs.map((x) => (
           <Link key={x.label} to="/objects" search={{ kind, state: x.state }}
-            className="flex items-center gap-2 text-xs hover:bg-slate-800/60 rounded px-1 -mx-1">
+            className="flex items-center gap-2 text-xs hover:bg-muted/60 rounded px-1 -mx-1">
             <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: x.color }} />
-            <span className="text-slate-400 w-24">{x.label}</span>
-            <span className="text-slate-200 tabular-nums font-semibold">{x.value}</span>
-            <span className="text-slate-600 tabular-nums">{total ? Math.round((x.value / total) * 100) : 0}%</span>
+            <span className="text-muted-foreground w-24">{x.label}</span>
+            <span className="text-foreground tabular-nums font-semibold">{x.value}</span>
+            <span className="text-muted-foreground/70 tabular-nums">{total ? Math.round((x.value / total) * 100) : 0}%</span>
           </Link>
         ))}
       </div>
@@ -394,19 +395,19 @@ function TableWidget({ widget }: { widget: DashboardWidget }) {
   return (
     <table className="w-full text-sm">
       <thead>
-        <tr className="text-left text-xs text-slate-500 uppercase tracking-wider">
+        <tr className="text-left text-xs text-muted-foreground uppercase tracking-wider">
           <th className="font-medium pb-1.5 pr-2">{t('state')}</th>
           <th className="font-medium pb-1.5 pr-2">{t('name')}</th>
           <th className="font-medium pb-1.5 pr-2">{t('output')}</th>
           <th className="font-medium pb-1.5 text-right">Check</th>
         </tr>
       </thead>
-      <tbody className="divide-y divide-slate-800/60">
+      <tbody className="divide-y divide-border/60">
         {rows.map((o) => (
-          <tr key={o.id} className="hover:bg-slate-900/60 group">
+          <tr key={o.id} className="hover:bg-card/60 group">
             <td className="py-1.5 pr-2 whitespace-nowrap">
               <Link to="/objects/$id" params={{ id: o.id }}
-                className={`font-semibold ${o.state?.lastCheck ? stateColor(o.kind, o.state.state) : 'text-slate-500'}`}>
+                className={`font-semibold ${o.state?.lastCheck ? stateColor(o.kind, o.state.state) : 'text-muted-foreground'}`}>
                 {o.state?.lastCheck
                   ? `${stateIcon(o.kind, o.state.state)} ${stateLabel(o.kind, o.state.state)}`
                   : `○ ${t('pending')}`}
@@ -414,12 +415,12 @@ function TableWidget({ widget }: { widget: DashboardWidget }) {
             </td>
             <td className="py-1.5 pr-2 max-w-[16rem]">
               <Link to="/objects/$id" params={{ id: o.id }}
-                className="text-slate-200 font-medium truncate block group-hover:text-blue-300">
+                className="text-foreground font-medium truncate block group-hover:text-primary">
                 {o.kind === 'service' && o.hostName ? `${o.hostName} / ` : ''}{o.name}
               </Link>
             </td>
-            <td className="py-1.5 pr-2 text-slate-500 truncate max-w-[20rem]">{o.state?.output}</td>
-            <td className="py-1.5 text-slate-600 text-xs tabular-nums text-right whitespace-nowrap">
+            <td className="py-1.5 pr-2 text-muted-foreground truncate max-w-[20rem]">{o.state?.output}</td>
+            <td className="py-1.5 text-muted-foreground/70 text-xs tabular-nums text-right whitespace-nowrap">
               {fmtAgo(o.state?.lastCheck)}
             </td>
           </tr>
@@ -466,8 +467,8 @@ function BarWidget({ widget }: { widget: DashboardWidget }) {
         return (
           <div key={r.metric} className="text-xs">
             <div className="flex items-baseline justify-between mb-0.5">
-              <span className="text-slate-300 font-mono truncate">{r.metric}</span>
-              <span className="text-slate-200 tabular-nums font-semibold shrink-0 ml-2">
+              <span className="text-foreground/90 font-mono truncate">{r.metric}</span>
+              <span className="text-foreground tabular-nums font-semibold shrink-0 ml-2">
                 {r.value >= 100 ? Math.round(r.value) : r.value.toFixed(1)}{r.unit}
               </span>
             </div>

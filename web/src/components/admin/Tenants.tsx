@@ -24,10 +24,10 @@ export function TenantsTab() {
       <Table head={[t('name'), 'Slug', t('status'), 'ID']}>
         {(data ?? []).map((tn) => (
           <tr key={tn.id}>
-            <td className="px-3 py-2 text-slate-200">{tn.name}</td>
-            <td className="px-3 py-2 text-xs text-slate-400 font-mono">{tn.slug}</td>
+            <td className="px-3 py-2 text-foreground">{tn.name}</td>
+            <td className="px-3 py-2 text-xs text-muted-foreground font-mono">{tn.slug}</td>
             <td className="px-3 py-2">{tn.disabled ? <StatusBadge kind="disabled" /> : <StatusBadge kind="enabled" />}</td>
-            <td className="px-3 py-2 text-xs text-slate-600 font-mono">{tn.id}</td>
+            <td className="px-3 py-2 text-xs text-muted-foreground/70 font-mono">{tn.id}</td>
           </tr>
         ))}
       </Table>
@@ -53,7 +53,7 @@ function TenantDialog({ onClose }: { onClose: () => void }) {
         <Field label="Slug" required hint="URL-tauglicher Kurzname">
           <Input value={slug} onChange={(e) => setSlug(e.target.value)} required />
         </Field>
-        <Badge className="bg-slate-800 text-slate-400 border-slate-700">Mandanten können derzeit nicht gelöscht werden</Badge>
+        <Badge className="bg-muted text-muted-foreground border-input">Mandanten können derzeit nicht gelöscht werden</Badge>
         <FormError error={save.error} />
         <SubmitRow onCancel={onClose} saving={save.isPending} disabled={!name || !slug} />
       </form>

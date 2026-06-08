@@ -6,7 +6,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { get, resourceApi } from '../api'
 import type { BusinessService } from '../types'
-import { Button, Card, Dialog, Empty, Spinner, Tile } from '../components/ui'
+import { Button, Card, Dialog, Empty, Spinner, Tile, ErrorState } from '../components/ui'
 import { Input } from '../components/ui'
 import { Field, Select, FormError, SubmitRow, useSave, DeleteButton, Toggle } from '../components/forms'
 import { ObjectPicker } from '../components/dash/pickers'
@@ -36,7 +36,7 @@ export function BusinessPage() {
   const [editing, setEditing] = useState<BusinessService | null>(null)
   const [creating, setCreating] = useState(false)
 
-  const { data: tree, isLoading } = useQuery({
+  const { data: tree, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['business-tree'],
     queryFn: () => get<BSNode[]>('/business-services:tree'),
     refetchInterval: 30_000,
@@ -51,6 +51,10 @@ export function BusinessPage() {
 
   const selectedDef = flat?.find((b) => b.name === selected) ?? null
   const roots = tree ?? []
+
+  if (isError && !tree) {
+    return <div className="p-8"><ErrorState error={error} onRetry={() => refetch()} /></div>
+  }
 
   return (
     <div className="space-y-4">
@@ -109,13 +113,13 @@ function BSTree({ nodes, selected, onSelect, depth = 0 }: {
             <button
               onClick={() => onSelect(n.service.name)}
               className={`w-full text-left flex items-center gap-2 py-1.5 px-2 rounded text-sm cursor-pointer transition-colors ${
-                active ? 'bg-blue-500/10 text-blue-300' : 'hover:bg-slate-800/50 text-slate-200'}`}
+                active ? 'bg-primary/10 text-primary' : 'hover:bg-muted/50 text-foreground'}`}
               style={{ paddingLeft: 8 + depth * 16 }}
             >
               <span className={`${m.color} font-bold w-4 text-center shrink-0`}>{m.icon}</span>
               <span className="truncate">{n.service.name}</span>
               {typeof n.service.slaTarget === 'number' && n.service.slaTarget > 0 && (
-                <span className="text-slate-600 text-xs ml-auto shrink-0">SLA {n.service.slaTarget}%</span>
+                <span className="text-muted-foreground/70 text-xs ml-auto shrink-0">SLA {n.service.slaTarget}%</span>
               )}
             </button>
             {n.children && n.children.length > 0 && (
@@ -164,7 +168,7 @@ function BSDetail({ def, onEdit, onDelete }: {
               <Tile label="Verbraucht" value={sla.budgetSpent} tone={sla.budgetSpent !== '0s' ? 'warn' : 'default'} />
               <Tile label="Verbleibend" value={sla.budgetLeft} tone={sla.budgetLeft === '0s' ? 'crit' : 'ok'} />
             </div>
-            <div className="text-xs text-slate-500">Fenster: {sla.windowDays} Tage</div>
+            <div className="text-xs text-muted-foreground">Fenster: {sla.windowDays} Tage</div>
           </div>
         )}
         {!isLoading && !sla && <Empty text="keine SLA-Daten" />}
@@ -191,8 +195,8 @@ function BSDetail({ def, onEdit, onDelete }: {
 function Row({ k, v, mono }: { k: string; v?: string; mono?: boolean }) {
   return (
     <div className="flex gap-2">
-      <dt className="text-slate-500 w-28 shrink-0">{k}</dt>
-      <dd className={`text-slate-300 min-w-0 break-words ${mono ? 'font-mono text-xs pt-0.5' : ''}`}>{v || '—'}</dd>
+      <dt className="text-muted-foreground w-28 shrink-0">{k}</dt>
+      <dd className={`text-foreground/90 min-w-0 break-words ${mono ? 'font-mono text-xs pt-0.5' : ''}`}>{v || '—'}</dd>
     </div>
   )
 }
@@ -281,9 +285,9 @@ function BSDialog({ existing, all, onClose }: {
           )}
         </div>
 
-        <div className="border-t border-slate-800 pt-3">
-          <div className="text-xs text-slate-400 font-medium mb-2">Leaf-Bindung</div>
-          <div className="flex gap-4 text-sm text-slate-300 mb-2">
+        <div className="border-t border-border pt-3">
+          <div className="text-xs text-muted-foreground font-medium mb-2">Leaf-Bindung</div>
+          <div className="flex gap-4 text-sm text-foreground/90 mb-2">
             {(['object', 'selector', 'none'] as Binding[]).map((b) => (
               <label key={b} className="flex items-center gap-1.5 cursor-pointer">
                 <input type="radio" name="binding" checked={binding === b} onChange={() => setBinding(b)} />
@@ -299,7 +303,7 @@ function BSDialog({ existing, all, onClose }: {
           )}
         </div>
 
-        <div className="grid grid-cols-3 gap-3 border-t border-slate-800 pt-3">
+        <div className="grid grid-cols-3 gap-3 border-t border-border pt-3">
           <Field label="Gewicht" hint="0 = unbenutzt">
             <Input type="number" min={0} step="0.1" value={weight}
               onChange={(e) => setWeight(Number(e.target.value))} />

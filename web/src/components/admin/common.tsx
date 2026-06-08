@@ -11,7 +11,7 @@ import { t } from '../../i18n'
 // Status badges — never colour-only (A-15.29ff): each carries its word.
 export function StatusBadge({ kind }: { kind: 'disabled' | 'enabled' | 'system' }) {
   if (kind === 'disabled') {
-    return <Badge className="bg-slate-800 text-slate-500 border-slate-700">{t('disabled')}</Badge>
+    return <Badge className="bg-muted text-muted-foreground border-input">{t('disabled')}</Badge>
   }
   if (kind === 'system') {
     return <Badge className="bg-purple-500/10 text-purple-400 border-purple-800">System</Badge>
@@ -21,7 +21,7 @@ export function StatusBadge({ kind }: { kind: 'disabled' | 'enabled' | 'system' 
 
 export function TypeBadge({ children }: { children: ReactNode }) {
   return (
-    <Badge className="bg-slate-800 text-slate-300 border-slate-700 justify-center font-mono">
+    <Badge className="bg-muted text-foreground/90 border-input justify-center font-mono">
       {children}
     </Badge>
   )

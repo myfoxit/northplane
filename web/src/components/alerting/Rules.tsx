@@ -3,10 +3,11 @@
 // feature: demo event JSON -> POST :test -> matched count + would-open alerts.
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { FlaskConical, Loader2 } from 'lucide-react'
 import { post, resourceApi } from '../../api'
 import type { AlertRule, AlertGroup, EscalationPolicy, RuleTestResult, Severity } from '../../types'
 import { sevColor } from '../../types'
-import { Badge, Button, Dialog, Empty, Table } from '../ui'
+import { Badge, Button, Dialog, Empty, ErrorState, Table } from '../ui'
 import { Field, FormError, KVEditor, DurationInput, TextArea, SubmitRow, DeleteButton, useSave } from '../forms'
 import { Input } from '../ui'
 import { t } from '../../i18n'
@@ -32,7 +33,7 @@ function emptyRule(): AlertRule {
 }
 
 export function RulesTab() {
-  const { data: rules } = useQuery({ queryKey: rulesApi.queryKey, queryFn: rulesApi.list })
+  const { data: rules, isError, error, refetch } = useQuery({ queryKey: rulesApi.queryKey, queryFn: rulesApi.list })
   const { data: groups } = useQuery({ queryKey: groupsApi.queryKey, queryFn: groupsApi.list })
   const { data: policies } = useQuery({ queryKey: policiesApi.queryKey, queryFn: policiesApi.list })
   const [editing, setEditing] = useState<{ rule: AlertRule; etag: number } | null>(null)
@@ -43,6 +44,10 @@ export function RulesTab() {
     setEditing({ rule: data, etag })
   }
 
+  if (isError && !rules) {
+    return <div className="p-8"><ErrorState error={error} onRetry={() => refetch()} /></div>
+  }
+
   return (
     <div className="space-y-3">
       <div className="flex justify-end">
@@ -51,14 +56,14 @@ export function RulesTab() {
       {(rules?.length ?? 0) === 0 ? <Empty text={t('empty')} /> : (
         <Table head={[t('name'), t('severity'), t('matchExpression'), t('escalations'), '', t('actions')]}>
           {rules!.map((r) => (
-            <tr key={r.name} className="hover:bg-slate-800/30">
-              <td className="px-3 py-2 font-medium text-slate-200">{r.name}</td>
+            <tr key={r.name} className="hover:bg-muted/30">
+              <td className="px-3 py-2 font-medium text-foreground">{r.name}</td>
               <td className="px-3 py-2"><Badge className={sevColor(r.severity)}>{r.severity}</Badge></td>
-              <td className="px-3 py-2 font-mono text-xs text-slate-400">
-                {r.heartbeat ? <span className="text-slate-500">♥ {r.heartbeat.source} / {r.heartbeat.expectEvery}</span> : excerpt(r.match)}
+              <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
+                {r.heartbeat ? <span className="text-muted-foreground">♥ {r.heartbeat.source} / {r.heartbeat.expectEvery}</span> : excerpt(r.match)}
               </td>
-              <td className="px-3 py-2 text-xs text-slate-400">{r.escalationPolicy ?? '—'}</td>
-              <td className="px-3 py-2">{r.disabled && <Badge className="bg-slate-800 text-slate-500 border-slate-700">{t('disabled')}</Badge>}</td>
+              <td className="px-3 py-2 text-xs text-muted-foreground">{r.escalationPolicy ?? '—'}</td>
+              <td className="px-3 py-2">{r.disabled && <Badge className="bg-muted text-muted-foreground border-input">{t('disabled')}</Badge>}</td>
               <td className="px-3 py-2">
                 <div className="flex gap-1 justify-end">
                   <RowTestButton rule={r} />
@@ -94,7 +99,7 @@ function RowTestButton({ rule }: { rule: AlertRule }) {
   }
   return (
     <>
-      <Button size="sm" variant="ghost" title={t('testRule')} onClick={run} disabled={busy}>⚗</Button>
+      <Button size="sm" variant="ghost" title={t('testRule')} aria-label={t('testRule')} onClick={run} disabled={busy}><FlaskConical size={13} /></Button>
       {(res || err) && (
         <Dialog open onClose={() => { setRes(null); setErr(null) }} title={`${t('testRule')}: ${rule.name}`} size="md">
           <FormError error={err} />
@@ -108,16 +113,16 @@ function RowTestButton({ rule }: { rule: AlertRule }) {
 function TestResultView({ res }: { res: RuleTestResult }) {
   return (
     <div className="space-y-2 text-sm">
-      <p className="text-slate-300">
-        <span className="font-semibold text-slate-100">{res.matched}</span> Events würden matchen,{' '}
-        <span className="font-semibold text-slate-100">{res.wouldOpen?.length ?? 0}</span> Alarme entstehen.
+      <p className="text-foreground/90">
+        <span className="font-semibold text-foreground">{res.matched}</span> Events würden matchen,{' '}
+        <span className="font-semibold text-foreground">{res.wouldOpen?.length ?? 0}</span> Alarme entstehen.
       </p>
       {(res.wouldOpen?.length ?? 0) > 0 && (
         <div className="space-y-1">
           {res.wouldOpen!.map((a, i) => (
-            <div key={i} className="flex items-center gap-2 bg-slate-900/60 border border-slate-800 rounded-md px-2 py-1">
+            <div key={i} className="flex items-center gap-2 bg-card/60 border border-border rounded-md px-2 py-1">
               <Badge className={sevColor(a.severity)}>{a.severity}</Badge>
-              <span className="text-xs text-slate-300 font-mono truncate">{a.title}</span>
+              <span className="text-xs text-foreground/90 font-mono truncate">{a.title}</span>
             </div>
           ))}
         </div>
@@ -164,12 +169,12 @@ function RuleDialog({ state, groups, policies, onClose }: {
 
         {/* Quelle: CEL match XOR heartbeat */}
         <div>
-          <span className="text-xs text-slate-400 font-medium">Quelle</span>
+          <span className="text-xs text-muted-foreground font-medium">Quelle</span>
           <div className="flex gap-4 mt-1 mb-2">
-            <label className="flex items-center gap-1.5 text-sm text-slate-300 cursor-pointer">
+            <label className="flex items-center gap-1.5 text-sm text-foreground/90 cursor-pointer">
               <input type="radio" checked={source === 'cel'} onChange={() => setSource('cel')} /> CEL-Match
             </label>
-            <label className="flex items-center gap-1.5 text-sm text-slate-300 cursor-pointer">
+            <label className="flex items-center gap-1.5 text-sm text-foreground/90 cursor-pointer">
               <input type="radio" checked={source === 'heartbeat'} onChange={() => setSource('heartbeat')} /> Heartbeat
             </label>
           </div>
@@ -220,14 +225,14 @@ function RuleDialog({ state, groups, policies, onClose }: {
         <div className="grid grid-cols-2 gap-3">
           <Field label={t('escalations')}>
             <select value={r.escalationPolicy ?? ''} onChange={(e) => set({ escalationPolicy: e.target.value || undefined })}
-              className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 w-full focus:outline-none focus:border-blue-500 cursor-pointer">
+              className="bg-card border border-input rounded-lg px-3 py-1.5 text-sm text-foreground w-full focus:border-ring cursor-pointer">
               <option value="">— {t('none')} —</option>
               {policies.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
             </select>
           </Field>
           <Field label="Gruppe">
             <select value={r.groupId ?? ''} onChange={(e) => set({ groupId: e.target.value || undefined })}
-              className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 w-full focus:outline-none focus:border-blue-500 cursor-pointer">
+              className="bg-card border border-input rounded-lg px-3 py-1.5 text-sm text-foreground w-full focus:border-ring cursor-pointer">
               <option value="">— {t('none')} —</option>
               {groups.map((g) => <option key={g.name} value={g.name}>{g.name}</option>)}
             </select>
@@ -276,10 +281,10 @@ function TestPanel({ rule }: { rule: AlertRule }) {
   }
 
   return (
-    <div className="border border-slate-800 rounded-lg p-3 bg-slate-900/40 space-y-2">
+    <div className="border border-border rounded-lg p-3 bg-card/40 space-y-2">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-slate-300">⚗ {t('testRule')} — Demo-Event</span>
-        <Button size="sm" type="button" onClick={run} disabled={busy}>{busy ? '…' : t('run')}</Button>
+        <span className="text-xs font-semibold text-foreground/90 inline-flex items-center gap-1"><FlaskConical size={13} /> {t('testRule')} — Demo-Event</span>
+        <Button size="sm" type="button" onClick={run} disabled={busy}>{busy ? <Loader2 className="animate-spin" size={14} /> : t('run')}</Button>
       </div>
       <TextArea value={json} onChange={(e) => setJson(e.target.value)} rows={6} />
       <FormError error={err} />

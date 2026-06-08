@@ -11,10 +11,21 @@ import tailwindcss from '@tailwindcss/vite'
 // (login/setup/status) work unchanged. NP_API overrides the target
 // (default matches scripts/dev.sh).
 const target = process.env.NP_API ?? 'http://127.0.0.1:8443'
-const proxy = Object.fromEntries(
-  ['/api', '/auth', '/login', '/setup', '/status', '/mcp', '/metrics', '/healthz', '/readyz']
-    .map((path) => [path, { target, changeOrigin: true }]),
-)
+
+// The live SSE stream is long-lived and must never get a response or
+// inactivity timeout, or the update channel would be cut periodically.
+// Every other backend route gets a bounded timeout so a request issued
+// while `make dev` is rebuilding/restarting northplaned fails fast
+// (react-query then retries against the now-up backend) instead of
+// hanging on an open socket for ~20s.
+const PROXY_TIMEOUT_MS = 8000
+type ProxyEntry = { target: string; changeOrigin: boolean; timeout?: number; proxyTimeout?: number }
+const proxy: Record<string, ProxyEntry> = {
+  '/api/v1/stream': { target, changeOrigin: true }, // SSE: no timeout (listed first so it wins over /api)
+}
+for (const path of ['/api', '/auth', '/login', '/setup', '/status', '/mcp', '/metrics', '/healthz', '/readyz']) {
+  proxy[path] = { target, changeOrigin: true, timeout: PROXY_TIMEOUT_MS, proxyTimeout: PROXY_TIMEOUT_MS }
+}
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],

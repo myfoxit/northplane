@@ -1,26 +1,99 @@
 @import "tailwindcss";
 
+/*
+ * Design tokens (SPEC §12.1). shadcn-style two layers: raw values live on
+ * :root — swap them (or add a light theme) to re-theme — and the @theme
+ * inline block exposes them to Tailwind so `bg-card`, `text-muted-
+ * foreground`, `border-border`, `rounded-lg`, … resolve to the variables.
+ * The stock Tailwind palette (slate/blue/emerald/…) stays available, so
+ * call sites that haven't migrated yet keep rendering.
+ */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+
+  /* slightly rounder than the Tailwind defaults — applied app-wide */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.875rem;
+}
+
 :root {
   color-scheme: dark;
+
+  --background: #020617;          /* slate-950 */
+  --foreground: #e2e8f0;          /* slate-200 */
+  --card: #0f172a;                /* slate-900 */
+  --card-foreground: #e2e8f0;
+  --muted: #1e293b;               /* slate-800 — secondary surfaces, chips */
+  --muted-foreground: #94a3b8;    /* slate-400 — secondary text */
+  --accent: #334155;              /* slate-700 — hover / active surfaces */
+  --accent-foreground: #f1f5f9;   /* slate-100 */
+  --border: #1e293b;              /* slate-800 */
+  --input: #334155;               /* slate-700 — control borders */
+  --ring: #3b82f6;                /* blue-500 — focus ring */
+  --primary: #3b82f6;             /* blue-500 — accent / active */
+  --primary-foreground: #f8fafc;  /* slate-50 */
+  --destructive: #dc2626;         /* red-600 — destructive surfaces */
+  --destructive-foreground: #fef2f2;
+  --success: #34d399;             /* emerald-400 — OK state */
+  --warning: #fbbf24;             /* amber-400 — WARN state */
+  --danger: #f87171;              /* red-400 — CRIT state */
 }
 
-html, body, #root {
-  height: 100%;
-}
+html, body, #root { height: 100%; }
 
 body {
-  background: #020617;
-  color: #e2e8f0;
+  background: var(--background);
+  color: var(--foreground);
   -webkit-font-smoothing: antialiased;
   font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 
+/* One visible keyboard-focus indicator everywhere (A-15.x accessibility). */
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
 /* uPlot dark-theme adjustments */
-.u-legend { color: #94a3b8; font-size: 11px; }
+.u-legend { color: var(--muted-foreground); font-size: 11px; }
 .u-inline tr { margin-right: 8px; }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 6px; }
+::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: var(--accent); }
 ::-webkit-scrollbar-track { background: transparent; }
 
 details > summary::-webkit-details-marker { display: none; }
+
+/* Overlay / popover enter transitions (no extra dependency). */
+@keyframes np-overlay-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes np-content-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.985); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.np-overlay-in { animation: np-overlay-in 120ms ease-out; }
+.np-content-in { animation: np-content-in 150ms cubic-bezier(0.16, 1, 0.3, 1); }
+
+@media (prefers-reduced-motion: reduce) {
+  .np-overlay-in, .np-content-in { animation: none; }
+}

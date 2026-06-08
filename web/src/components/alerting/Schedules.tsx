@@ -3,6 +3,7 @@
 // timeline and an hours-per-person stats card. Consumed by OnCall.tsx.
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { X, Download, Phone } from 'lucide-react'
 import { get, post, fmtTime, resourceApi } from '../../api'
 import type { Schedule, Rotation, Contact, ScheduleOverride, OnCallNow } from '../../types'
 import { Badge, Button, Card, Dialog, Empty, Input, Table } from '../ui'
@@ -57,10 +58,10 @@ export function SchedulesManager() {
       {(data?.length ?? 0) === 0 ? <Empty text="Keine Dienstpläne." /> : (
         <Table head={[t('name'), t('timezone'), 'Layer', t('actions')]}>
           {data!.map((s) => (
-            <tr key={s.name} className="hover:bg-slate-800/30">
-              <td className="px-3 py-2 font-medium text-slate-200">{s.name}</td>
-              <td className="px-3 py-2 text-xs text-slate-400 font-mono">{s.timeZone}</td>
-              <td className="px-3 py-2 text-xs text-slate-400">{s.layers?.length ?? 0}</td>
+            <tr key={s.name} className="hover:bg-muted/30">
+              <td className="px-3 py-2 font-medium text-foreground">{s.name}</td>
+              <td className="px-3 py-2 text-xs text-muted-foreground font-mono">{s.timeZone}</td>
+              <td className="px-3 py-2 text-xs text-muted-foreground">{s.layers?.length ?? 0}</td>
               <td className="px-3 py-2 text-right"><Button size="sm" onClick={() => open(s.name)}>{t('edit')}</Button></td>
             </tr>
           ))}
@@ -104,7 +105,7 @@ function ScheduleDialog({ state, onClose }: { state: { schedule: Schedule; etag:
         </div>
 
         <div className="space-y-2">
-          <span className="text-xs text-slate-400 font-medium">Layer ({t('rotation')})</span>
+          <span className="text-xs text-muted-foreground font-medium">Layer ({t('rotation')})</span>
           {s.layers.map((layer, i) => (
             <LayerCard key={i} index={i} layer={layer} suggestions={suggestions}
               onChange={(l) => setLayer(i, l)}
@@ -129,10 +130,10 @@ function LayerCard({ index, layer, suggestions, onChange, onRemove }: {
 }) {
   const set = (patch: Partial<Rotation>) => onChange({ ...layer, ...patch })
   return (
-    <Card className="border-slate-800/80">
+    <Card className="border-border/80">
       <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-semibold text-slate-400">Layer {index + 1}</span>
-        {onRemove && <Button size="sm" variant="ghost" type="button" onClick={onRemove} title={t('remove')}>✕</Button>}
+        <span className="text-xs font-semibold text-muted-foreground">Layer {index + 1}</span>
+        {onRemove && <Button size="sm" variant="ghost" type="button" onClick={onRemove} title={t('remove')} aria-label={t('remove')}><X size={13} /></Button>}
       </div>
       <div className="grid grid-cols-2 gap-3">
         <Field label={t('name')} hint="optional">
@@ -140,7 +141,7 @@ function LayerCard({ index, layer, suggestions, onChange, onRemove }: {
         </Field>
         <Field label="Rhythmus">
           <select value={layer.unit} onChange={(e) => set({ unit: e.target.value as Rotation['unit'] })}
-            className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 w-full focus:outline-none focus:border-blue-500 cursor-pointer">
+            className="bg-card border border-input rounded-lg px-3 py-1.5 text-sm text-foreground w-full focus:border-ring cursor-pointer">
             <option value="daily">täglich</option>
             <option value="weekly">wöchentlich</option>
             <option value="custom">benutzerdefiniert</option>
@@ -179,14 +180,14 @@ export function OnCallNowCards() {
     <div className="grid lg:grid-cols-3 gap-3">
       {(now ?? []).map((entry) => (
         <Card key={entry.schedule} title={entry.schedule}
-          actions={<a className="text-xs text-slate-500 hover:text-slate-300"
-            href={`/api/v1/schedules/${encodeURIComponent(entry.schedule)}/ics`}>⇩ ICS</a>}>
+          actions={<a className="text-xs text-muted-foreground hover:text-foreground/90 inline-flex items-center gap-1"
+            href={`/api/v1/schedules/${encodeURIComponent(entry.schedule)}/ics`}><Download size={13} /> ICS</a>}>
           {(entry.contacts?.length ?? 0) === 0
             ? <Empty text="niemand im Dienst" />
             : entry.contacts.map((c) => (
               <div key={c.id ?? c.name} className="py-1">
-                <div className="text-base font-semibold text-slate-200">☎ {c.name}</div>
-                <div className="text-xs text-slate-500">{c.email} {c.phone && `· ${c.phone}`}</div>
+                <div className="text-base font-semibold text-foreground inline-flex items-center gap-1.5"><Phone size={14} /> {c.name}</div>
+                <div className="text-xs text-muted-foreground">{c.email} {c.phone && `· ${c.phone}`}</div>
               </div>
             ))}
         </Card>
@@ -217,14 +218,14 @@ export function ScheduleDetail({ schedule }: { schedule: string }) {
       <TimelineBlocks shifts={shifts ?? []} nameOf={nameOf} />
       {(stats?.length ?? 0) > 0 && (
         <div className="mt-3">
-          <div className="text-xs text-slate-400 font-medium mb-1">{t('hours')} pro Person (30 Tage)</div>
+          <div className="text-xs text-muted-foreground font-medium mb-1">{t('hours')} pro Person (30 Tage)</div>
           <Table head={['Kontakt', t('hours'), 'Wochenende', t('overrides')]}>
             {stats!.map((row) => (
               <tr key={row.contactId}>
-                <td className="px-3 py-1.5 text-slate-200">{row.contact || nameOf(row.contactId)}</td>
-                <td className="px-3 py-1.5 tabular-nums text-slate-300">{row.hours.toFixed(1)}</td>
-                <td className="px-3 py-1.5 tabular-nums text-slate-400">{row.weekendHours.toFixed(1)}</td>
-                <td className="px-3 py-1.5 tabular-nums text-slate-400">{row.overrides}</td>
+                <td className="px-3 py-1.5 text-foreground">{row.contact || nameOf(row.contactId)}</td>
+                <td className="px-3 py-1.5 tabular-nums text-foreground/90">{row.hours.toFixed(1)}</td>
+                <td className="px-3 py-1.5 tabular-nums text-muted-foreground">{row.weekendHours.toFixed(1)}</td>
+                <td className="px-3 py-1.5 tabular-nums text-muted-foreground">{row.overrides}</td>
               </tr>
             ))}
           </Table>
@@ -254,7 +255,7 @@ function TimelineBlocks({ shifts, nameOf }: { shifts: Shift[]; nameOf: (id: stri
           </div>
         ))}
       </div>
-      <div className="flex justify-between text-[11px] text-slate-600 tabular-nums">
+      <div className="flex justify-between text-[11px] text-muted-foreground/70 tabular-nums">
         <span>{fmtTime(shifts[0].start)}</span>
         <span>{fmtTime(shifts[shifts.length - 1].end)}</span>
       </div>
@@ -303,11 +304,11 @@ function OverrideDialog({ schedule, onClose }: { schedule: string; onClose: () =
   return (
     <Dialog open onClose={onClose} title={`${t('overrides')}: ${schedule}`} size="lg">
       <div className="space-y-4">
-        <form onSubmit={onSubmit} className="space-y-3 border border-slate-800 rounded-lg p-3 bg-slate-900/40">
+        <form onSubmit={onSubmit} className="space-y-3 border border-border rounded-lg p-3 bg-card/40">
           <div className="grid grid-cols-2 gap-3">
             <Field label="Kontakt" required>
               <select value={contactId} onChange={(e) => setContactId(e.target.value)}
-                className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 w-full focus:outline-none focus:border-blue-500 cursor-pointer">
+                className="bg-card border border-input rounded-lg px-3 py-1.5 text-sm text-foreground w-full focus:border-ring cursor-pointer">
                 <option value="">— wählen —</option>
                 {contacts.map((c) => <option key={c.name} value={c.id ?? c.name}>{c.name}</option>)}
               </select>
@@ -325,14 +326,14 @@ function OverrideDialog({ schedule, onClose }: { schedule: string; onClose: () =
         </form>
 
         <div>
-          <div className="text-xs text-slate-400 font-medium mb-1">Aktive Overrides</div>
+          <div className="text-xs text-muted-foreground font-medium mb-1">Aktive Overrides</div>
           {overrideShifts.length === 0 ? <Empty text="Keine Overrides." /> : (
             <div className="space-y-1">
               {overrideShifts.map((o, i) => (
-                <div key={i} className="flex items-center gap-2 bg-slate-900/60 border border-slate-800 rounded-md px-3 py-1.5">
+                <div key={i} className="flex items-center gap-2 bg-card/60 border border-border rounded-md px-3 py-1.5">
                   <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/30">Override</Badge>
-                  <span className="text-sm text-slate-200">{nameOf(o.contactId)}</span>
-                  <span className="text-xs text-slate-500 ml-auto tabular-nums">{fmtTime(o.start)} – {fmtTime(o.end)}</span>
+                  <span className="text-sm text-foreground">{nameOf(o.contactId)}</span>
+                  <span className="text-xs text-muted-foreground ml-auto tabular-nums">{fmtTime(o.start)} – {fmtTime(o.end)}</span>
                 </div>
               ))}
             </div>

@@ -7,10 +7,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { keepPreviousData, useQuery, useMutation } from '@tanstack/react-query'
 import { Link, useParams, useNavigate, useSearch } from '@tanstack/react-router'
 import { useVirtualizer } from '@tanstack/react-virtual'
+import { X, RefreshCw } from 'lucide-react'
 import { get, post, del, fmtTime, fmtAgo, queryClient, type ListResponse } from '../api'
 import type { NPObject, NPEvent, SeriesResult, ObjectSpec, ObjectsSearch } from '../types'
 import { stateLabel, stateIcon, stateColor } from '../types'
-import { Button, Card, Input, Empty, LabelChips, Badge } from '../components/ui'
+import { Button, Card, Input, Empty, LabelChips, Badge, ErrorState } from '../components/ui'
 import { Select } from '../components/forms'
 import { Chart } from '../components/Chart'
 import { DowntimeDialog } from '../components/AckDialog'
@@ -64,7 +65,7 @@ export function ObjectsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selector, query])
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['objects', selector, query],
     queryFn: () => get<ListResponse<NPObject>>(
       `/objects?selector=${encodeURIComponent(selector)}&q=${encodeURIComponent(query)}&limit=2000`),
@@ -96,10 +97,14 @@ export function ObjectsPage() {
     mutationFn: (id: string) => post(`/objects/${id}/check-now`),
   })
 
+  if (isError && !data) {
+    return <div className="p-8"><ErrorState error={error} onRetry={() => refetch()} /></div>
+  }
+
   return (
     <div className="space-y-3 h-full flex flex-col">
       <div className="flex items-center justify-between gap-2">
-        <h1 className="text-lg font-bold">{t('objects')} <span className="text-slate-500 text-sm">({rows.length})</span></h1>
+        <h1 className="text-lg font-bold">{t('objects')} <span className="text-muted-foreground text-sm">({rows.length})</span></h1>
         <div className="flex gap-2">
           <Button onClick={() => setCreate('host')}>+ {t('newHost')}</Button>
           <Button onClick={() => setCreate('service')}>+ {t('newService')}</Button>
@@ -121,36 +126,36 @@ export function ObjectsPage() {
         </Select>
         {(stateFilter || kindFilter) && (
           <Button variant="ghost" onClick={() => patchSearch({ state: undefined, kind: undefined })}>
-            ✕ Filter zurücksetzen
+            <X size={14} /> Filter zurücksetzen
           </Button>
         )}
       </div>
       {isLoading && <Empty text={t('loading')} />}
-      <div ref={parentRef} className="flex-1 overflow-auto border border-slate-800 rounded-xl bg-slate-900/40 min-h-[420px]">
+      <div ref={parentRef} className="flex-1 overflow-auto border border-border rounded-xl bg-card/40 min-h-[420px]">
         <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
           {virtualizer.getVirtualItems().map((vi) => {
             const o = rows[vi.index]
             return (
               <div
                 key={o.id}
-                className="absolute left-0 right-0 flex items-center gap-3 px-3 border-b border-slate-800/50 hover:bg-slate-800/40 text-sm group"
+                className="absolute left-0 right-0 flex items-center gap-3 px-3 border-b border-border/50 hover:bg-muted/40 text-sm group"
                 style={{ top: vi.start, height: vi.size }}
               >
                 <Link to="/objects/$id" params={{ id: o.id }} className="flex items-center gap-3 flex-1 min-w-0 h-full">
-                  <span className={`w-24 shrink-0 font-semibold ${o.state ? stateColor(o.kind, o.state.state) : 'text-slate-500'}`}>
+                  <span className={`w-24 shrink-0 font-semibold ${o.state ? stateColor(o.kind, o.state.state) : 'text-muted-foreground'}`}>
                     {o.state?.lastCheck
                       ? `${stateIcon(o.kind, o.state.state)} ${stateLabel(o.kind, o.state.state)}`
                       : `○ ${t('pending')}`}
                   </span>
-                  <span className="w-16 shrink-0 text-xs text-slate-500 uppercase">{o.kind}</span>
-                  <span className="text-slate-200 font-medium truncate w-64 shrink-0">
+                  <span className="w-16 shrink-0 text-xs text-muted-foreground uppercase">{o.kind}</span>
+                  <span className="text-foreground font-medium truncate w-64 shrink-0">
                     {o.kind === 'service' && o.hostName ? `${o.hostName} / ` : ''}{o.name}
                   </span>
-                  <span className="text-slate-500 text-xs truncate flex-1">{o.state?.output}</span>
+                  <span className="text-muted-foreground text-xs truncate flex-1">{o.state?.output}</span>
                   <LabelChips labels={o.labels} />
                 </Link>
                 <div className="shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Button size="sm" variant="ghost" onClick={() => recheck.mutate(o.id)} title={t('checkNow')}>↻</Button>
+                  <Button size="sm" variant="ghost" onClick={() => recheck.mutate(o.id)} title={t('checkNow')} aria-label={t('checkNow')}><RefreshCw size={13} /></Button>
                   <Button size="sm" variant="ghost" onClick={() => setEdit(o)}>{t('edit')}</Button>
                   <ObjectDeleteButton kind={o.kind} onDelete={() => remove.mutate(o.id)} />
                 </div>
@@ -222,8 +227,8 @@ export function ObjectDetailPage() {
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <div className="text-xs text-slate-500">
-            <Link to="/objects" className="hover:text-slate-300">{t('objects')}</Link>
+          <div className="text-xs text-muted-foreground">
+            <Link to="/objects" className="hover:text-foreground/90">{t('objects')}</Link>
             {' / '}{obj.folder !== '/' ? `${obj.folder} / ` : ''}
             {obj.kind === 'service' && obj.hostName ? `${obj.hostName} / ` : ''}
           </div>
@@ -232,7 +237,7 @@ export function ObjectDetailPage() {
             {cs && (
               <span className={`text-base font-bold ${stateColor(obj.kind, cs.state)}`}>
                 {stateIcon(obj.kind, cs.state)} {stateLabel(obj.kind, cs.state)}
-                <span className="text-slate-500 font-normal text-xs ml-1">
+                <span className="text-muted-foreground font-normal text-xs ml-1">
                   ({cs.stateType} {cs.attempt}x)
                 </span>
               </span>
@@ -242,7 +247,7 @@ export function ObjectDetailPage() {
         </div>
         <div className="flex gap-2 shrink-0 items-center">
           <Button variant="primary" onClick={() => setEditOpen(true)}>{t('edit')}</Button>
-          <Button onClick={() => recheck.mutate()} disabled={recheck.isPending}>↻ {t('checkNow')}</Button>
+          <Button onClick={() => recheck.mutate()} disabled={recheck.isPending}><RefreshCw size={14} /> {t('checkNow')}</Button>
           <Button onClick={() => setDtOpen(true)}>{t('downtime')}</Button>
           <ObjectDeleteButton kind={obj.kind} size="md" onDelete={() => remove.mutate()} />
         </div>
@@ -276,7 +281,7 @@ export function ObjectDetailPage() {
           </dl>
         </Card>
         <Card title={`${t('effectiveConfig')}${effective?.templateChain?.length ? ` — ${t('templateChain')}: ${effective.templateChain.join(' → ')}` : ''}`}>
-          <pre className="text-xs text-slate-400 overflow-auto max-h-64 font-mono">
+          <pre className="text-xs text-muted-foreground overflow-auto max-h-64 font-mono">
             {JSON.stringify(effective?.spec ?? obj.spec, null, 2)}
           </pre>
         </Card>
@@ -298,10 +303,10 @@ export function ObjectDetailPage() {
           : (
             <div className="space-y-1 text-sm">
               {events!.items!.map((e) => (
-                <div key={e.id} className="flex gap-3 py-1 border-b border-slate-800/50 last:border-0">
-                  <span className="text-slate-600 text-xs tabular-nums w-36 shrink-0">{fmtTime(e.ts)}</span>
-                  <Badge className="bg-slate-800 text-slate-400 border-slate-700">{e.type}</Badge>
-                  <span className="text-slate-400 text-xs truncate">
+                <div key={e.id} className="flex gap-3 py-1 border-b border-border/50 last:border-0">
+                  <span className="text-muted-foreground/70 text-xs tabular-nums w-36 shrink-0">{fmtTime(e.ts)}</span>
+                  <Badge className="bg-muted text-muted-foreground border-input">{e.type}</Badge>
+                  <span className="text-muted-foreground text-xs truncate">
                     {String((e.payload as Record<string, unknown>).output ??
                       (e.payload as Record<string, unknown>).summary ?? JSON.stringify(e.payload))}
                   </span>
@@ -319,8 +324,8 @@ export function ObjectDetailPage() {
 function Row({ k, v, mono }: { k: string; v?: string; mono?: boolean }) {
   return (
     <div className="flex gap-2">
-      <dt className="text-slate-500 w-36 shrink-0">{k}</dt>
-      <dd className={`text-slate-300 min-w-0 break-words ${mono ? 'font-mono text-xs pt-0.5' : ''}`}>{v || '—'}</dd>
+      <dt className="text-muted-foreground w-36 shrink-0">{k}</dt>
+      <dd className={`text-foreground/90 min-w-0 break-words ${mono ? 'font-mono text-xs pt-0.5' : ''}`}>{v || '—'}</dd>
     </div>
   )
 }
@@ -329,8 +334,8 @@ function Row({ k, v, mono }: { k: string; v?: string; mono?: boolean }) {
 function Cfg({ k, v, mono }: { k: string; v?: string; mono?: boolean }) {
   return (
     <div>
-      <div className="text-[11px] text-slate-500 uppercase tracking-wider">{k}</div>
-      <div className={`text-slate-200 ${mono ? 'font-mono text-xs' : 'tabular-nums'}`}>{v || '—'}</div>
+      <div className="text-[11px] text-muted-foreground uppercase tracking-wider">{k}</div>
+      <div className={`text-foreground ${mono ? 'font-mono text-xs' : 'tabular-nums'}`}>{v || '—'}</div>
     </div>
   )
 }

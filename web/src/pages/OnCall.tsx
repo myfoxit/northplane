@@ -4,6 +4,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { resourceApi } from '../api'
 import type { Schedule } from '../types'
+import { ErrorState } from '../components/ui'
 import { t } from '../i18n'
 import {
   OnCallNowCards, SchedulesManager, ScheduleDetail,
@@ -12,7 +13,10 @@ import {
 const schedulesApi = resourceApi<Schedule>('schedules')
 
 export function OnCallPage() {
-  const { data: schedules } = useQuery({ queryKey: schedulesApi.queryKey, queryFn: schedulesApi.list })
+  const { data: schedules, isError, error, refetch } = useQuery({ queryKey: schedulesApi.queryKey, queryFn: schedulesApi.list })
+  if (isError && !schedules) {
+    return <div className="p-8"><ErrorState error={error} onRetry={() => refetch()} /></div>
+  }
   return (
     <div className="space-y-4">
       <h1 className="text-lg font-bold">{t('oncall')}</h1>

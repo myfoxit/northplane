@@ -34,14 +34,14 @@ export function UsersTab() {
       <Table head={[t('name'), t('email'), t('permissions'), t('status'), t('lastSeen'), '']}>
         {(data ?? []).map((u) => (
           <tr key={u.id}>
-            <td className="px-3 py-2 text-slate-200">
+            <td className="px-3 py-2 text-foreground">
               {u.name}
               {!u.local && <Badge className="ml-2 bg-sky-500/10 text-sky-400 border-sky-800">OIDC</Badge>}
             </td>
-            <td className="px-3 py-2 text-slate-400 text-xs">{u.email}</td>
-            <td className="px-3 py-2 text-xs text-slate-400">{u.roles?.join(', ') || '—'}</td>
+            <td className="px-3 py-2 text-muted-foreground text-xs">{u.email}</td>
+            <td className="px-3 py-2 text-xs text-muted-foreground">{u.roles?.join(', ') || '—'}</td>
             <td className="px-3 py-2">{u.disabled ? <StatusBadge kind="disabled" /> : <StatusBadge kind="enabled" />}</td>
-            <td className="px-3 py-2 text-xs text-slate-500 tabular-nums">{u.lastSeenAt ? fmtTime(u.lastSeenAt) : '—'}</td>
+            <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">{u.lastSeenAt ? fmtTime(u.lastSeenAt) : '—'}</td>
             <td className="px-3 py-2">
               <RowActions>
                 {u.local && <Button size="sm" variant="ghost" onClick={() => setPwUser(u)}>{t('setPassword')}</Button>}
@@ -119,7 +119,7 @@ function UserDialog({ user, roleNames, onClose }: {
         <Field label={t('permissions')} hint="Rollen-Namen">
           <ListEditor value={roles} onChange={setRoles} placeholder="admin" suggestions={roleNames} />
         </Field>
-        <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+        <label className="flex items-center gap-2 text-sm text-foreground/90 cursor-pointer">
           <input type="checkbox" checked={disabled} onChange={(e) => setDisabled(e.target.checked)} />
           {t('disabled')}
         </label>

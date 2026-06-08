@@ -7,6 +7,8 @@ import {
 import { queryClient } from './api'
 import type { AlertsSearch, ObjectsSearch } from './types'
 import { Layout } from './components/Layout'
+import { ErrorState } from './components/ui'
+import { t } from './i18n'
 import { OverviewPage } from './pages/Overview'
 import { ProblemsPage } from './pages/Problems'
 import { ObjectsPage, ObjectDetailPage } from './pages/Objects'
@@ -71,7 +73,21 @@ const routes = [
   createRoute({ getParentRoute: () => rootRoute, path: '/admin', component: AdminPage }),
 ]
 
-const router = createRouter({ routeTree: rootRoute.addChildren(routes) })
+const router = createRouter({
+  routeTree: rootRoute.addChildren(routes),
+  // A failed route render shows the shared error UI (with retry) instead
+  // of a blank screen; unknown paths get a real 404.
+  defaultErrorComponent: ({ error, reset }) => (
+    <div className="p-8"><ErrorState error={error} onRetry={reset} /></div>
+  ),
+  defaultNotFoundComponent: () => (
+    <div className="flex flex-col items-center justify-center gap-2 p-12 text-center">
+      <div className="text-4xl font-bold text-muted-foreground">404</div>
+      <div className="text-sm text-muted-foreground">{window.location.pathname}</div>
+      <a href="/" className="text-sm text-primary hover:underline mt-1">{t('overview')}</a>
+    </div>
+  ),
+})
 
 declare module '@tanstack/react-router' {
   interface Register { router: typeof router }

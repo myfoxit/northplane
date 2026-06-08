@@ -59,11 +59,11 @@ export function DowntimeDialog({ objectId, objectName, open, onClose }:
     <Dialog open={open} onClose={onClose} title={`${t('downtime')}${objectName ? ` — ${objectName}` : ''}`}>
       <div className="space-y-3">
         <div>
-          <label className="text-xs text-slate-400 block mb-1">{t('hours')}</label>
+          <label className="text-xs text-muted-foreground block mb-1">{t('hours')}</label>
           <Input type="number" min="0.5" step="0.5" value={hours} onChange={(e) => setHours(e.target.value)} />
         </div>
         <div>
-          <label className="text-xs text-slate-400 block mb-1">{t('comment')} *</label>
+          <label className="text-xs text-muted-foreground block mb-1">{t('comment')} *</label>
           <Input value={comment} autoFocus onChange={(e) => setComment(e.target.value)} />
         </div>
       </div>
