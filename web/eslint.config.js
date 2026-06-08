@@ -6,7 +6,7 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  globalIgnores(['dist', 'coverage']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
@@ -65,6 +65,20 @@ export default defineConfig([
     files: ['src/pages/Objects.tsx'],
     rules: {
       'react-hooks/incompatible-library': 'off',
+    },
+  },
+  {
+    // Test files + the test harness use Vitest globals (describe/it/expect/vi,
+    // enabled via vitest.config.ts `globals:true`) and Node APIs (MSW server).
+    // Register those globals and relax the Fast-Refresh rule — test modules and
+    // the render helper intentionally export non-component helpers, and Fast
+    // Refresh never applies to them.
+    files: ['src/**/*.test.{ts,tsx}', 'src/test/**'],
+    languageOptions: {
+      globals: { ...globals.vitest, ...globals.node },
+    },
+    rules: {
+      'react-refresh/only-export-components': 'off',
     },
   },
 ])

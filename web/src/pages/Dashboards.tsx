@@ -7,6 +7,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import { ArrowLeft, ArrowRight, Maximize2, X, LayoutGrid, Pencil, Radar, Loader2 } from 'lucide-react'
 import { APIError, resourceApi } from '../api'
+import { dashboardDocSchema } from '../schemas'
 import type { DashboardDoc, DashboardWidget } from '../types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -23,7 +24,10 @@ import { widgetTypeLabel } from '../components/dash/util'
 import { ObjectPicker, MetricPicker } from '../components/dash/pickers'
 import { t } from '../i18n'
 
-const dashApi = resourceApi<DashboardDoc>('dashboards')
+// Pass the zod schema so the single-doc read validates the (opaque,
+// frontend-owned) widget JSON at the boundary — a malformed spec becomes one
+// clear APIError instead of an obscure crash inside a widget.
+const dashApi = resourceApi<DashboardDoc>('dashboards', dashboardDocSchema)
 
 // Radix SelectItem value cannot be "" — sentinel for the table widget's
 // empty scope ("Hosts + Services"), mapped back to undefined in the config.

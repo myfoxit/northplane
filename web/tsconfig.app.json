@@ -28,5 +28,9 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  /* Test files import vitest globals (describe/it/expect) and jsdom/MSW
+     helpers — keep them out of the strict app build (`tsc -b`). Vitest
+     typechecks them on its own (esbuild) against vitest.config.ts. */
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/test"]
 }
