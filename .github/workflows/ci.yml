@@ -31,6 +31,28 @@ jobs:
           path: internal/web/dist
           retention-days: 1
 
+  # Typed-codegen drift gate (ADR-10): regenerate web/src/types.gen.ts from the
+  # Go API's OpenAPI spec and fail if it differs from the committed file. A red
+  # diff means the Go API changed but the generated TS types weren't refreshed
+  # (run `make types` and commit). Needs both Go (to dump the spec offline via
+  # `northplaned openapi`) and Node (for the openapi-typescript codegen).
+  types:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: cd web && npm ci
+      - name: regenerate types and fail on drift
+        run: make types-check
+
   test:
     needs: ui
     strategy:

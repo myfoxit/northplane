@@ -1,0 +1,22 @@
+package model
+
+import "time"
+
+// {{.Pascal}} is a {{.Title}} configuration resource. It is stored as a
+// generic config document in the `resources` table (kind {{.ConstName}})
+// and round-trips through the standard CRUD endpoints. Add the
+// domain-specific fields your resource needs below the envelope fields.
+type {{.Pascal}} struct {
+	ID       string `json:"id"`
+	TenantID string `json:"tenantId"`
+	Name     string `json:"name"`
+
+	// --- domain fields (edit me) ---
+	Enabled bool   `json:"enabled,omitempty"`
+	Notes   string `json:"notes,omitempty"`
+
+	// --- envelope fields (managed by the store) ---
+	Version   int64     `json:"version"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}

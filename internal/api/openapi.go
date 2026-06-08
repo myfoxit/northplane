@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/northplane/northplane/internal/auth"
+	"github.com/northplane/northplane/internal/metrics"
 )
 
 // OpenAPI 3.1 generation from the route registry + Go types (ADR-10:
@@ -29,6 +30,24 @@ func (a *API) registerOpenAPI() {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write([]byte(docsHTML))
 	})
+}
+
+// OpenAPIDocument builds the same OpenAPI 3.1 document the server serves
+// at GET /api/openapi.json, but without any running dependencies. Route
+// registration only records metadata and installs handler closures (the
+// Store/Bus/… fields are dereferenced solely at request time), so a bare
+// API can enumerate every route and reflect every domain type. The CLI
+// (`northplaned openapi`) uses this for the typed-codegen pipeline so the
+// frontend's generated types can never silently drift from the Go API.
+func OpenAPIDocument(version string) map[string]any {
+	// Metrics is the one dependency touched at registration time: registerSystem
+	// calls Metrics.Collect to register a scrape-time collector callback (the
+	// callback body — which reads Bus/Hub/Sched/… — only runs on /metrics, never
+	// here). A fresh registry makes that call a harmless no-op, leaving every
+	// other dependency nil and untouched.
+	a := &API{Version: version, mux: http.NewServeMux(), Metrics: metrics.NewRegistry()}
+	a.registerAll()
+	return a.buildOpenAPI()
 }
 
 func (a *API) buildOpenAPI() map[string]any {

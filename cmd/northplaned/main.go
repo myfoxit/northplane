@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -14,6 +15,7 @@ import (
 	"syscall"
 
 	"github.com/northplane/northplane/internal/ai"
+	"github.com/northplane/northplane/internal/api"
 	"github.com/northplane/northplane/internal/auth"
 	"github.com/northplane/northplane/internal/bundle"
 	"github.com/northplane/northplane/internal/catalog"
@@ -50,6 +52,8 @@ func main() {
 		backupCmd(args)
 	case "mcp":
 		mcpCmd(args)
+	case "openapi":
+		openapiCmd(args)
 	case "bootstrap-admin":
 		bootstrapAdminCmd(args)
 	case "version", "--version", "-v":
@@ -77,6 +81,7 @@ Usage:
   northplaned backup     [-config …]       consistent backup to backup.target
   northplaned mcp        [-config …]       MCP server on stdio (NORTHPLANE_TOKEN auth)
   northplaned bootstrap-admin [-config …]  create the initial admin token
+  northplaned openapi                      print the OpenAPI 3.1 spec to stdout (no server needed)
   northplaned version
 
 Flags for most commands: -config /etc/northplane/config.yaml
@@ -372,6 +377,20 @@ func mcpCmd(args []string) {
 	log.Info("mcp: serving on stdio", "actor", principal.Name)
 	if err := mcp.RunStdio(ctx, svc, principal, version); err != nil && ctx.Err() == nil {
 		fatal("mcp: %v", err)
+	}
+}
+
+// openapiCmd prints the OpenAPI 3.1 document to stdout without starting
+// the server or touching any storage. It reuses the exact generator the
+// server serves at /api/openapi.json (api.OpenAPIDocument), so the typed
+// codegen pipeline (`make types`) can never drift from the live spec.
+func openapiCmd(args []string) {
+	_ = args // no flags; spec is generated purely from the route registry
+	doc := api.OpenAPIDocument(version)
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(doc); err != nil {
+		fatal("openapi: %v", err)
 	}
 }
 
