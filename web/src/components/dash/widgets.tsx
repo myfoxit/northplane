@@ -16,35 +16,9 @@ import { Tile, Empty, Spinner } from '@/components/kit'
 import { Badge } from '@/components/ui/badge'
 import { Chart } from '../Chart'
 import { t } from '../../i18n'
-
-// BPI tree node as returned by GET /business-services:tree.
-export interface BSNode {
-  service: { id: string; name: string; rule?: string; slaTarget?: number }
-  state: number // model.State: 0 OK,1 WARN,2 CRIT,3 UNKNOWN
-  children?: BSNode[]
-  causes?: string[]
-}
+import { type BSNode, bsStateMeta, rangeFrom } from './util'
 
 const REFRESH = 30_000
-
-// bsStateDot maps a model.State number to an icon + colour. BPI nodes use
-// the service-state palette (OK/WARN/CRIT/UNKNOWN).
-export function bsStateMeta(state: number): { icon: string; color: string; label: string } {
-  const icon = ['●', '▲', '✕', '?'][state] ?? '?'
-  const color = ['text-emerald-400', 'text-amber-400', 'text-red-400', 'text-slate-400'][state] ?? 'text-slate-400'
-  const label = ['OK', 'WARNING', 'CRITICAL', 'UNKNOWN'][state] ?? 'UNKNOWN'
-  return { icon, color, label }
-}
-
-// rangeFrom converts a "1h"/"3h"/"24h"/"7d" token to an ISO start.
-export function rangeFrom(range?: string): string {
-  const now = Date.now()
-  const map: Record<string, number> = {
-    '1h': 3600_000, '3h': 3 * 3600_000, '24h': 24 * 3600_000, '7d': 7 * 24 * 3600_000,
-  }
-  const ms = map[range ?? '3h'] ?? 3 * 3600_000
-  return new Date(now - ms).toISOString()
-}
 
 // TileLink: a KPI tile that drills down into the matching filtered list
 // — every dashboard number is clickable (SPEC §12.3 drill-down).
@@ -57,6 +31,32 @@ export function TileLink({ to, search, label, value, tone }: {
     <Link to={to} search={search ?? {}} className="block hover:opacity-80 transition-opacity">
       <Tile label={label} value={value} tone={tone} />
     </Link>
+  )
+}
+
+// BpiTreeLines: recursive BPI tree as state-dot lines.
+export function BpiTreeLines({ nodes, depth = 0 }: { nodes: BSNode[]; depth?: number }) {
+  return (
+    <>
+      {nodes.map((n) => {
+        const m = bsStateMeta(n.state)
+        return (
+          <div key={n.service.id}>
+            <div className="flex items-center gap-2 py-1 text-sm" style={{ paddingLeft: depth * 14 }}>
+              <span className={`${m.color} font-bold w-4 text-center shrink-0`}>{m.icon}</span>
+              <span className="text-foreground truncate">{n.service.name}</span>
+              {typeof n.service.slaTarget === 'number' && n.service.slaTarget > 0 && (
+                <span className="text-muted-foreground/70 text-xs">SLA {n.service.slaTarget}%</span>
+              )}
+              {n.causes && n.causes.length > 0 && depth === 0 && (
+                <span className="text-muted-foreground/70 text-xs truncate">↳ {n.causes.join(', ')}</span>
+              )}
+            </div>
+            {n.children && n.children.length > 0 && <BpiTreeLines nodes={n.children} depth={depth + 1} />}
+          </div>
+        )
+      })}
+    </>
   )
 }
 
@@ -168,32 +168,6 @@ function MetricWidget({ widget }: { widget: DashboardWidget }) {
   )
 }
 
-// BpiTreeLines: recursive BPI tree as state-dot lines.
-export function BpiTreeLines({ nodes, depth = 0 }: { nodes: BSNode[]; depth?: number }) {
-  return (
-    <>
-      {nodes.map((n) => {
-        const m = bsStateMeta(n.state)
-        return (
-          <div key={n.service.id}>
-            <div className="flex items-center gap-2 py-1 text-sm" style={{ paddingLeft: depth * 14 }}>
-              <span className={`${m.color} font-bold w-4 text-center shrink-0`}>{m.icon}</span>
-              <span className="text-foreground truncate">{n.service.name}</span>
-              {typeof n.service.slaTarget === 'number' && n.service.slaTarget > 0 && (
-                <span className="text-muted-foreground/70 text-xs">SLA {n.service.slaTarget}%</span>
-              )}
-              {n.causes && n.causes.length > 0 && depth === 0 && (
-                <span className="text-muted-foreground/70 text-xs truncate">↳ {n.causes.join(', ')}</span>
-              )}
-            </div>
-            {n.children && n.children.length > 0 && <BpiTreeLines nodes={n.children} depth={depth + 1} />}
-          </div>
-        )
-      })}
-    </>
-  )
-}
-
 // BpiWidget: a single business service subtree (by name) with live status.
 function BpiWidget({ widget }: { widget: DashboardWidget }) {
   const { data, isLoading } = useQuery({
@@ -231,9 +205,10 @@ function MarkdownWidget({ widget }: { widget: DashboardWidget }) {
 // ("80", "80:", "@10:20" → 80/80/10) for gauge/bar threshold colouring.
 function rangeStartNum(spec?: string): number | null {
   if (!spec) return null
-  let body = spec.startsWith('@') ? spec.slice(1) : spec
-  body = body.split(':')[body.includes(':') ? 1 : 0] || body.split(':')[0]
-  const v = parseFloat(body)
+  const body = spec.startsWith('@') ? spec.slice(1) : spec
+  const parts = body.split(':')
+  const start = (body.includes(':') ? parts[1] : parts[0]) ?? parts[0] ?? ''
+  const v = parseFloat(start)
   return Number.isFinite(v) ? v : null
 }
 
@@ -261,15 +236,16 @@ function GaugeWidget({ widget }: { widget: DashboardWidget }) {
   if (!widget.object) return <Empty text={t('empty')} />
   if (isLoading) return <Spinner />
   const s = (data ?? []).filter((r) => !r.series.metric.startsWith('np_') && r.points.length > 0)[0]
-  if (!s) return <Empty text="keine Daten" />
-  const value = s.points[s.points.length - 1].v
+  const last = s?.points[s.points.length - 1]
+  if (!s || !last) return <Empty text="keine Daten" />
+  const value = last.v
   const warn = rangeStartNum(s.series.warn)
   const crit = rangeStartNum(s.series.crit)
   const max = widget.max || crit || Math.max(100, Math.ceil(value * 1.25))
   const frac = Math.min(1, Math.max(0, value / max))
   // 240°-arc geometry: angles measured clockwise from 12 o'clock,
   // -120°…+120° leaves the gap at the bottom.
-  const polar = (deg: number, r: number) => {
+  const polar = (deg: number, r: number): [number, number] => {
     const rad = (deg * Math.PI) / 180
     return [60 + r * Math.sin(rad), 60 - r * Math.cos(rad)]
   }
@@ -453,7 +429,8 @@ function BarWidget({ widget }: { widget: DashboardWidget }) {
     .filter((r) => !r.series.metric.startsWith('np_') && r.points.length > 0)
     .map((r) => ({
       metric: r.series.metric, unit: r.series.unit ?? '',
-      value: r.points[r.points.length - 1].v,
+      // points is non-empty (filtered above); default guards the index lookup.
+      value: r.points[r.points.length - 1]?.v ?? 0,
       warn: rangeStartNum(r.series.warn), crit: rangeStartNum(r.series.crit),
     }))
     .sort((a, b) => b.value - a.value)
@@ -504,21 +481,4 @@ export function WidgetBody({ widget }: { widget: DashboardWidget }) {
     case 'markdown': return <MarkdownWidget widget={widget} />
     default: return <Empty text={widget.type} />
   }
-}
-
-// Human label for a widget type (German-first).
-export function widgetTypeLabel(type: DashboardWidget['type']): string {
-  const de: Record<DashboardWidget['type'], string> = {
-    counters: 'Zähler (KPIs)',
-    problems: 'Probleme',
-    alerts: 'Alarme',
-    metric: 'Metrik-Diagramm',
-    gauge: 'Gauge (Tacho)',
-    donut: 'Status-Donut',
-    bar: 'Balkendiagramm',
-    table: 'Tabelle (Hosts/Services)',
-    bpi: 'Business Service',
-    markdown: 'Text / Markdown',
-  }
-  return de[type] ?? type
 }

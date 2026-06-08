@@ -9,9 +9,10 @@ import type { SeriesResult } from '../types'
 // the threshold band ("80", "80:", "@10:20" → 80/80/10).
 function rangeStart(spec?: string): number | null {
   if (!spec) return null
-  let body = spec.startsWith('@') ? spec.slice(1) : spec
-  body = body.split(':')[body.includes(':') ? 1 : 0] || body.split(':')[0]
-  const v = parseFloat(body)
+  const body = spec.startsWith('@') ? spec.slice(1) : spec
+  const parts = body.split(':')
+  const start = (body.includes(':') ? parts[1] : parts[0]) ?? parts[0] ?? ''
+  const v = parseFloat(start)
   return Number.isFinite(v) ? v : null
 }
 

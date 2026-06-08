@@ -117,8 +117,10 @@ function PolicyDialog({ state, pickers, onClose }: {
   const move = (i: number, dir: -1 | 1) => setP((prev) => {
     const steps = [...prev.steps]
     const j = i + dir
-    if (j < 0 || j >= steps.length) return prev
-    ;[steps[i], steps[j]] = [steps[j], steps[i]]
+    const a = steps[i], b = steps[j]
+    if (j < 0 || j >= steps.length || !a || !b) return prev
+    steps[i] = b
+    steps[j] = a
     return { ...prev, steps }
   })
 

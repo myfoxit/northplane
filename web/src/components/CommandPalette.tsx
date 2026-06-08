@@ -1,6 +1,6 @@
 // ⌘K command palette (SPEC §12.4): navigation + object jump + actions.
 // Built on shadcn/cmdk (CommandDialog) for proper listbox/aria/focus-trap.
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -26,9 +26,10 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   const [query, setQuery] = useState('')
   const navigate = useNavigate()
 
-  useEffect(() => {
-    if (open) setQuery('')
-  }, [open])
+  // Reset the query on close (event-driven, not in an effect) so the palette
+  // is empty on its next open — clearing in an effect that runs on every
+  // `open` change triggers a cascading render (react-hooks/set-state-in-effect).
+  const close = () => { setQuery(''); onClose() }
 
   const { data: objects } = useQuery({
     queryKey: ['palette-objects', query],
@@ -60,12 +61,12 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
     run: () => navigate({ to: '/objects/$id', params: { id: o.id } }),
   })), [objects, navigate])
 
-  const select = (entry: Entry) => { entry.run(); onClose() }
+  const select = (entry: Entry) => { entry.run(); close() }
 
   return (
     <CommandDialog
       open={open}
-      onOpenChange={(o) => { if (!o) onClose() }}
+      onOpenChange={(o) => { if (!o) close() }}
       className="max-w-lg"
     >
       <CommandInput

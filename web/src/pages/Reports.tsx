@@ -157,7 +157,7 @@ function parseScheduleStr(s?: string): ScheduleParts {
   if (!s) return out
   const [body, at] = s.split('@')
   if (at) out.time = at
-  const [head, arg] = body.split(':')
+  const [head, arg] = (body ?? '').split(':')
   if (head === 'daily') out.freq = 'daily'
   else if (head === 'weekly') { out.freq = 'weekly'; if (arg) out.weekday = arg }
   else if (head === 'monthly') { out.freq = 'monthly'; if (arg) out.day = Number(arg) || 1 }

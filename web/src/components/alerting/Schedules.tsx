@@ -307,7 +307,7 @@ function TimelineBlocks({ shifts, nameOf }: { shifts: Shift[]; nameOf: (id: stri
   const palette = ['bg-blue-600/40', 'bg-emerald-600/40', 'bg-purple-600/40', 'bg-amber-600/40', 'bg-pink-600/40', 'bg-cyan-600/40']
   const colorByContact: Record<string, string> = {}
   let next = 0
-  const colorOf = (id: string) => (colorByContact[id] ??= palette[next++ % palette.length])
+  const colorOf = (id: string) => (colorByContact[id] ??= palette[next++ % palette.length] ?? 'bg-slate-600/40')
 
   return (
     <div className="space-y-2">
@@ -322,8 +322,8 @@ function TimelineBlocks({ shifts, nameOf }: { shifts: Shift[]; nameOf: (id: stri
         ))}
       </div>
       <div className="flex justify-between text-[11px] text-muted-foreground/70 tabular-nums">
-        <span>{fmtTime(shifts[0].start)}</span>
-        <span>{fmtTime(shifts[shifts.length - 1].end)}</span>
+        <span>{fmtTime(shifts[0]?.start)}</span>
+        <span>{fmtTime(shifts[shifts.length - 1]?.end)}</span>
       </div>
     </div>
   )

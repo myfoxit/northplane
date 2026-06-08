@@ -147,6 +147,10 @@ export function ObjectsPage() {
         <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
           {virtualizer.getVirtualItems().map((vi) => {
             const o = rows[vi.index]
+            // The virtualizer's count is bound to rows.length, so the index is
+            // always in range — but noUncheckedIndexedAccess still widens the
+            // lookup to NPObject | undefined; guard rather than assert.
+            if (!o) return null
             return (
               <div
                 key={o.id}

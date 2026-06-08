@@ -93,8 +93,10 @@ export function resourceApi<T extends { name: string }>(base: string) {
 }
 
 // Live updates: one EventSource per tab; events invalidate the matching
-// query keys. Visibility throttling per SPEC §12.2.
-const invalidations: Record<string, string[][]> = {
+// query keys. Visibility throttling per SPEC §12.2. Each entry is a list of
+// single-segment query keys ([string] tuples) so the first segment is always
+// present (noUncheckedIndexedAccess-safe).
+const invalidations: Record<string, [string][]> = {
   state_change: [['problems'], ['objects'], ['overview'], ['events']],
   alert_opened: [['alerts'], ['overview'], ['events']],
   alert_resolved: [['alerts'], ['overview'], ['problems'], ['events']],
@@ -119,8 +121,12 @@ const streamTypes = Object.keys(invalidations).join(',')
 const liveKeys = Array.from(new Set(Object.values(invalidations).flat().map((k) => k[0])))
 
 export function useLiveUpdates(onEvent?: (type: string, data: unknown) => void) {
+  // Keep the latest callback in a ref so the EventSource effect (below, with
+  // an empty dep array) never has to re-subscribe when onEvent changes. The
+  // ref is written in its own effect — not during render — so we don't read
+  // or mutate ref.current while rendering (react-hooks/refs).
   const handler = useRef(onEvent)
-  handler.current = onEvent
+  useEffect(() => { handler.current = onEvent }, [onEvent])
   useEffect(() => {
     let es: EventSource | null = null
     let backoff = 1000
@@ -143,9 +149,9 @@ export function useLiveUpdates(onEvent?: (type: string, data: unknown) => void) 
         es?.close()
         if (!closed) setTimeout(connect, backoff = Math.min(backoff * 2, 30000))
       }
-      for (const type of Object.keys(invalidations)) {
+      for (const [type, keys] of Object.entries(invalidations)) {
         es.addEventListener(type, (ev) => {
-          for (const key of invalidations[type]) pending.add(key[0])
+          for (const key of keys) pending.add(key[0])
           if (!flushTimer) flushTimer = window.setTimeout(flush, 400)
           try { handler.current?.(type, JSON.parse((ev as MessageEvent).data)) } catch { /* ignore */ }
         })

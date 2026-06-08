@@ -15,7 +15,7 @@ import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Empty, Spinner, Tile, ErrorState, Field, FormError, SubmitRow, useSave, DeleteButton } from '@/components/kit'
 import { ObjectPicker } from '../components/dash/pickers'
-import { bsStateMeta, type BSNode } from '../components/dash/widgets'
+import { bsStateMeta, type BSNode } from '../components/dash/util'
 import { t } from '../i18n'
 
 const bsApi = resourceApi<BusinessService>('business-services')

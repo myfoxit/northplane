@@ -16,7 +16,8 @@ import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Empty, Spinner, Field, KVEditor, ListEditor, DurationInput, FormError, SubmitRow, useSave, DeleteButton } from '@/components/kit'
-import { SpecFields, cleanSpec } from '../components/objects/SpecFields'
+import { SpecFields } from '../components/objects/SpecFields'
+import { cleanSpec } from '../components/objects/specUtil'
 import { t } from '../i18n'
 
 const tabs = ['templates', 'check-commands', 'time-periods'] as const

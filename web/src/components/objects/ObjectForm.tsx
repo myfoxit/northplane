@@ -17,7 +17,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { t } from '../../i18n'
-import { SpecFields, cleanSpec, specOf } from './SpecFields'
+import { SpecFields } from './SpecFields'
+import { cleanSpec, specOf } from './specUtil'
 
 // Radix SelectItem value cannot be "" — sentinel stands in for the
 // empty/"choose host" option and maps back to '' on change.
@@ -162,7 +163,7 @@ function parseLine(line: string): ParsedRow | null {
   const labels: Record<string, string> = {}
   for (const pair of (brackets[1] ?? '').split(',')) {
     const [k, ...rest] = pair.split('=')
-    if (k.trim()) labels[k.trim()] = rest.join('=').trim()
+    if (k?.trim()) labels[k.trim()] = rest.join('=').trim()
   }
   const row: ParsedRow = { name, address, templates, labels }
   if (!name) row.error = 'kein Name'
