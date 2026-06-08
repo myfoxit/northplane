@@ -54,6 +54,11 @@ type Store struct {
 
 	auditMu       sync.Mutex
 	auditLastHash string
+
+	// touchMu throttles best-effort api_tokens.last_used writes so a busy
+	// token client doesn't fire a DB write (and take writeMu) per request.
+	touchMu   sync.Mutex
+	lastTouch map[string]time.Time
 }
 
 // Options for Open.
@@ -96,9 +101,26 @@ func Open(ctx context.Context, o Options) (*Store, error) {
 		if err != nil {
 			return nil, err
 		}
-		// WAL: readers don't block the (single) writer.
-		db.SetMaxOpenConns(8)
-		db.SetConnMaxIdleTime(5 * time.Minute)
+		// Connection pool (SPEC §7.3). WAL lets readers run concurrently
+		// with the single writer, so keep a healthy number of connections —
+		// but, crucially, keep them all idle-warm and non-expiring: modernc
+		// re-runs the DSN _pragma list on every newly-opened connection, so a
+		// connection opened mid-request used to re-execute journal_mode(WAL),
+		// which takes the write lock and could wait out busy_timeout behind
+		// the 250ms pipeline flush. Matching idle to open and disabling
+		// idle/lifetime expiry means the pool is opened once and reused, not
+		// re-opened (and re-pragma'd) on every request burst.
+		db.SetMaxOpenConns(16)
+		db.SetMaxIdleConns(16)
+		db.SetConnMaxIdleTime(0)
+		db.SetConnMaxLifetime(0)
+		// Set WAL once at the database level (persistent in the file header)
+		// rather than per-connection, so freshly-opened pool connections
+		// never take the write lock just to confirm the journal mode.
+		if _, err := db.ExecContext(ctx, "PRAGMA journal_mode=WAL"); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("storage: enable WAL: %w", err)
+		}
 		s.db, s.dialect = db, sqliteDialect{}
 		s.serialise = true
 	}
@@ -123,11 +145,15 @@ func Open(ctx context.Context, o Options) (*Store, error) {
 }
 
 func sqliteDSN(path string) string {
-	// modernc accepts _pragma query options applied per connection.
+	// modernc applies these _pragma options per connection. journal_mode is
+	// deliberately NOT here — it's set once on the *sql.DB (persistent in the
+	// file header); per-connection it would take the write lock on every new
+	// connection and stall reads behind the writer up to busy_timeout. The
+	// rest are connection-local and cheap. busy_timeout is the worst-case
+	// wait when a write genuinely contends (lowered from 10s).
 	return "file:" + path +
-		"?_pragma=journal_mode(WAL)" +
-		"&_pragma=synchronous(NORMAL)" +
-		"&_pragma=busy_timeout(10000)" +
+		"?_pragma=synchronous(NORMAL)" +
+		"&_pragma=busy_timeout(5000)" +
 		"&_pragma=foreign_keys(ON)" +
 		"&_time_format=sqlite"
 }

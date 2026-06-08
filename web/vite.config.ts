@@ -18,7 +18,7 @@ const target = process.env.NP_API ?? 'http://127.0.0.1:8443'
 // while `make dev` is rebuilding/restarting northplaned fails fast
 // (react-query then retries against the now-up backend) instead of
 // hanging on an open socket for ~20s.
-const PROXY_TIMEOUT_MS = 8000
+const PROXY_TIMEOUT_MS = 2500
 type ProxyEntry = { target: string; changeOrigin: boolean; timeout?: number; proxyTimeout?: number }
 const proxy: Record<string, ProxyEntry> = {
   '/api/v1/stream': { target, changeOrigin: true }, // SSE: no timeout (listed first so it wins over /api)
@@ -29,6 +29,16 @@ for (const path of ['/api', '/auth', '/login', '/setup', '/status', '/mcp', '/me
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  optimizeDeps: {
+    // Pre-bundle the heavy/barrel deps so the first dev load doesn't
+    // discover them on demand — each on-the-fly discovery forces a costly
+    // esbuild re-optimize + full page reload mid-session.
+    include: [
+      'react', 'react-dom', 'react-dom/client',
+      '@tanstack/react-query', '@tanstack/react-router', '@tanstack/react-virtual',
+      'lucide-react', 'uplot', 'zod',
+    ],
+  },
   build: {
     target: 'es2022',
     rollupOptions: {

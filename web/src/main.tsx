@@ -1,4 +1,4 @@
-import { StrictMode } from 'react'
+import { StrictMode, Suspense, lazy } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClientProvider } from '@tanstack/react-query'
 import {
@@ -7,26 +7,39 @@ import {
 import { queryClient } from './api'
 import type { AlertsSearch, ObjectsSearch } from './types'
 import { Layout } from './components/Layout'
-import { ErrorState } from './components/ui'
+import { ErrorState, Spinner } from './components/ui'
 import { t } from './i18n'
-import { OverviewPage } from './pages/Overview'
-import { ProblemsPage } from './pages/Problems'
-import { ObjectsPage, ObjectDetailPage } from './pages/Objects'
-import { AlertsPage, IncidentsPage } from './pages/Alerts'
-import { EventsPage } from './pages/Events'
-import { OnCallPage } from './pages/OnCall'
-import { AdminPage } from './pages/Admin'
-import { AlertingConfigPage } from './pages/AlertingConfig'
-import { DashboardsPage, DashboardViewPage } from './pages/Dashboards'
-import { ReportsPage } from './pages/Reports'
-import { BusinessPage } from './pages/Business'
-import { DiscoveryPage } from './pages/Discovery'
-import { MaintenancePage } from './pages/Maintenance'
-import { TemplatesPage } from './pages/Templates'
 import './index.css'
 
+// Route-level code splitting (SPEC §12.2): each page is a separate chunk
+// loaded on demand. In dev this means visiting a route only transforms that
+// route's module graph instead of all ~14 pages (and uplot/charts) up front.
+const OverviewPage = lazy(() => import('./pages/Overview').then((m) => ({ default: m.OverviewPage })))
+const ProblemsPage = lazy(() => import('./pages/Problems').then((m) => ({ default: m.ProblemsPage })))
+const ObjectsPage = lazy(() => import('./pages/Objects').then((m) => ({ default: m.ObjectsPage })))
+const ObjectDetailPage = lazy(() => import('./pages/Objects').then((m) => ({ default: m.ObjectDetailPage })))
+const AlertsPage = lazy(() => import('./pages/Alerts').then((m) => ({ default: m.AlertsPage })))
+const IncidentsPage = lazy(() => import('./pages/Alerts').then((m) => ({ default: m.IncidentsPage })))
+const EventsPage = lazy(() => import('./pages/Events').then((m) => ({ default: m.EventsPage })))
+const OnCallPage = lazy(() => import('./pages/OnCall').then((m) => ({ default: m.OnCallPage })))
+const AdminPage = lazy(() => import('./pages/Admin').then((m) => ({ default: m.AdminPage })))
+const AlertingConfigPage = lazy(() => import('./pages/AlertingConfig').then((m) => ({ default: m.AlertingConfigPage })))
+const DashboardsPage = lazy(() => import('./pages/Dashboards').then((m) => ({ default: m.DashboardsPage })))
+const DashboardViewPage = lazy(() => import('./pages/Dashboards').then((m) => ({ default: m.DashboardViewPage })))
+const ReportsPage = lazy(() => import('./pages/Reports').then((m) => ({ default: m.ReportsPage })))
+const BusinessPage = lazy(() => import('./pages/Business').then((m) => ({ default: m.BusinessPage })))
+const DiscoveryPage = lazy(() => import('./pages/Discovery').then((m) => ({ default: m.DiscoveryPage })))
+const MaintenancePage = lazy(() => import('./pages/Maintenance').then((m) => ({ default: m.MaintenancePage })))
+const TemplatesPage = lazy(() => import('./pages/Templates').then((m) => ({ default: m.TemplatesPage })))
+
 const rootRoute = createRootRoute({
-  component: () => <Layout><Outlet /></Layout>,
+  component: () => (
+    <Layout>
+      <Suspense fallback={<div className="p-8"><Spinner /></div>}>
+        <Outlet />
+      </Suspense>
+    </Layout>
+  ),
 })
 
 // str narrows an unknown search param to a non-empty string.

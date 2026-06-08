@@ -354,7 +354,21 @@ func (s *Store) DeleteAPIToken(ctx context.Context, tenantID, id string) error {
 }
 
 // TouchAPIToken updates last_used (best-effort, no error propagation).
+// Throttled to at most one write per token per minute: a busy token client
+// (MCP/CLI/dashboard polling) otherwise fires a DB write — taking the write
+// lock — on every single request, widening write-lock contention.
 func (s *Store) TouchAPIToken(ctx context.Context, id string) {
+	now := time.Now()
+	s.touchMu.Lock()
+	if last, ok := s.lastTouch[id]; ok && now.Sub(last) < time.Minute {
+		s.touchMu.Unlock()
+		return
+	}
+	if s.lastTouch == nil {
+		s.lastTouch = make(map[string]time.Time)
+	}
+	s.lastTouch[id] = now
+	s.touchMu.Unlock()
 	_ = s.Write(ctx, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, s.Q(
 			`UPDATE api_tokens SET last_used = ? WHERE id = ?`), s.T(time.Now().UTC()), id)
