@@ -7,7 +7,7 @@ import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { resourceApi, get, post, del, queryClient, fmtAgo, type ListResponse } from '../../api'
 import type { WebhookSub, HeartbeatDef, Severity } from '../../types'
-import { Button, Table, Empty, Dialog, Input, Badge } from '../ui'
+import { Button, Table, Empty, Dialog, Input, Badge, Spinner } from '../ui'
 import { Field, FormError, SubmitRow, useSave, DeleteButton, Toggle, KVEditor, DurationInput } from '../forms'
 import { t } from '../../i18n'
 import { StatusBadge, TableActions, RowActions, secretHint } from './common'
@@ -26,10 +26,10 @@ export function WebhooksTab() {
       <Table head={[t('name'), 'URL', 'Event-Typen', 'Selector', t('status'), '']}>
         {(data ?? []).map((w) => (
           <tr key={w.name}>
-            <td className="px-3 py-2 text-slate-200">{w.name}</td>
-            <td className="px-3 py-2 text-xs text-slate-400 font-mono truncate max-w-64">{w.url}</td>
-            <td className="px-3 py-2 text-xs text-slate-500">{w.types?.length ? w.types.join(', ') : 'alle'}</td>
-            <td className="px-3 py-2 text-xs text-slate-500 font-mono">{w.selector || '—'}</td>
+            <td className="px-3 py-2 text-foreground">{w.name}</td>
+            <td className="px-3 py-2 text-xs text-muted-foreground font-mono truncate max-w-64">{w.url}</td>
+            <td className="px-3 py-2 text-xs text-muted-foreground">{w.types?.length ? w.types.join(', ') : 'alle'}</td>
+            <td className="px-3 py-2 text-xs text-muted-foreground font-mono">{w.selector || '—'}</td>
             <td className="px-3 py-2">{w.disabled ? <StatusBadge kind="disabled" /> : <StatusBadge kind="enabled" />}</td>
             <td className="px-3 py-2">
               <RowActions>
@@ -61,7 +61,7 @@ function WebhookDialog({ name, onClose }: { name: string | null; onClose: () => 
     enabled: !isNew,
   })
   if (!isNew && isLoading) {
-    return <Dialog open onClose={onClose} title={t('loading')}><div className="text-slate-500 text-sm">…</div></Dialog>
+    return <Dialog open onClose={onClose} title={t('loading')}><Spinner /></Dialog>
   }
   return (
     <WebhookForm
@@ -136,11 +136,11 @@ export function HeartbeatsTab() {
       <Table head={[t('name'), 'Erwartet alle', 'Karenz', t('severity'), 'Letzter Beat', t('status'), '']}>
         {rows.map((h) => (
           <tr key={h.name}>
-            <td className="px-3 py-2 text-slate-200">{h.name}</td>
-            <td className="px-3 py-2 text-xs text-slate-400 tabular-nums">{h.expectEvery}</td>
-            <td className="px-3 py-2 text-xs text-slate-500 tabular-nums">{h.grace || '—'}</td>
-            <td className="px-3 py-2 text-xs text-slate-400">{h.severity || 'critical'}</td>
-            <td className="px-3 py-2 text-xs text-slate-500 tabular-nums">
+            <td className="px-3 py-2 text-foreground">{h.name}</td>
+            <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">{h.expectEvery}</td>
+            <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">{h.grace || '—'}</td>
+            <td className="px-3 py-2 text-xs text-muted-foreground">{h.severity || 'critical'}</td>
+            <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">
               {h.lastBeat ? fmtAgo(h.lastBeat) : 'nie'}
             </td>
             <td className="px-3 py-2">
@@ -200,9 +200,9 @@ function HeartbeatForm({ doc, isNew, onClose }: {
           <KVEditor value={h.labels ?? {}} onChange={(v) => set({ labels: v })}
             keyPlaceholder="team" valuePlaceholder="netops" />
         </Field>
-        <div className="bg-slate-900/60 border border-slate-800 rounded-lg p-3">
-          <div className="text-xs text-slate-400 mb-1">Beat-URL (cron / Skript, Token mit objects:write):</div>
-          <code className="text-xs text-slate-300 break-all select-all">
+        <div className="bg-card/60 border border-border rounded-lg p-3">
+          <div className="text-xs text-muted-foreground mb-1">Beat-URL (cron / Skript, Token mit objects:write):</div>
+          <code className="text-xs text-foreground/90 break-all select-all">
             curl -H "Authorization: Bearer np_…" {beatURL}
           </code>
         </div>

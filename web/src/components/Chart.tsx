@@ -80,11 +80,11 @@ export function Chart({ result, height = 180 }: { result: SeriesResult; height?:
   }, [result, height])
 
   if (!result.points?.length) {
-    return <div className="text-slate-500 text-xs p-4">no data</div>
+    return <div className="text-muted-foreground text-xs p-4">no data</div>
   }
   return (
     <div>
-      <div className="text-xs text-slate-400 mb-1 font-mono">
+      <div className="text-xs text-muted-foreground mb-1 font-mono">
         {result.series.metric}
         {result.series.unit ? ` (${result.series.unit})` : ''}
         {result.series.warn ? ` · warn ${result.series.warn}` : ''}

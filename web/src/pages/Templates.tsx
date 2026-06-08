@@ -57,14 +57,14 @@ function TemplatesTab() {
         <Table head={[t('name'), t('type'), t('labels'), t('templates'), '']}>
           {data!.map((tpl) => (
             <tr key={tpl.name}>
-              <td className="px-3 py-2 text-slate-200 font-medium">{tpl.name}</td>
+              <td className="px-3 py-2 text-foreground font-medium">{tpl.name}</td>
               <td className="px-3 py-2">
-                <Badge className="bg-slate-800 text-slate-400 border-slate-700">{tpl.kind || 'beide'}</Badge>
+                <Badge className="bg-muted text-muted-foreground border-input">{tpl.kind || 'beide'}</Badge>
               </td>
-              <td className="px-3 py-2 text-xs text-slate-500 font-mono">
+              <td className="px-3 py-2 text-xs text-muted-foreground font-mono">
                 {Object.entries(tpl.labels ?? {}).map(([k, v]) => `${k}=${v}`).join(', ') || '—'}
               </td>
-              <td className="px-3 py-2 text-xs text-slate-500 font-mono">{(tpl.spec?.templates ?? []).join(', ') || '—'}</td>
+              <td className="px-3 py-2 text-xs text-muted-foreground font-mono">{(tpl.spec?.templates ?? []).join(', ') || '—'}</td>
               <td className="px-3 py-2 text-right whitespace-nowrap">
                 <Button size="sm" variant="ghost" onClick={() => setEditing({ name: tpl.name })}>{t('edit')}</Button>
                 <DeleteButton onDelete={() => remove.mutate(tpl.name)} />
@@ -163,11 +163,11 @@ function CheckCommandsTab() {
         <Table head={[t('name'), t('type'), 'Kommandozeile', 'Env', t('timeout'), '']}>
           {data!.map((cmd) => (
             <tr key={cmd.name}>
-              <td className="px-3 py-2 text-slate-200 font-medium">{cmd.name}</td>
-              <td className="px-3 py-2"><Badge className="bg-slate-800 text-slate-400 border-slate-700">{cmd.type}</Badge></td>
-              <td className="px-3 py-2 text-xs text-slate-500 font-mono truncate max-w-md">{(cmd.line ?? []).join(' ') || '—'}</td>
-              <td className="px-3 py-2 text-xs text-slate-500">{cmd.env ? 'ja' : '—'}</td>
-              <td className="px-3 py-2 text-xs text-slate-500 font-mono">{cmd.timeout || '—'}</td>
+              <td className="px-3 py-2 text-foreground font-medium">{cmd.name}</td>
+              <td className="px-3 py-2"><Badge className="bg-muted text-muted-foreground border-input">{cmd.type}</Badge></td>
+              <td className="px-3 py-2 text-xs text-muted-foreground font-mono truncate max-w-md">{(cmd.line ?? []).join(' ') || '—'}</td>
+              <td className="px-3 py-2 text-xs text-muted-foreground">{cmd.env ? 'ja' : '—'}</td>
+              <td className="px-3 py-2 text-xs text-muted-foreground font-mono">{cmd.timeout || '—'}</td>
               <td className="px-3 py-2 text-right whitespace-nowrap">
                 <Button size="sm" variant="ghost" onClick={() => setEditing({ name: cmd.name })}>{t('edit')}</Button>
                 <DeleteButton onDelete={() => remove.mutate(cmd.name)} />
@@ -277,10 +277,10 @@ function TimePeriodsTab() {
         <Table head={[t('name'), 'Alias', 'Tage', 'Ausnahmen', '']}>
           {data!.map((tp) => (
             <tr key={tp.name}>
-              <td className="px-3 py-2 text-slate-200 font-medium">{tp.name}</td>
-              <td className="px-3 py-2 text-xs text-slate-400">{tp.alias || '—'}</td>
-              <td className="px-3 py-2 text-xs text-slate-500">{Object.keys(tp.days ?? {}).length || '—'}</td>
-              <td className="px-3 py-2 text-xs text-slate-500">{Object.keys(tp.exceptions ?? {}).length || '—'}</td>
+              <td className="px-3 py-2 text-foreground font-medium">{tp.name}</td>
+              <td className="px-3 py-2 text-xs text-muted-foreground">{tp.alias || '—'}</td>
+              <td className="px-3 py-2 text-xs text-muted-foreground">{Object.keys(tp.days ?? {}).length || '—'}</td>
+              <td className="px-3 py-2 text-xs text-muted-foreground">{Object.keys(tp.exceptions ?? {}).length || '—'}</td>
               <td className="px-3 py-2 text-right whitespace-nowrap">
                 <Button size="sm" variant="ghost" onClick={() => setEditing({ name: tp.name })}>{t('edit')}</Button>
                 <DeleteButton onDelete={() => remove.mutate(tp.name)} />
@@ -357,8 +357,8 @@ function TimePeriodDialog({ name, onClose }: { name: string | null; onClose: () 
             </Field>
           </div>
 
-          <div className="border border-slate-800 rounded-lg p-3 space-y-2">
-            <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Wochentage</div>
+          <div className="border border-border rounded-lg p-3 space-y-2">
+            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Wochentage</div>
             {WEEKDAYS.map((wd) => (
               <Field key={wd} label={WEEKDAY_DE[wd]} hint='Bereiche "HH:MM-HH:MM"'>
                 <ListEditor

@@ -7,7 +7,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { resourceApi } from '../../api'
 import type { Role } from '../../types'
-import { Button, Table, Empty, Dialog, Input } from '../ui'
+import { Button, Table, Empty, Dialog, Input, Spinner } from '../ui'
 import { Field, FormError, SubmitRow, useSave, DeleteButton, ListEditor } from '../forms'
 import { t } from '../../i18n'
 import { StatusBadge, TableActions, RowActions } from './common'
@@ -23,14 +23,14 @@ export function RolesTab() {
       <Table head={[t('name'), t('permissions'), 'Erbt', 'IdP-Gruppen', '']}>
         {(data ?? []).map((r) => (
           <tr key={r.name}>
-            <td className="px-3 py-2 text-slate-200">
+            <td className="px-3 py-2 text-foreground">
               {r.name} {r.system && <span className="ml-1"><StatusBadge kind="system" /></span>}
             </td>
-            <td className="px-3 py-2 text-xs text-slate-400 font-mono truncate max-w-72">
+            <td className="px-3 py-2 text-xs text-muted-foreground font-mono truncate max-w-72">
               {r.permissions?.join(', ') || '—'}
             </td>
-            <td className="px-3 py-2 text-xs text-slate-400">{r.includes?.join(', ') || '—'}</td>
-            <td className="px-3 py-2 text-xs text-slate-400">{r.idpGroups?.join(', ') || '—'}</td>
+            <td className="px-3 py-2 text-xs text-muted-foreground">{r.includes?.join(', ') || '—'}</td>
+            <td className="px-3 py-2 text-xs text-muted-foreground">{r.idpGroups?.join(', ') || '—'}</td>
             <td className="px-3 py-2">
               {!r.system && (
                 <RowActions>
@@ -69,7 +69,7 @@ function RoleDialog({ name, onClose }: { name: string | null; onClose: () => voi
     enabled: !isNew,
   })
   if (!isNew && isLoading) {
-    return <Dialog open onClose={onClose} title={t('loading')} size="lg"><div className="text-slate-500 text-sm">…</div></Dialog>
+    return <Dialog open onClose={onClose} title={t('loading')} size="lg"><Spinner /></Dialog>
   }
   return (
     <RoleForm

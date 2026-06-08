@@ -4,8 +4,9 @@
 // {cidr, ports?} → {id, cidr, ports, status, startedAt, doneAt?, found[]}.
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Check, X } from 'lucide-react'
 import { get, post, fmtTime, fmtAgo, type ListResponse } from '../api'
-import { Button, Card, Empty, Spinner, Table, Badge } from '../components/ui'
+import { Button, Card, Empty, Spinner, Table, Badge, ErrorState } from '../components/ui'
 import { Input } from '../components/ui'
 import { Field, ListEditor, FormError, useSave } from '../components/forms'
 import { t } from '../i18n'
@@ -45,7 +46,7 @@ export function DiscoveryPage() {
   const [portsStr, setPortsStr] = useState('')
   const [openScan, setOpenScan] = useState<string | null>(null)
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['discovery-scans'],
     queryFn: () => get<ListResponse<Scan>>('/discovery/scans'),
     // Poll fast while any scan is still running.
@@ -71,6 +72,9 @@ export function DiscoveryPage() {
   }
 
   const scans = data?.items ?? []
+  if (isError && !data) {
+    return <div className="p-8"><ErrorState error={error} onRetry={() => refetch()} /></div>
+  }
   return (
     <div className="space-y-4">
       <h1 className="text-lg font-bold">{t('discovery')}</h1>
@@ -100,13 +104,13 @@ export function DiscoveryPage() {
         {scans.length > 0 && (
           <Table head={[t('status'), 'CIDR', 'Gestartet', t('suggestions'), '']}>
             {scans.map((s) => (
-              <tr key={s.id} className="hover:bg-slate-900/40">
+              <tr key={s.id} className="hover:bg-card/40">
                 <td className="px-3 py-2">{statusBadge(s.status)}</td>
-                <td className="px-3 py-2 font-mono text-xs text-slate-300">{s.cidr}</td>
-                <td className="px-3 py-2 text-slate-400 text-xs" title={fmtTime(s.startedAt)}>
+                <td className="px-3 py-2 font-mono text-xs text-foreground/90">{s.cidr}</td>
+                <td className="px-3 py-2 text-muted-foreground text-xs" title={fmtTime(s.startedAt)}>
                   {fmtAgo(s.startedAt)}
                 </td>
-                <td className="px-3 py-2 text-slate-400 tabular-nums">{s.found?.length ?? 0}</td>
+                <td className="px-3 py-2 text-muted-foreground tabular-nums">{s.found?.length ?? 0}</td>
                 <td className="px-3 py-2">
                   <Button size="sm" disabled={(s.found?.length ?? 0) === 0}
                     onClick={() => setOpenScan(openScan === s.id ? null : s.id)}>
@@ -191,26 +195,26 @@ function SuggestionPanel({ scan }: { scan: Scan }) {
           const name = (h.hostname || h.address).replace(/\.$/, '')
           const res = resultByName[name]
           return (
-            <tr key={h.address} className="hover:bg-slate-900/40">
+            <tr key={h.address} className="hover:bg-card/40">
               <td className="px-3 py-2">
                 <input type="checkbox" checked={picked.has(h.address)} onChange={() => toggle(h.address)} />
               </td>
-              <td className="px-3 py-2 font-mono text-xs text-slate-300">{h.address}</td>
-              <td className="px-3 py-2 text-slate-400 text-xs">{h.hostname?.replace(/\.$/, '') || '—'}</td>
+              <td className="px-3 py-2 font-mono text-xs text-foreground/90">{h.address}</td>
+              <td className="px-3 py-2 text-muted-foreground text-xs">{h.hostname?.replace(/\.$/, '') || '—'}</td>
               <td className="px-3 py-2">
                 <div className="flex flex-wrap gap-1">
                   {(h.openPorts ?? []).map((p) => (
-                    <span key={p} className="text-[11px] bg-slate-800 text-slate-300 rounded px-1.5 py-0.5 font-mono">{p}</span>
+                    <span key={p} className="text-[11px] bg-muted text-foreground/90 rounded px-1.5 py-0.5 font-mono">{p}</span>
                   ))}
                 </div>
               </td>
-              <td className="px-3 py-2 text-slate-500 text-xs">
+              <td className="px-3 py-2 text-muted-foreground text-xs">
                 {(h.suggest ?? []).join(', ') || '—'}
               </td>
               <td className="px-3 py-2 text-xs">
-                {res?.id && <span className="text-emerald-400">✓ angelegt</span>}
-                {res?.error && <span className="text-red-400" title={res.error}>✕ {res.error}</span>}
-                {!res && <span className="text-slate-600">—</span>}
+                {res?.id && <span className="text-emerald-400 inline-flex items-center gap-1"><Check size={13} /> angelegt</span>}
+                {res?.error && <span className="text-red-400 inline-flex items-center gap-1" title={res.error}><X size={13} /> {res.error}</span>}
+                {!res && <span className="text-muted-foreground/70">—</span>}
               </td>
             </tr>
           )
@@ -219,12 +223,12 @@ function SuggestionPanel({ scan }: { scan: Scan }) {
 
       <FormError error={accept.error} />
       {result && (
-        <div className="text-sm text-slate-400 mt-2">
+        <div className="text-sm text-muted-foreground mt-2">
           {result.created} angelegt · {result.failed} fehlgeschlagen
         </div>
       )}
       <div className="flex items-center justify-between pt-3">
-        <span className="text-xs text-slate-500">{picked.size} von {hits.length} ausgewählt</span>
+        <span className="text-xs text-muted-foreground">{picked.size} von {hits.length} ausgewählt</span>
         <Button variant="primary" onClick={submit} disabled={accept.isPending || picked.size === 0}>
           {accept.isPending ? '…' : t('acceptSelected')}
         </Button>

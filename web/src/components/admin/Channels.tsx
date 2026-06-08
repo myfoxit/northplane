@@ -9,7 +9,7 @@ import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { resourceApi, post } from '../../api'
 import type { Channel, ChannelType } from '../../types'
-import { Button, Table, Empty, Dialog, Input, Badge } from '../ui'
+import { Button, Table, Empty, Dialog, Input, Badge, Spinner } from '../ui'
 import { Field, FormError, SubmitRow, useSave, DeleteButton, Select, Toggle, KVEditor } from '../forms'
 import { t } from '../../i18n'
 import { TypeBadge, StatusBadge, TableActions, RowActions, secretHint } from './common'
@@ -112,9 +112,9 @@ export function ChannelsTab() {
         {(data ?? []).map((ch) => (
           <tr key={ch.name}>
             <td className="px-3 py-2 w-24"><TypeBadge>{ch.type}</TypeBadge></td>
-            <td className="px-3 py-2 text-slate-200">{ch.name}</td>
+            <td className="px-3 py-2 text-foreground">{ch.name}</td>
             <td className="px-3 py-2">{ch.enabled ? <StatusBadge kind="enabled" /> : <StatusBadge kind="disabled" />}</td>
-            <td className="px-3 py-2 text-xs text-slate-500 font-mono">{ch.template || '—'}</td>
+            <td className="px-3 py-2 text-xs text-muted-foreground font-mono">{ch.template || '—'}</td>
             <td className="px-3 py-2">
               <RowActions>
                 <TestButton name={ch.name} />
@@ -170,7 +170,7 @@ function ChannelDialog({ name, onClose }: { name: string | null; onClose: () => 
     enabled: !isNew,
   })
   if (!isNew && isLoading) {
-    return <Dialog open onClose={onClose} title={t('loading')} size="lg"><div className="text-slate-500 text-sm">…</div></Dialog>
+    return <Dialog open onClose={onClose} title={t('loading')} size="lg"><Spinner /></Dialog>
   }
   return (
     <ChannelForm
@@ -221,8 +221,8 @@ function ChannelForm({ doc, etag, isNew, onClose }: {
         <Toggle checked={enabled} onChange={setEnabled} label={t('enabled')} />
 
         {known.length > 0 && (
-          <div className="border border-slate-800 rounded-lg p-3 space-y-2">
-            <div className="text-xs text-slate-400 font-medium">Konfiguration ({type})</div>
+          <div className="border border-border rounded-lg p-3 space-y-2">
+            <div className="text-xs text-muted-foreground font-medium">Konfiguration ({type})</div>
             {known.map((f) => (
               <Field key={f.key} label={f.label} hint={f.secret ? secretHint : f.hint}>
                 <Input
@@ -244,7 +244,7 @@ function ChannelForm({ doc, etag, isNew, onClose }: {
         </Field>
 
         {type === 'push' && (
-          <Badge className="bg-slate-800 text-slate-400 border-slate-700">VAPID serverseitig — keine Config nötig</Badge>
+          <Badge className="bg-muted text-muted-foreground border-input">VAPID serverseitig — keine Config nötig</Badge>
         )}
 
         <FormError error={save.error} />

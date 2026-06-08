@@ -2,6 +2,7 @@
 // (CMP "Monitoring Admin" object editor + "Wizard"/Massenanlage parity).
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { X, Check, Loader2 } from 'lucide-react'
 import { get, post, put, APIError } from '../../api'
 import type { NPObject, ObjectSpec, Kind } from '../../types'
 import { Field, KVEditor, FormError, SubmitRow, useSave, Select } from '../forms'
@@ -228,22 +229,22 @@ export function BatchAddDialog({ open, onClose }: { open: boolean; onClose: () =
             onChange={(e) => { setText(e.target.value); setResult(null) }}
             placeholder={'web01 10.0.0.1 [generic-host] [env=prod,team=web]\ndb01 10.0.0.2 [generic-host,linux]'}
             rows={6}
-            className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 w-full font-mono placeholder:text-slate-500 focus:outline-none focus:border-blue-500"
+            className="bg-card border border-input rounded-lg px-3 py-1.5 text-sm text-foreground w-full font-mono placeholder:text-muted-foreground focus:border-ring"
           />
         </Field>
 
         {rows.length > 0 && !result && (
-          <div className="border border-slate-800 rounded-lg overflow-hidden">
-            <div className="text-xs text-slate-500 px-3 py-1.5 border-b border-slate-800">
+          <div className="border border-border rounded-lg overflow-hidden">
+            <div className="text-xs text-muted-foreground px-3 py-1.5 border-b border-border">
               {t('preview')} — {validCount} gültig{rows.length - validCount > 0 ? `, ${rows.length - validCount} fehlerhaft` : ''}
             </div>
             <Table head={[t('name'), t('address'), t('templates'), t('labels'), '']}>
               {rows.map((r, i) => (
                 <tr key={i} className={r.error ? 'bg-red-500/5' : ''}>
-                  <td className="px-3 py-1.5 text-slate-200 font-medium">{r.name || '—'}</td>
-                  <td className="px-3 py-1.5 text-slate-400 font-mono text-xs">{r.address ?? '—'}</td>
-                  <td className="px-3 py-1.5 text-slate-400 font-mono text-xs">{r.templates.join(', ') || '—'}</td>
-                  <td className="px-3 py-1.5 text-slate-400 font-mono text-xs">
+                  <td className="px-3 py-1.5 text-foreground font-medium">{r.name || '—'}</td>
+                  <td className="px-3 py-1.5 text-muted-foreground font-mono text-xs">{r.address ?? '—'}</td>
+                  <td className="px-3 py-1.5 text-muted-foreground font-mono text-xs">{r.templates.join(', ') || '—'}</td>
+                  <td className="px-3 py-1.5 text-muted-foreground font-mono text-xs">
                     {Object.entries(r.labels).map(([k, v]) => `${k}=${v}`).join(', ') || '—'}
                   </td>
                   <td className="px-3 py-1.5 text-xs text-red-400">{r.error ?? ''}</td>
@@ -254,19 +255,19 @@ export function BatchAddDialog({ open, onClose }: { open: boolean; onClose: () =
         )}
 
         {result && (
-          <div className="border border-slate-800 rounded-lg overflow-hidden">
-            <div className="text-xs px-3 py-1.5 border-b border-slate-800">
+          <div className="border border-border rounded-lg overflow-hidden">
+            <div className="text-xs px-3 py-1.5 border-b border-border">
               <span className="text-emerald-400">{result.created} erstellt</span>
               {result.failed > 0 && <span className="text-red-400 ml-3">{result.failed} fehlgeschlagen</span>}
             </div>
             <Table head={[t('name'), t('status')]}>
               {result.results.map((r, i) => (
                 <tr key={i}>
-                  <td className="px-3 py-1.5 text-slate-200">{r.name}</td>
+                  <td className="px-3 py-1.5 text-foreground">{r.name}</td>
                   <td className="px-3 py-1.5 text-xs">
                     {r.error
-                      ? <span className="text-red-400">✕ {r.error}</span>
-                      : <span className="text-emerald-400">✓ erstellt</span>}
+                      ? <span className="text-red-400 inline-flex items-center gap-1"><X size={13} /> {r.error}</span>
+                      : <span className="text-emerald-400 inline-flex items-center gap-1"><Check size={13} /> erstellt</span>}
                   </td>
                 </tr>
               ))}
@@ -285,7 +286,7 @@ export function BatchAddDialog({ open, onClose }: { open: boolean; onClose: () =
               onClick={() => save.mutate()}
               disabled={save.isPending || validCount === 0 || (kind === 'service' && !defHost)}
             >
-              {save.isPending ? '…' : `${validCount} ${t('create')}`}
+              {save.isPending ? <Loader2 className="animate-spin" size={14} /> : `${validCount} ${t('create')}`}
             </Button>
           )}
         </div>

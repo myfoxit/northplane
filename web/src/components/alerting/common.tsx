@@ -13,7 +13,7 @@ export function DateTimeInput({ value, onChange }: { value: string; onChange: (v
       type="datetime-local"
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 w-full focus:outline-none focus:border-blue-500"
+      className="bg-card border border-input rounded-lg px-3 py-1.5 text-sm text-foreground w-full focus:border-ring"
     />
   )
 }
@@ -32,8 +32,8 @@ export function ChannelPicker({ value, onChange }: {
           <button
             key={c} type="button" onClick={() => toggle(c)}
             className={`px-2 py-1 rounded-md text-xs font-medium border cursor-pointer transition-colors ${
-              on ? 'bg-blue-600 border-blue-500 text-white'
-                 : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-slate-200'}`}
+              on ? 'bg-primary border-primary text-white'
+                 : 'bg-card border-input text-muted-foreground hover:text-foreground'}`}
           >
             {c}
           </button>
@@ -51,7 +51,7 @@ export function SeverityField({ value, onChange, label }: {
     <Field label={label}>
       <select
         value={value} onChange={(e) => onChange(e.target.value as Severity)}
-        className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 w-full focus:outline-none focus:border-blue-500 cursor-pointer"
+        className="bg-card border border-input rounded-lg px-3 py-1.5 text-sm text-foreground w-full focus:border-ring cursor-pointer"
       >
         {severities.map((s) => <option key={s} value={s}>{s}</option>)}
       </select>
@@ -67,7 +67,7 @@ export function ToggleRow({ label, checked, onChange, hint }: {
   return (
     <div className="py-0.5">
       <Toggle checked={checked} onChange={onChange} label={label} />
-      {hint && <div className="text-[11px] text-slate-500 mt-0.5">{hint}</div>}
+      {hint && <div className="text-[11px] text-muted-foreground mt-0.5">{hint}</div>}
     </div>
   )
 }

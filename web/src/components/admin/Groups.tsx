@@ -6,7 +6,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { resourceApi } from '../../api'
 import type { ContactGroup, Contact } from '../../types'
-import { Button, Table, Empty, Dialog, Input } from '../ui'
+import { Button, Table, Empty, Dialog, Input, Spinner } from '../ui'
 import { Field, FormError, SubmitRow, useSave, DeleteButton, ListEditor } from '../forms'
 import { t } from '../../i18n'
 import { TableActions, RowActions } from './common'
@@ -23,9 +23,9 @@ export function GroupsTab() {
       <Table head={[t('name'), 'Mitglieder', 'IdP-Gruppe', '']}>
         {(data ?? []).map((g) => (
           <tr key={g.name}>
-            <td className="px-3 py-2 text-slate-200">{g.name}</td>
-            <td className="px-3 py-2 text-xs text-slate-400">{g.members?.join(', ') || '—'}</td>
-            <td className="px-3 py-2 text-xs text-slate-400 font-mono">{g.idpGroup || '—'}</td>
+            <td className="px-3 py-2 text-foreground">{g.name}</td>
+            <td className="px-3 py-2 text-xs text-muted-foreground">{g.members?.join(', ') || '—'}</td>
+            <td className="px-3 py-2 text-xs text-muted-foreground font-mono">{g.idpGroup || '—'}</td>
             <td className="px-3 py-2">
               <RowActions>
                 <Button size="sm" variant="ghost" onClick={() => setEditing(g)}>{t('edit')}</Button>
@@ -62,7 +62,7 @@ function GroupDialog({ name, onClose }: { name: string | null; onClose: () => vo
     enabled: !isNew,
   })
   if (!isNew && isLoading) {
-    return <Dialog open onClose={onClose} title={t('loading')} size="md"><div className="text-slate-500 text-sm">…</div></Dialog>
+    return <Dialog open onClose={onClose} title={t('loading')} size="md"><Spinner /></Dialog>
   }
   return (
     <GroupForm

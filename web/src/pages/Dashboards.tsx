@@ -5,9 +5,10 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
+import { ArrowLeft, ArrowRight, Maximize2, X, LayoutGrid, Pencil, Radar, Loader2 } from 'lucide-react'
 import { APIError, resourceApi } from '../api'
 import type { DashboardDoc, DashboardWidget } from '../types'
-import { Button, Card, Dialog, Empty, Spinner, Badge } from '../components/ui'
+import { Button, Card, Dialog, Empty, Spinner, Badge, ErrorState } from '../components/ui'
 import { Field, Select, TextArea, Toggle, FormError, SubmitRow, useSave, DeleteButton } from '../components/forms'
 import { Input } from '../components/ui'
 import { WidgetBody, widgetTypeLabel } from '../components/dash/widgets'
@@ -46,7 +47,7 @@ function defaultWidget(type: DashboardWidget['type']): DashboardWidget {
 export function DashboardsPage() {
   const navigate = useNavigate()
   const [creating, setCreating] = useState(false)
-  const { data, isLoading } = useQuery({ queryKey: dashApi.queryKey, queryFn: dashApi.list })
+  const { data, isLoading, isError, error, refetch } = useQuery({ queryKey: dashApi.queryKey, queryFn: dashApi.list })
 
   const create = useSave(
     (doc: DashboardDoc) => dashApi.create(doc),
@@ -59,6 +60,10 @@ export function DashboardsPage() {
 
   const [name, setName] = useState('')
   const [shared, setShared] = useState(false)
+
+  if (isError && !data) {
+    return <div className="p-8"><ErrorState error={error} onRetry={() => refetch()} /></div>
+  }
 
   return (
     <div className="space-y-4">
@@ -78,21 +83,21 @@ export function DashboardsPage() {
             <div className="flex items-start justify-between gap-2">
               <Link
                 to="/dashboards/$name" params={{ name: d.name }}
-                className="font-semibold text-slate-200 hover:text-blue-300"
+                className="inline-flex items-center gap-1.5 font-semibold text-foreground hover:text-primary"
               >
-                ◫ {d.name}
+                <LayoutGrid size={15} className="shrink-0" />{d.name}
               </Link>
               {d.shared && <Badge className="bg-sky-500/15 text-sky-400 border-sky-500/30">geteilt</Badge>}
             </div>
-            <div className="text-xs text-slate-500 mt-2">
+            <div className="text-xs text-muted-foreground mt-2">
               {(d.spec?.widgets?.length ?? 0)} {t('widget')}
             </div>
             <div className="flex items-center justify-between mt-3">
               <Link
                 to="/dashboards/$name" params={{ name: d.name }}
-                className="text-xs text-blue-400 hover:text-blue-300"
+                className="text-xs text-primary hover:text-primary inline-flex items-center gap-1"
               >
-                Öffnen →
+                Öffnen <ArrowRight size={14} />
               </Link>
               <DeleteButton onDelete={() => remove.mutate(d.name)} />
             </div>
@@ -138,7 +143,7 @@ export function DashboardViewPage() {
 }
 
 function DashboardView({ name, wallboard }: { name: string; wallboard: boolean }) {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: [...dashApi.queryKey, name],
     queryFn: () => dashApi.get(name),
   })
@@ -173,6 +178,9 @@ function DashboardView({ name, wallboard }: { name: string; wallboard: boolean }
     },
   )
 
+  if (isError && !data) {
+    return <div className="p-8"><ErrorState error={error} onRetry={() => refetch()} /></div>
+  }
   if (isLoading) return <Spinner />
   if (!data) return <Empty text={t('empty')} />
 
@@ -190,13 +198,15 @@ function DashboardView({ name, wallboard }: { name: string; wallboard: boolean }
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0">
           {!wallboard && (
-            <Link to="/dashboards" className="text-slate-500 hover:text-slate-300 text-sm shrink-0">←</Link>
+            <Link to="/dashboards" className="text-muted-foreground hover:text-foreground/90 text-sm shrink-0" aria-label="Zurück">
+              <ArrowLeft size={16} />
+            </Link>
           )}
           <h1 className={`font-bold truncate ${wallboard ? 'text-2xl' : 'text-lg'}`}>
-            {wallboard && <span className="text-blue-400">▲ </span>}{name}
+            {wallboard && <Radar className="inline align-middle text-primary mr-2 -mt-1" size={22} />}{name}
           </h1>
           {wallboard && (
-            <span className="text-slate-500 text-sm tabular-nums ml-auto">{new Date().toLocaleTimeString()}</span>
+            <span className="text-muted-foreground text-sm tabular-nums ml-auto">{new Date().toLocaleTimeString()}</span>
           )}
         </div>
         {!wallboard && (
@@ -206,16 +216,16 @@ function DashboardView({ name, wallboard }: { name: string; wallboard: boolean }
                 <Button onClick={() => setAddOpen(true)}>+ {t('addWidget')}</Button>
                 <Button variant="ghost" onClick={cancelEdit}>{t('cancel')}</Button>
                 <Button variant="primary" onClick={() => save.mutate(widgets)} disabled={save.isPending}>
-                  {save.isPending ? '…' : t('save')}
+                  {save.isPending ? <Loader2 className="animate-spin" size={14} /> : t('save')}
                 </Button>
               </>
             ) : (
               <>
                 <a
                   href={`/dashboards/${encodeURIComponent(name)}?wallboard`}
-                  className="text-xs text-slate-500 hover:text-slate-300 px-2 py-1.5"
-                >▣ {t('wallboard')}</a>
-                <Button onClick={startEdit}>✎ {t('edit')}</Button>
+                  className="text-xs text-muted-foreground hover:text-foreground/90 px-2 py-1.5 inline-flex items-center gap-1"
+                ><Maximize2 size={14} /> {t('wallboard')}</a>
+                <Button onClick={startEdit}><Pencil size={14} /> {t('edit')}</Button>
               </>
             )}
           </div>
@@ -230,21 +240,22 @@ function DashboardView({ name, wallboard }: { name: string; wallboard: boolean }
         <div className="grid grid-cols-12 gap-3">
           {widgets.map((wd, i) => (
             <div key={i} className={COL[wd.w ?? 6] ?? 'col-span-6'}>
-              <div className="bg-slate-900/60 border border-slate-800 rounded-xl h-full flex flex-col">
-                <div className="flex items-center justify-between px-3 py-2 border-b border-slate-800">
-                  <span className="text-xs font-semibold text-slate-400 truncate">
+              <div className="bg-card/60 border border-border rounded-xl h-full flex flex-col">
+                <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+                  <span className="text-xs font-semibold text-muted-foreground truncate">
                     {wd.title || widgetTypeLabel(wd.type)}
                   </span>
                   {editing && (
                     <button
-                      className="text-slate-500 hover:text-red-400 cursor-pointer text-sm shrink-0"
+                      className="text-muted-foreground hover:text-red-400 cursor-pointer text-sm shrink-0"
                       onClick={() => removeWidget(i)}
                       title={t('remove')}
-                    >✕</button>
+                      aria-label={t('remove')}
+                    ><X size={14} /></button>
                   )}
                 </div>
                 {editing && (
-                  <div className="px-3 py-2 border-b border-slate-800 space-y-2 bg-slate-950/40">
+                  <div className="px-3 py-2 border-b border-border space-y-2 bg-background/40">
                     <WidgetEditFields widget={wd} onChange={(patch) => mutateWidget(i, patch)} />
                   </div>
                 )}

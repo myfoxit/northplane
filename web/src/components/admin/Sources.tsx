@@ -10,7 +10,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { resourceApi } from '../../api'
 import type { EventSourceDef, Severity } from '../../types'
-import { Button, Table, Empty, Dialog, Input, Badge } from '../ui'
+import { Button, Table, Empty, Dialog, Input, Badge, Spinner } from '../ui'
 import { Field, FormError, SubmitRow, useSave, DeleteButton, Select, Toggle, KVEditor, DurationInput } from '../forms'
 import { t } from '../../i18n'
 import { TypeBadge, StatusBadge, TableActions, RowActions, secretHint } from './common'
@@ -31,9 +31,9 @@ export function SourcesTab() {
         {(data ?? []).map((s) => (
           <tr key={s.name}>
             <td className="px-3 py-2 w-28"><TypeBadge>{s.type}</TypeBadge></td>
-            <td className="px-3 py-2 text-slate-200">{s.name}</td>
+            <td className="px-3 py-2 text-foreground">{s.name}</td>
             <td className="px-3 py-2">{s.enabled ? <StatusBadge kind="enabled" /> : <StatusBadge kind="disabled" />}</td>
-            <td className="px-3 py-2 text-xs text-slate-500 font-mono truncate max-w-56">
+            <td className="px-3 py-2 text-xs text-muted-foreground font-mono truncate max-w-56">
               {(s.type === 'webhook' || s.type === 'alertmanager') ? `/api/v1/ingest/${s.name}` : '—'}
             </td>
             <td className="px-3 py-2">
@@ -71,7 +71,7 @@ function SourceDialog({ name, onClose }: { name: string | null; onClose: () => v
     enabled: !isNew,
   })
   if (!isNew && isLoading) {
-    return <Dialog open onClose={onClose} title={t('loading')} size="xl"><div className="text-slate-500 text-sm">…</div></Dialog>
+    return <Dialog open onClose={onClose} title={t('loading')} size="xl"><Spinner /></Dialog>
   }
   return (
     <SourceForm
@@ -153,8 +153,8 @@ function SourceForm({ doc, etag, isNew, onClose }: {
 
         {/* HTTP ingress (webhook / alertmanager) */}
         {isHTTP && (
-          <div className="border border-slate-800 rounded-lg p-3 space-y-2">
-            <div className="text-xs text-slate-400 font-medium">Ingress ({type})</div>
+          <div className="border border-border rounded-lg p-3 space-y-2">
+            <div className="text-xs text-muted-foreground font-medium">Ingress ({type})</div>
             <div className="grid grid-cols-2 gap-2">
               <Field label="Auth-Modus">
                 <Select value={authMode} onChange={(e) => setAuthMode(e.target.value as EventSourceDef['authMode'])}>
@@ -165,16 +165,16 @@ function SourceForm({ doc, etag, isNew, onClose }: {
                 <Input value={secretRef} onChange={(e) => setSecretRef(e.target.value)} />
               </Field>
             </div>
-            <div className="text-[11px] text-slate-500">
-              Ingest-URL: <code className="text-slate-400">/api/v1/ingest/{name || '<name>'}</code>
+            <div className="text-[11px] text-muted-foreground">
+              Ingest-URL: <code className="text-muted-foreground">/api/v1/ingest/{name || '<name>'}</code>
             </div>
           </div>
         )}
 
         {/* SNMP trap receiver */}
         {type === 'snmp-trap' && (
-          <div className="border border-slate-800 rounded-lg p-3 space-y-2">
-            <div className="text-xs text-slate-400 font-medium">SNMP-Trap</div>
+          <div className="border border-border rounded-lg p-3 space-y-2">
+            <div className="text-xs text-muted-foreground font-medium">SNMP-Trap</div>
             <div className="grid grid-cols-2 gap-2">
               <Field label="Listen" hint="udp://:9162"><Input value={cfg('listen')} onChange={(e) => setCfg('listen', e.target.value)} placeholder="udp://:9162" /></Field>
               <Field label="Community (v1/v2c)"><Input value={cfg('community')} onChange={(e) => setCfg('community', e.target.value)} /></Field>
@@ -185,7 +185,7 @@ function SourceForm({ doc, etag, isNew, onClose }: {
                 </Select>
               </Field>
             </div>
-            <div className="text-xs text-slate-500 pt-1">SNMPv3</div>
+            <div className="text-xs text-muted-foreground pt-1">SNMPv3</div>
             <div className="grid grid-cols-2 gap-2">
               <Field label="v3 User"><Input value={cfg('v3User')} onChange={(e) => setCfg('v3User', e.target.value)} /></Field>
               <Field label="Auth-Protokoll">
@@ -208,8 +208,8 @@ function SourceForm({ doc, etag, isNew, onClose }: {
 
         {/* IMAP / e-mail mailbox poller */}
         {isMail && (
-          <div className="border border-slate-800 rounded-lg p-3 space-y-2">
-            <div className="text-xs text-slate-400 font-medium">Postfach ({type})</div>
+          <div className="border border-border rounded-lg p-3 space-y-2">
+            <div className="text-xs text-muted-foreground font-medium">Postfach ({type})</div>
             <div className="grid grid-cols-2 gap-2">
               <Field label="Host"><Input value={cfg('host')} onChange={(e) => setCfg('host', e.target.value)} /></Field>
               <Field label="Port"><Input type="number" value={cfg('port')} onChange={(e) => setCfg('port', e.target.value)} /></Field>
@@ -253,7 +253,7 @@ function SourceForm({ doc, etag, isNew, onClose }: {
         </Field>
 
         {isHTTP && type === 'alertmanager' && (
-          <Badge className="bg-slate-800 text-slate-400 border-slate-700">Alertmanager-Webhook empfängt Prometheus-Alerts</Badge>
+          <Badge className="bg-muted text-muted-foreground border-input">Alertmanager-Webhook empfängt Prometheus-Alerts</Badge>
         )}
 
         <FormError error={save.error} />

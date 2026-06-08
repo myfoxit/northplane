@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { resourceApi } from '../../api'
 import type { AlertGroup } from '../../types'
-import { Badge, Button, Dialog, Empty, Input, Table } from '../ui'
+import { Badge, Button, Dialog, Empty, ErrorState, Input, Table } from '../ui'
 import { Field, FormError, ListEditor, DurationInput, SubmitRow, DeleteButton, useSave } from '../forms'
 import { t } from '../../i18n'
 
@@ -15,13 +15,17 @@ function emptyGroup(): AlertGroup {
 }
 
 export function GroupsTab() {
-  const { data } = useQuery({ queryKey: groupsApi.queryKey, queryFn: groupsApi.list })
+  const { data, isError, error, refetch } = useQuery({ queryKey: groupsApi.queryKey, queryFn: groupsApi.list })
   const [editing, setEditing] = useState<{ group: AlertGroup; etag: number } | null>(null)
 
   const open = async (name?: string) => {
     if (!name) { setEditing({ group: emptyGroup(), etag: 0 }); return }
     const { data: g, etag } = await groupsApi.get(name)
     setEditing({ group: g, etag })
+  }
+
+  if (isError && !data) {
+    return <div className="p-8"><ErrorState error={error} onRetry={() => refetch()} /></div>
   }
 
   return (
@@ -32,12 +36,12 @@ export function GroupsTab() {
       {(data?.length ?? 0) === 0 ? <Empty text={t('empty')} /> : (
         <Table head={[t('name'), 'Group-By', 'Fenster', 'Aggregat', 'Min', t('actions')]}>
           {data!.map((g) => (
-            <tr key={g.name} className="hover:bg-slate-800/30">
-              <td className="px-3 py-2 font-medium text-slate-200">{g.name}</td>
-              <td className="px-3 py-2 font-mono text-xs text-slate-400">{g.groupBy.join(', ') || '—'}</td>
-              <td className="px-3 py-2 font-mono text-xs text-slate-400">{g.window}</td>
-              <td className="px-3 py-2"><Badge className="bg-slate-800 text-slate-300 border-slate-700">{g.aggregate ?? 'count'}</Badge></td>
-              <td className="px-3 py-2 text-xs text-slate-400 tabular-nums">{g.minCount ?? '—'}</td>
+            <tr key={g.name} className="hover:bg-muted/30">
+              <td className="px-3 py-2 font-medium text-foreground">{g.name}</td>
+              <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{g.groupBy.join(', ') || '—'}</td>
+              <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{g.window}</td>
+              <td className="px-3 py-2"><Badge className="bg-muted text-foreground/90 border-input">{g.aggregate ?? 'count'}</Badge></td>
+              <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">{g.minCount ?? '—'}</td>
               <td className="px-3 py-2 text-right"><Button size="sm" onClick={() => open(g.name)}>{t('edit')}</Button></td>
             </tr>
           ))}
@@ -77,7 +81,7 @@ function GroupDialog({ state, onClose }: { state: { group: AlertGroup; etag: num
           </Field>
           <Field label="Aggregat">
             <select value={g.aggregate ?? 'count'} onChange={(e) => set({ aggregate: e.target.value as AlertGroup['aggregate'] })}
-              className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 w-full focus:outline-none focus:border-blue-500 cursor-pointer">
+              className="bg-card border border-input rounded-lg px-3 py-1.5 text-sm text-foreground w-full focus:border-ring cursor-pointer">
               {aggregates.map((a) => <option key={a} value={a}>{a}</option>)}
             </select>
           </Field>

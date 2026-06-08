@@ -2,10 +2,11 @@
 import { useState } from 'react'
 import { keepPreviousData, useQuery, useMutation } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
+import { Sparkles } from 'lucide-react'
 import { get, post, queryClient, fmtAgo, type ListResponse } from '../api'
 import type { Alert, AlertsSearch, Incident, Severity } from '../types'
 import { sevColor } from '../types'
-import { Button, Badge, Empty, Card } from '../components/ui'
+import { Button, Badge, Empty, Card, ErrorState } from '../components/ui'
 import { AckDialog } from '../components/AckDialog'
 import { t } from '../i18n'
 
@@ -22,7 +23,7 @@ export function AlertsPage() {
       replace: true,
     })
   const [ackTarget, setAckTarget] = useState<Alert | null>(null)
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['alerts', status],
     queryFn: () => get<ListResponse<Alert>>(`/alerts?status=${status}&limit=200`),
     placeholderData: keepPreviousData,
@@ -32,20 +33,23 @@ export function AlertsPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['alerts'] }),
   })
   const rows = (data?.items ?? []).filter((a) => !severity || a.severity === (severity as Severity))
+  if (isError && !data) {
+    return <div className="p-8"><ErrorState error={error} onRetry={() => refetch()} /></div>
+  }
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
-        <h1 className="text-lg font-bold">{t('alerts')} <span className="text-slate-500 text-sm">({rows.length})</span></h1>
+        <h1 className="text-lg font-bold">{t('alerts')} <span className="text-muted-foreground text-sm">({rows.length})</span></h1>
         <div className="flex gap-2">
           <select value={severity} onChange={(e) => patchSearch({ severity: e.target.value || undefined })}
-            className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-sm text-slate-300">
+            className="bg-card border border-input rounded-lg px-2 py-1 text-sm text-foreground/90">
             <option value="">alle Severities</option>
             <option value="critical">critical</option>
             <option value="warning">warning</option>
             <option value="info">info</option>
           </select>
           <select value={status} onChange={(e) => patchSearch({ status: e.target.value })}
-            className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-sm text-slate-300">
+            className="bg-card border border-input rounded-lg px-2 py-1 text-sm text-foreground/90">
             <option value="open,acked">offen + quittiert</option>
             <option value="open">nur offen</option>
             <option value="resolved,expired">geschlossen</option>
@@ -56,11 +60,11 @@ export function AlertsPage() {
       {!isLoading && rows.length === 0 && <Empty text={t('empty')} />}
       <div className="space-y-1.5">
         {rows.map((a) => (
-          <div key={a.id} className="flex items-center gap-3 bg-slate-900/50 border border-slate-800 rounded-lg px-3 py-2 group">
+          <div key={a.id} className="flex items-center gap-3 bg-card/50 border border-border rounded-lg px-3 py-2 group">
             <Badge className={sevColor(a.severity)}>{a.severity}</Badge>
             <div className="min-w-0 flex-1">
-              <div className="text-sm text-slate-200 font-medium truncate">{a.title}</div>
-              <div className="text-xs text-slate-500">
+              <div className="text-sm text-foreground font-medium truncate">{a.title}</div>
+              <div className="text-xs text-muted-foreground">
                 {a.status}{a.ackedBy ? ` von ${a.ackedBy}` : ''} · seit {fmtAgo(a.openedAt)}
                 {a.dedupKey ? ` · ${a.dedupKey}` : ''}
               </div>
@@ -83,7 +87,7 @@ export function AlertsPage() {
 }
 
 export function IncidentsPage() {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['incidents'],
     queryFn: () => get<ListResponse<Incident>>('/incidents?limit=100'),
   })
@@ -96,6 +100,9 @@ export function IncidentsPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['incidents'] }),
   })
   const rows = data?.items ?? []
+  if (isError && !data) {
+    return <div className="p-8"><ErrorState error={error} onRetry={() => refetch()} /></div>
+  }
   return (
     <div className="space-y-4">
       <h1 className="text-lg font-bold">{t('incidents')}</h1>
@@ -106,24 +113,24 @@ export function IncidentsPage() {
           <Card key={inc.id} title={
             <span className="flex items-center gap-2">
               <Badge className={sevColor(inc.severity)}>{inc.severity}</Badge>
-              <span className={inc.status === 'resolved' ? 'line-through text-slate-500' : ''}>{inc.title}</span>
+              <span className={inc.status === 'resolved' ? 'line-through text-muted-foreground' : ''}>{inc.title}</span>
             </span>
           } actions={
             inc.status === 'open' ? (
               <div className="flex gap-1">
                 <Button size="sm" variant="ghost" onClick={() => summarize.mutate(inc.id)}
-                  disabled={summarize.isPending} title="AI-Zusammenfassung">✦</Button>
+                  disabled={summarize.isPending} title="AI-Zusammenfassung" aria-label="AI-Zusammenfassung"><Sparkles size={14} /></Button>
                 <Button size="sm" onClick={() => resolve.mutate(inc.id)}>{t('resolve')}</Button>
               </div>
             ) : undefined
           }>
-            <div className="text-xs text-slate-500 mb-1">
+            <div className="text-xs text-muted-foreground mb-1">
               {inc.createdBy} · {fmtAgo(inc.openedAt)} · {inc.impact}
             </div>
-            {inc.summary && <p className="text-sm text-slate-300 whitespace-pre-wrap">{inc.summary}</p>}
+            {inc.summary && <p className="text-sm text-foreground/90 whitespace-pre-wrap">{inc.summary}</p>}
             {inc.ticketUrl && (
               <a href={inc.ticketUrl} target="_blank" rel="noreferrer"
-                className="text-xs text-blue-400 hover:underline">Ticket ↗</a>
+                className="text-xs text-primary hover:underline">Ticket ↗</a>
             )}
           </Card>
         ))}

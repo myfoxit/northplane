@@ -7,6 +7,7 @@
 // resourceApi.get and PUT with that etag (409/412 → FormError).
 import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
+import { Sparkles } from 'lucide-react'
 import { get, post, del, queryClient, fmtTime, type ListResponse } from '../api'
 import type { AIAction } from '../types'
 import { Button, Card, Input, Empty, Badge, Table, TabBar } from '../components/ui'
@@ -95,10 +96,12 @@ function TokensTab() {
       <Table head={['Name', 'Prefix', 'Scopes', 'Zuletzt', '']}>
         {data?.items?.map((tok) => (
           <tr key={tok.id}>
-            <td className="px-3 py-2 text-slate-200">{tok.name}{tok.aiAgent ? ' ✦' : ''}</td>
-            <td className="px-3 py-2 font-mono text-slate-500">np_{tok.prefix}…</td>
-            <td className="px-3 py-2 text-xs text-slate-400">{tok.scopes?.join(', ')}</td>
-            <td className="px-3 py-2 text-xs text-slate-500">{tok.lastUsedAt ? fmtTime(tok.lastUsedAt) : '—'}</td>
+            <td className="px-3 py-2 text-foreground">
+              <span className="inline-flex items-center gap-1">{tok.name}{tok.aiAgent && <Sparkles size={14} />}</span>
+            </td>
+            <td className="px-3 py-2 font-mono text-muted-foreground">np_{tok.prefix}…</td>
+            <td className="px-3 py-2 text-xs text-muted-foreground">{tok.scopes?.join(', ')}</td>
+            <td className="px-3 py-2 text-xs text-muted-foreground">{tok.lastUsedAt ? fmtTime(tok.lastUsedAt) : '—'}</td>
             <td className="px-3 py-2 text-right">
               <Button size="sm" variant="danger" onClick={() => revoke.mutate(tok.id)}>{t('revoke')}</Button>
             </td>
@@ -134,22 +137,22 @@ function AuditTab() {
           onChange={(e) => setAction(e.target.value)} className="max-w-xs" />
         <Button onClick={() => doVerify.mutate()}>{t('verifyChain')}</Button>
         {verify && <span className={`text-sm ${verify.startsWith('✓') ? 'text-emerald-400' : 'text-red-400'}`}>{verify}</span>}
-        <a href="/api/v1/audit:export" className="text-xs text-slate-500 hover:text-slate-300 ml-auto">⇩ NDJSON (SIEM)</a>
+        <a href="/api/v1/audit:export" className="text-xs text-muted-foreground hover:text-foreground/90 ml-auto">⇩ NDJSON (SIEM)</a>
       </div>
       <Table head={['Seq', 'Zeit', 'Akteur', 'Aktion', 'Ressource']}>
         {data?.items?.map((e) => (
           <tr key={e.seq}>
-            <td className="px-3 py-1.5 text-slate-600 tabular-nums">{e.seq}</td>
-            <td className="px-3 py-1.5 text-slate-500 text-xs tabular-nums">{fmtTime(e.ts)}</td>
+            <td className="px-3 py-1.5 text-muted-foreground/70 tabular-nums">{e.seq}</td>
+            <td className="px-3 py-1.5 text-muted-foreground text-xs tabular-nums">{fmtTime(e.ts)}</td>
             <td className="px-3 py-1.5 text-xs">
               <Badge className={e.actorType === 'ai_agent'
                 ? 'bg-purple-500/10 text-purple-400 border-purple-800'
-                : 'bg-slate-800 text-slate-400 border-slate-700'}>
+                : 'bg-muted text-muted-foreground border-input'}>
                 {e.actorType}
               </Badge>
             </td>
-            <td className="px-3 py-1.5 text-slate-300 font-mono text-xs">{e.action}</td>
-            <td className="px-3 py-1.5 text-slate-500 text-xs font-mono truncate max-w-48">{e.resource}</td>
+            <td className="px-3 py-1.5 text-foreground/90 font-mono text-xs">{e.action}</td>
+            <td className="px-3 py-1.5 text-muted-foreground text-xs font-mono truncate max-w-48">{e.resource}</td>
           </tr>
         ))}
       </Table>
@@ -173,18 +176,18 @@ function AIQueueTab() {
     <div className="space-y-2">
       {rows.length === 0 && <Empty text="Keine AI-Aktionen." />}
       {rows.map((a) => (
-        <div key={a.id} className="bg-slate-900/50 border border-slate-800 rounded-lg px-3 py-2 flex items-center gap-3">
+        <div key={a.id} className="bg-card/50 border border-border rounded-lg px-3 py-2 flex items-center gap-3">
           <Badge className={
             a.status === 'proposed' ? 'bg-amber-500/10 text-amber-400 border-amber-800'
               : a.status === 'executed' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-800'
-                : 'bg-slate-800 text-slate-400 border-slate-700'}>
+                : 'bg-muted text-muted-foreground border-input'}>
             {a.status}
           </Badge>
           <div className="flex-1 min-w-0">
-            <div className="text-sm text-slate-200 font-mono">{a.tool}</div>
-            <div className="text-xs text-slate-500 font-mono truncate">{JSON.stringify(a.args)}</div>
+            <div className="text-sm text-foreground font-mono">{a.tool}</div>
+            <div className="text-xs text-muted-foreground font-mono truncate">{JSON.stringify(a.args)}</div>
           </div>
-          <span className="text-xs text-slate-600">{a.actor} · {fmtTime(a.createdAt)}</span>
+          <span className="text-xs text-muted-foreground/70">{a.actor} · {fmtTime(a.createdAt)}</span>
           {a.status === 'proposed' && (
             <div className="flex gap-1">
               <Button size="sm" variant="primary" onClick={() => decide.mutate({ id: a.id, verb: 'approve' })}>
@@ -214,11 +217,11 @@ function HealthTab() {
   return (
     <div className="grid lg:grid-cols-2 gap-4">
       <Card title="system/info">
-        <pre className="text-xs text-slate-400 font-mono">{JSON.stringify(info, null, 2)}</pre>
+        <pre className="text-xs text-muted-foreground font-mono">{JSON.stringify(info, null, 2)}</pre>
       </Card>
       <Card title="system/health" actions={
-        <a href="/metrics" className="text-xs text-slate-500 hover:text-slate-300">OpenMetrics ↗</a>}>
-        <pre className="text-xs text-slate-400 font-mono overflow-auto max-h-96">{JSON.stringify(health, null, 2)}</pre>
+        <a href="/metrics" className="text-xs text-muted-foreground hover:text-foreground/90">OpenMetrics ↗</a>}>
+        <pre className="text-xs text-muted-foreground font-mono overflow-auto max-h-96">{JSON.stringify(health, null, 2)}</pre>
       </Card>
     </div>
   )

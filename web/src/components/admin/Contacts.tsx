@@ -5,9 +5,10 @@
 // model.ChannelPreference (F-04.08).
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { X } from 'lucide-react'
 import { resourceApi } from '../../api'
 import type { Contact, ChannelPreference, ChannelType, Severity } from '../../types'
-import { Button, Table, Empty, Dialog, Input, Badge } from '../ui'
+import { Button, Table, Empty, Dialog, Input, Badge, Spinner } from '../ui'
 import { Field, FormError, SubmitRow, useSave, DeleteButton, Select } from '../forms'
 import { t } from '../../i18n'
 import { TableActions, RowActions } from './common'
@@ -26,11 +27,11 @@ export function ContactsTab() {
       <Table head={[t('name'), t('email'), t('phone'), t('timezone'), 'Profile', '']}>
         {(data ?? []).map((c) => (
           <tr key={c.name}>
-            <td className="px-3 py-2 text-slate-200">{c.name}</td>
-            <td className="px-3 py-2 text-xs text-slate-400">{c.email || '—'}</td>
-            <td className="px-3 py-2 text-xs text-slate-400 font-mono">{c.phone || '—'}</td>
-            <td className="px-3 py-2 text-xs text-slate-400">{c.timeZone || '—'}</td>
-            <td className="px-3 py-2 text-xs text-slate-500">{c.preferences?.length ?? 0}</td>
+            <td className="px-3 py-2 text-foreground">{c.name}</td>
+            <td className="px-3 py-2 text-xs text-muted-foreground">{c.email || '—'}</td>
+            <td className="px-3 py-2 text-xs text-muted-foreground font-mono">{c.phone || '—'}</td>
+            <td className="px-3 py-2 text-xs text-muted-foreground">{c.timeZone || '—'}</td>
+            <td className="px-3 py-2 text-xs text-muted-foreground">{c.preferences?.length ?? 0}</td>
             <td className="px-3 py-2">
               <RowActions>
                 <Button size="sm" variant="ghost" onClick={() => setEditing(c)}>{t('edit')}</Button>
@@ -66,7 +67,7 @@ function ContactDialog({ name, onClose }: { name: string | null; onClose: () => 
     enabled: !isNew,
   })
   if (!isNew && isLoading) {
-    return <Dialog open onClose={onClose} title={t('loading')} size="lg"><div className="text-slate-500 text-sm">…</div></Dialog>
+    return <Dialog open onClose={onClose} title={t('loading')} size="lg"><Spinner /></Dialog>
   }
   return (
     <ContactForm
@@ -106,7 +107,7 @@ function ContactForm({ doc, etag, isNew, onClose }: {
           <Field label={t('timezone')} hint="z.B. Europe/Berlin"><Input value={timeZone} onChange={(e) => setTimeZone(e.target.value)} /></Field>
         </div>
         <div>
-          <div className="text-xs text-slate-400 font-medium mb-1">Benachrichtigungs-Präferenzen</div>
+          <div className="text-xs text-muted-foreground font-medium mb-1">Benachrichtigungs-Präferenzen</div>
           <PreferencesEditor value={prefs} onChange={setPrefs} />
         </div>
         <FormError error={save.error} />
@@ -125,7 +126,7 @@ function PreferencesEditor({ value, onChange }: {
   return (
     <div className="space-y-2">
       {value.map((p, i) => (
-        <div key={i} className="border border-slate-800 rounded-lg p-2 space-y-2 bg-slate-900/40">
+        <div key={i} className="border border-border rounded-lg p-2 space-y-2 bg-card/40">
           <div className="grid grid-cols-3 gap-2">
             <Field label="Profil"><Input value={p.profile} onChange={(e) => update(i, { profile: e.target.value })} placeholder="default" /></Field>
             <Field label="Zeitperiode"><Input value={p.period ?? ''} onChange={(e) => update(i, { period: e.target.value || undefined })} placeholder="(immer)" /></Field>
@@ -164,17 +165,18 @@ export function ChannelTypePicker({ value, onChange }: {
       <div className="flex flex-wrap gap-1 min-h-6">
         {value.map((c, i) => (
           <button key={c} type="button" onClick={() => onChange(value.filter((x) => x !== c))}
-            className="inline-flex items-center gap-1 text-xs bg-blue-600/20 text-blue-300 border border-blue-700/50 rounded-md px-2 py-1 cursor-pointer">
-            <span className="text-slate-500">{i + 1}.</span> {c} <span className="text-slate-500">✕</span>
+            aria-label={t('remove')}
+            className="inline-flex items-center gap-1 text-xs bg-primary/20 text-primary border border-primary/50 rounded-md px-2 py-1 cursor-pointer">
+            <span className="text-muted-foreground">{i + 1}.</span> {c} <X size={13} />
           </button>
         ))}
-        {value.length === 0 && <span className="text-xs text-slate-500 py-1">keine</span>}
+        {value.length === 0 && <span className="text-xs text-muted-foreground py-1">keine</span>}
       </div>
       {available.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {available.map((c) => (
             <button key={c} type="button" onClick={() => onChange([...value, c])}>
-              <Badge className="bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200 cursor-pointer">+ {c}</Badge>
+              <Badge className="bg-muted text-muted-foreground border-input hover:text-foreground cursor-pointer">+ {c}</Badge>
             </button>
           ))}
         </div>

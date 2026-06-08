@@ -32,12 +32,12 @@ export function SilencesTab() {
       {(data?.length ?? 0) === 0 ? <Empty text="Keine aktiven Silences." /> : (
         <Table head={['Selector', 'Regex', t('comment'), 'Läuft ab', 'Von', t('actions')]}>
           {data!.map((s) => (
-            <tr key={s.id} className="hover:bg-slate-800/30">
-              <td className="px-3 py-2 font-mono text-xs text-slate-300">{s.selector || '—'}</td>
-              <td className="px-3 py-2 font-mono text-xs text-slate-400">{s.textRegex || '—'}</td>
-              <td className="px-3 py-2 text-sm text-slate-300">{s.comment}</td>
-              <td className="px-3 py-2 text-xs text-slate-400 tabular-nums">{fmtTime(s.expiresAt)}</td>
-              <td className="px-3 py-2 text-xs text-slate-500">{s.createdBy ?? '—'}</td>
+            <tr key={s.id} className="hover:bg-muted/30">
+              <td className="px-3 py-2 font-mono text-xs text-foreground/90">{s.selector || '—'}</td>
+              <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{s.textRegex || '—'}</td>
+              <td className="px-3 py-2 text-sm text-foreground/90">{s.comment}</td>
+              <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">{fmtTime(s.expiresAt)}</td>
+              <td className="px-3 py-2 text-xs text-muted-foreground">{s.createdBy ?? '—'}</td>
               <td className="px-3 py-2 text-right">
                 {s.id && <DeleteButton onDelete={() => remove.mutate(s.id!)} />}
               </td>

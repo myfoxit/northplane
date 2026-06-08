@@ -22,14 +22,14 @@ export function SecretsTab() {
   return (
     <div className="space-y-4">
       <TableActions onCreate={() => setCreating(true)} label={t('create')} />
-      <p className="text-xs text-slate-500">
-        Werte werden verschlüsselt gespeichert und nie wieder angezeigt. Referenz in Kanälen/Quellen: <code className="text-slate-400">$SECRET:name$</code>
+      <p className="text-xs text-muted-foreground">
+        Werte werden verschlüsselt gespeichert und nie wieder angezeigt. Referenz in Kanälen/Quellen: <code className="text-muted-foreground">$SECRET:name$</code>
       </p>
       <Table head={[t('name'), 'Referenz', '']}>
         {(data ?? []).map((name) => (
           <tr key={name}>
-            <td className="px-3 py-2 text-slate-200 font-mono">{name}</td>
-            <td className="px-3 py-2 text-xs text-slate-500 font-mono">$SECRET:{name}$</td>
+            <td className="px-3 py-2 text-foreground font-mono">{name}</td>
+            <td className="px-3 py-2 text-xs text-muted-foreground font-mono">$SECRET:{name}$</td>
             <td className="px-3 py-2">
               <RowActions>
                 <SecretDelete name={name} />

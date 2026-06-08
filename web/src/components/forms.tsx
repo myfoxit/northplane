@@ -1,8 +1,9 @@
 // Shared form primitives for the management UIs (CMP-Admin/Wizard-Parität).
-// Same vendored-shadcn philosophy as ui.tsx: plain Tailwind, no form lib —
-// controlled components + useMutation at the call site.
+// Same vendored-shadcn philosophy as ui.tsx: plain Tailwind on the semantic
+// tokens, no form lib — controlled components + useMutation at the call site.
 import { useState, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { X, Loader2 } from 'lucide-react'
 import { t } from '../i18n'
 import { APIError } from '../api'
 import { Button } from './ui'
@@ -18,12 +19,12 @@ export function Field({ label, hint, error, required, children, className }: {
 }) {
   return (
     <label className={cx('block text-sm', className)}>
-      <span className="text-xs text-slate-400 font-medium">
-        {label}{required && <span className="text-red-400"> *</span>}
+      <span className="text-xs text-muted-foreground font-medium">
+        {label}{required && <span className="text-danger"> *</span>}
       </span>
       <div className="mt-1">{children}</div>
-      {hint && !error && <span className="text-[11px] text-slate-500">{hint}</span>}
-      {error && <span className="text-[11px] text-red-400">{error}</span>}
+      {hint && !error && <span className="text-[11px] text-muted-foreground">{hint}</span>}
+      {error && <span className="text-[11px] text-danger">{error}</span>}
     </label>
   )
 }
@@ -33,8 +34,8 @@ export function Select({ className, children, ...props }: SelectHTMLAttributes<H
     <select
       {...props}
       className={cx(
-        'bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 w-full',
-        'focus:outline-none focus:border-blue-500 cursor-pointer', className,
+        'bg-card border border-input rounded-lg px-3 py-1.5 text-sm text-foreground w-full',
+        'focus:border-ring cursor-pointer', className,
       )}
     >
       {children}
@@ -47,8 +48,8 @@ export function TextArea({ className, ...props }: TextareaHTMLAttributes<HTMLTex
     <textarea
       {...props}
       className={cx(
-        'bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 w-full font-mono',
-        'placeholder:text-slate-500 focus:outline-none focus:border-blue-500 min-h-20', className,
+        'bg-card border border-input rounded-lg px-3 py-1.5 text-sm text-foreground w-full font-mono',
+        'placeholder:text-muted-foreground focus:border-ring min-h-20', className,
       )}
     />
   )
@@ -64,11 +65,11 @@ export function Toggle({ checked, onChange, label }: {
       className="inline-flex items-center gap-2 cursor-pointer group"
     >
       <span className={cx('w-8 h-4.5 rounded-full transition-colors relative',
-        checked ? 'bg-blue-600' : 'bg-slate-700')}>
+        checked ? 'bg-primary' : 'bg-input')}>
         <span className={cx('absolute top-0.5 w-3.5 h-3.5 rounded-full bg-white transition-transform',
           checked ? 'translate-x-4' : 'translate-x-0.5')} />
       </span>
-      {label && <span className="text-sm text-slate-300 group-hover:text-slate-100">{label}</span>}
+      {label && <span className="text-sm text-foreground/90 group-hover:text-foreground">{label}</span>}
     </button>
   )
 }
@@ -88,9 +89,9 @@ export function DurationInput({ value, onChange, placeholder }: {
       value={value} onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder ?? '60s'}
       className={cx(
-        'bg-slate-900 border rounded-lg px-3 py-1.5 text-sm text-slate-200 w-full font-mono',
-        'placeholder:text-slate-500 focus:outline-none',
-        ok ? 'border-slate-700 focus:border-blue-500' : 'border-red-500/70',
+        'bg-card border rounded-lg px-3 py-1.5 text-sm text-foreground w-full font-mono',
+        'placeholder:text-muted-foreground',
+        ok ? 'border-input focus:border-ring' : 'border-destructive/70',
       )}
     />
   )
@@ -108,23 +109,23 @@ export function KVEditor({ value, onChange, keyPlaceholder, valuePlaceholder }: 
     <div className="space-y-1.5">
       {entries.map(([k, v]) => (
         <div key={k} className="flex gap-1.5 items-center">
-          <span className="font-mono text-xs text-slate-400 bg-slate-800/70 rounded px-2 py-1.5 min-w-24">{k}</span>
+          <span className="font-mono text-xs text-muted-foreground bg-muted rounded px-2 py-1.5 min-w-24">{k}</span>
           <input
             value={v}
             onChange={(e) => onChange({ ...value, [k]: e.target.value })}
-            className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-sm font-mono text-slate-200 focus:outline-none focus:border-blue-500"
+            className="flex-1 bg-card border border-input rounded-lg px-2 py-1 text-sm font-mono text-foreground focus:border-ring"
           />
-          <Button size="sm" variant="ghost" onClick={() => {
+          <Button size="sm" variant="ghost" aria-label={t('remove')} onClick={() => {
             const next = { ...value }
             delete next[k]
             onChange(next)
-          }}>✕</Button>
+          }}><X size={13} /></Button>
         </div>
       ))}
       <div className="flex gap-1.5">
         <input
           value={nk} onChange={(e) => setNk(e.target.value)} placeholder={keyPlaceholder ?? 'key'}
-          className="w-32 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-sm font-mono text-slate-200 focus:outline-none focus:border-blue-500"
+          className="w-32 bg-card border border-input rounded-lg px-2 py-1 text-sm font-mono text-foreground focus:border-ring"
         />
         <input
           value={nv} onChange={(e) => setNv(e.target.value)} placeholder={valuePlaceholder ?? 'value'}
@@ -134,7 +135,7 @@ export function KVEditor({ value, onChange, keyPlaceholder, valuePlaceholder }: 
               setNk(''); setNv('')
             }
           }}
-          className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-sm font-mono text-slate-200 focus:outline-none focus:border-blue-500"
+          className="flex-1 bg-card border border-input rounded-lg px-2 py-1 text-sm font-mono text-foreground focus:border-ring"
         />
         <Button size="sm" disabled={!nk} onClick={() => {
           onChange({ ...value, [nk]: nv })
@@ -160,12 +161,13 @@ export function ListEditor({ value, onChange, placeholder, suggestions }: {
     <div className="space-y-1.5">
       <div className="flex flex-wrap gap-1">
         {value.map((v, i) => (
-          <span key={v} className="inline-flex items-center gap-1 text-xs bg-slate-800 text-slate-200 rounded-md px-2 py-1 font-mono">
+          <span key={v} className="inline-flex items-center gap-1 text-xs bg-muted text-foreground rounded-md px-2 py-1 font-mono">
             {v}
             <button
-              className="text-slate-500 hover:text-red-400 cursor-pointer"
+              className="text-muted-foreground hover:text-danger cursor-pointer"
+              aria-label={t('remove')}
               onClick={() => onChange(value.filter((_, j) => j !== i))}
-            >✕</button>
+            ><X size={12} /></button>
           </span>
         ))}
       </div>
@@ -174,7 +176,7 @@ export function ListEditor({ value, onChange, placeholder, suggestions }: {
           value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={placeholder}
           list={suggestions ? `sugg-${placeholder}` : undefined}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add() } }}
-          className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-sm font-mono text-slate-200 focus:outline-none focus:border-blue-500"
+          className="flex-1 bg-card border border-input rounded-lg px-2 py-1 text-sm font-mono text-foreground focus:border-ring"
         />
         {suggestions && (
           <datalist id={`sugg-${placeholder}`}>
@@ -194,7 +196,7 @@ export function FormError({ error }: { error: unknown }) {
     ? `${error.message}${error.detail ? ` — ${error.detail}` : ''}`
     : String(error)
   return (
-    <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
+    <div className="text-sm text-danger bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2">
       {msg}
     </div>
   )
@@ -208,7 +210,7 @@ export function SubmitRow({ onCancel, saving, label, disabled }: {
     <div className="flex justify-end gap-2 pt-2">
       {onCancel && <Button variant="ghost" type="button" onClick={onCancel}>{t('cancel')}</Button>}
       <Button variant="primary" type="submit" disabled={saving || disabled}>
-        {saving ? '…' : (label ?? t('save'))}
+        {saving ? <Loader2 className="animate-spin" size={14} /> : (label ?? t('save'))}
       </Button>
     </div>
   )
