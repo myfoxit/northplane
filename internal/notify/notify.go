@@ -41,6 +41,24 @@ type Manager struct {
 	SendHook func(channel *model.NotificationChannel, target string, subject, body string) (string, error)
 
 	statSent, statFailed, statDead atomic.Uint64
+	// statDropped counts immutable notification events that failed to
+	// persist. Recording them is best-effort (delivery already happened),
+	// but a silent drop hides an audit-trail gap — surface it.
+	statDropped atomic.Uint64
+}
+
+// recordEvent persists a notification event best-effort. The send has
+// already occurred, so a failed insert must not fail the delivery; but
+// a lost event is an audit-trail gap (F-05.09) and must be observable —
+// log a warning and bump the dropped-events counter (exposed as
+// np_events_dropped_total{source="notify"} via Stats()) instead of
+// discarding the error silently.
+func (m *Manager) recordEvent(ctx context.Context, ev *model.Event) {
+	if err := m.store.InsertEvents(ctx, []*model.Event{ev}); err != nil {
+		m.statDropped.Add(1)
+		m.log.Warn("notify: event insert dropped", "err", err,
+			"type", ev.Type, "object", ev.ObjectID)
+	}
 }
 
 // outboxLease is how long a claimed delivery is hidden from other ticks
@@ -201,7 +219,7 @@ func (m *Manager) deliverNotification(ctx context.Context, item *storage.OutboxI
 	ev := &model.Event{ID: model.NewID(), TenantID: job.TenantID, TS: time.Now().UTC(),
 		Type: model.EventNotification, ObjectID: alert.ObjectID,
 		Severity: model.SevInfo, Payload: raw}
-	_ = m.store.InsertEvents(ctx, []*model.Event{ev})
+	m.recordEvent(ctx, ev)
 	m.bus.FanoutOnly(ev)
 	return providerID, err
 }
@@ -335,7 +353,7 @@ func (m *Manager) recordActionEvent(ctx context.Context, alert *model.Alert,
 	ev := &model.Event{ID: model.NewID(), TenantID: alert.TenantID, TS: time.Now().UTC(),
 		Type: model.EventNotification, ObjectID: alert.ObjectID,
 		Severity: model.SevInfo, Payload: raw}
-	_ = m.store.InsertEvents(ctx, []*model.Event{ev})
+	m.recordEvent(ctx, ev)
 	m.bus.FanoutOnly(ev)
 }
 
@@ -432,13 +450,13 @@ Labels:   {{range $k,$v := .Labels}}{{$k}}={{$v}} {{end}}
 Step:     {{.Step}} (policy {{.Policy}})
 
 Acknowledge: {{.AckURL}}`,
-	model.ChannelSMS:  `[{{.Severity}}] {{trunc 100 .Title}} ack: {{.AckURL}}`,
-	model.ChannelNtfy: `{{.Title}}`,
-	model.ChannelPush: `{{.Title}}`,
-	model.ChannelSlack: `{"text":"[{{.Severity}}] {{.Title}}","blocks":[{"type":"section","text":{"type":"mrkdwn","text":"*[{{.Severity}}] <{{.AlertURL}}|{{.Title}}>*\nStep {{.Step}} · Policy {{.Policy}}"}},{"type":"actions","elements":[{"type":"button","text":{"type":"plain_text","text":"Acknowledge"},"url":"{{.AckURL}}","style":"primary"}]}]}`,
-	model.ChannelTeams: `{"type":"message","attachments":[{"contentType":"application/vnd.microsoft.card.adaptive","content":{"type":"AdaptiveCard","$schema":"http://adaptivecards.io/schemas/adaptive-card.json","version":"1.4","body":[{"type":"TextBlock","size":"Medium","weight":"Bolder","text":"[{{.Severity}}] {{.Title}}"},{"type":"TextBlock","text":"Step {{.Step}} · Policy {{.Policy}}","wrap":true}],"actions":[{"type":"Action.OpenUrl","title":"Acknowledge","url":"{{.AckURL}}"},{"type":"Action.OpenUrl","title":"Open","url":"{{.AlertURL}}"}]}}]}`,
+	model.ChannelSMS:     `[{{.Severity}}] {{trunc 100 .Title}} ack: {{.AckURL}}`,
+	model.ChannelNtfy:    `{{.Title}}`,
+	model.ChannelPush:    `{{.Title}}`,
+	model.ChannelSlack:   `{"text":"[{{.Severity}}] {{.Title}}","blocks":[{"type":"section","text":{"type":"mrkdwn","text":"*[{{.Severity}}] <{{.AlertURL}}|{{.Title}}>*\nStep {{.Step}} · Policy {{.Policy}}"}},{"type":"actions","elements":[{"type":"button","text":{"type":"plain_text","text":"Acknowledge"},"url":"{{.AckURL}}","style":"primary"}]}]}`,
+	model.ChannelTeams:   `{"type":"message","attachments":[{"contentType":"application/vnd.microsoft.card.adaptive","content":{"type":"AdaptiveCard","$schema":"http://adaptivecards.io/schemas/adaptive-card.json","version":"1.4","body":[{"type":"TextBlock","size":"Medium","weight":"Bolder","text":"[{{.Severity}}] {{.Title}}"},{"type":"TextBlock","text":"Step {{.Step}} · Policy {{.Policy}}","wrap":true}],"actions":[{"type":"Action.OpenUrl","title":"Acknowledge","url":"{{.AckURL}}"},{"type":"Action.OpenUrl","title":"Open","url":"{{.AlertURL}}"}]}}]}`,
 	model.ChannelWebhook: `{"version":1,"alert":{{json .Alert}},"severity":"{{.Severity}}","title":{{json .Title}},"labels":{{json .Labels}},"step":{{.Step}},"policy":{{json .Policy}},"ackUrl":{{json .AckURL}},"alertUrl":{{json .AlertURL}}}`,
-	model.ChannelVoice: `Northplane alert. Severity {{.Severity}}. {{.Title}}. Press 4 to acknowledge.`,
+	model.ChannelVoice:   `Northplane alert. Severity {{.Severity}}. {{.Title}}. Press 4 to acknowledge.`,
 	// Ticket descriptions (ServiceNow/Zendesk/Jira share the text shape;
 	// the generic gateway posts JSON like a webhook).
 	model.ChannelServiceNow: ticketDescriptionTemplate,
@@ -553,13 +571,15 @@ func (m *Manager) TestSend(ctx context.Context, ch *model.NotificationChannel, t
 
 // Stats snapshot.
 type Stats struct {
-	Sent   uint64 `json:"sent"`
-	Failed uint64 `json:"failed"`
-	Dead   uint64 `json:"dead"`
+	Sent    uint64 `json:"sent"`
+	Failed  uint64 `json:"failed"`
+	Dead    uint64 `json:"dead"`
+	Dropped uint64 `json:"dropped"` // notification events that failed to persist
 }
 
 // Stats for self-metrics (notification success/error per channel lives
 // in events; this is the coarse counter).
 func (m *Manager) Stats() Stats {
-	return Stats{Sent: m.statSent.Load(), Failed: m.statFailed.Load(), Dead: m.statDead.Load()}
+	return Stats{Sent: m.statSent.Load(), Failed: m.statFailed.Load(),
+		Dead: m.statDead.Load(), Dropped: m.statDropped.Load()}
 }

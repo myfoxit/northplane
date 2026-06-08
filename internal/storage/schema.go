@@ -368,6 +368,23 @@ var migrations = []migration{
 		`ALTER TABLE alerts ADD COLUMN ticket_url TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE alerts ADD COLUMN ticket_meta {{JSON}} NOT NULL DEFAULT '{}'`,
 	}},
+	// Hot-path covering indices (storage audit). Three queries full-scanned
+	// their tables before this: ListProblems (check_state), ListAlerts and
+	// ExpireStaleAlerts (alerts). The DDL below is in the shared subset —
+	// CREATE INDEX IF NOT EXISTS and partial (WHERE) indices are supported by
+	// both SQLite and PostgreSQL.
+	{6, "hotpath_indices", []string{
+		// ListProblems (objects.go) filters check_state on `state != 0`
+		// (and state_type='hard'). A partial index over the non-OK rows keeps
+		// the index tiny (most states are OK=0) and lets the Problems view
+		// skip the full table scan.
+		`CREATE INDEX IF NOT EXISTS check_state_problem ON check_state (state, state_type)
+			WHERE state != 0`,
+		// ListAlerts (alerts.go) filters by tenant + object_id; ExpireStaleAlerts
+		// filters by tenant + rule_id + status ordered/bounded by opened_at.
+		`CREATE INDEX IF NOT EXISTS alerts_object ON alerts (tenant_id, object_id)`,
+		`CREATE INDEX IF NOT EXISTS alerts_rule ON alerts (tenant_id, rule_id, status, opened_at)`,
+	}},
 }
 
 func (s *Store) migrate(ctx context.Context) error {

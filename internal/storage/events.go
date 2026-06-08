@@ -153,6 +153,12 @@ func (es *eventStore) ensurePartition(ctx context.Context, t time.Time) error {
 	if _, err := es.store.db.ExecContext(ctx, idx); err != nil {
 		return err
 	}
+	// Parity with the SQLite segments (events_obj above): per-object lookups
+	// (QueryEvents with ObjectID) otherwise scan the whole partition on PG.
+	objIdx := fmt.Sprintf(`CREATE INDEX IF NOT EXISTS events_%s_obj ON events_%s (object_id, ts)`, key, key)
+	if _, err := es.store.db.ExecContext(ctx, objIdx); err != nil {
+		return err
+	}
 	es.mu.Lock()
 	es.ensured[key] = true
 	es.mu.Unlock()

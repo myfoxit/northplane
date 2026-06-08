@@ -15,10 +15,10 @@ import (
 func (a *API) registerSystem() {
 	// overview tiles (wallboard, SPEC §12.3)
 	type overview struct {
-		Summary   *storage.StateSummary       `json:"summary"`
-		Alerts    map[model.Severity]int64    `json:"openAlerts"`
-		Incidents []*model.Incident           `json:"openIncidents"`
-		Bus       eventbus.Stats              `json:"queues"`
+		Summary   *storage.StateSummary    `json:"summary"`
+		Alerts    map[model.Severity]int64 `json:"openAlerts"`
+		Incidents []*model.Incident        `json:"openIncidents"`
+		Bus       eventbus.Stats           `json:"queues"`
 	}
 	a.handle("GET /api/v1/overview", "Wallboard counters", "objects:read", nil, overview{},
 		func(w http.ResponseWriter, r *http.Request, p *auth.Principal) {
@@ -85,18 +85,23 @@ func (a *API) registerSystem() {
 			var mem runtime.MemStats
 			runtime.ReadMemStats(&mem)
 			a.writeJSON(w, http.StatusOK, map[string]any{
-				"version":   a.Version,
-				"goVersion": runtime.Version(),
+				"version":    a.Version,
+				"goVersion":  runtime.Version(),
 				"goroutines": runtime.NumGoroutine(),
-				"heapMB":    mem.HeapAlloc / 1024 / 1024,
-				"startedAt": a.StartedAt.Format(time.RFC3339),
-				"uptime":    time.Since(a.StartedAt).Round(time.Second).String(),
-				"storage":   a.Store.Dialect().Name(),
-				"aiEnabled": a.AI != nil && a.AI.Enabled(),
+				"heapMB":     mem.HeapAlloc / 1024 / 1024,
+				"startedAt":  a.StartedAt.Format(time.RFC3339),
+				"uptime":     time.Since(a.StartedAt).Round(time.Second).String(),
+				"storage":    a.Store.Dialect().Name(),
+				"aiEnabled":  a.AI != nil && a.AI.Enabled(),
 			})
 		})
 
-	// OpenMetrics exposition (SPEC §15.4)
+	// OpenMetrics exposition (SPEC §15.4). Deliberately unauthenticated so
+	// a Prometheus scraper needs no API credential — access is expected to
+	// be restricted at the network/proxy layer (bind address, firewall, or
+	// reverse-proxy allowlist), NOT by app auth. Do not add a perm check
+	// here without coordinating scraper config; it would silently break
+	// metric collection.
 	a.mux.Handle("GET /metrics", a.Metrics.Handler())
 	a.Metrics.Collect(func(set func(string, float64)) {
 		bus := a.Bus.Stats()
@@ -117,6 +122,7 @@ func (a *API) registerSystem() {
 		set(`np_notifications_total{result="sent"}`, float64(nf.Sent))
 		set(`np_notifications_total{result="failed"}`, float64(nf.Failed))
 		set(`np_notifications_total{result="dead"}`, float64(nf.Dead))
+		set(`np_events_dropped_total{source="notify"}`, float64(nf.Dropped))
 		ts := a.TSDB.Stats()
 		set("np_tsdb_series", float64(ts.Series))
 		set("np_tsdb_samples_total", float64(ts.Samples))

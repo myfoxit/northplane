@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/northplane/northplane/internal/ai"
@@ -147,10 +148,18 @@ func New(ctx context.Context, cfg config.Config, store *storage.Store, ts *tsdb.
 
 	apiHandler := api.New(s.api)
 	s.httpSrv = &http.Server{
-		Addr:              cfg.Listen,
-		Handler:           s.rootHandler(apiHandler, authn),
+		Addr:    cfg.Listen,
+		Handler: s.rootHandler(apiHandler, authn),
+		// ReadHeaderTimeout bounds the slow-headers (slowloris) window;
+		// ReadTimeout additionally caps the time to read the whole request
+		// body so a slow/stalled uploader can't pin a connection forever.
+		// No global WriteTimeout: it would abort the long-lived SSE/MCP
+		// streams below — per-route response deadlines are applied via
+		// withTimeouts() inside rootHandler instead.
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       60 * time.Second,
 		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20, // 1 MiB — reject oversized header floods
 	}
 	return s, nil
 }
@@ -174,7 +183,45 @@ func (s *Server) rootHandler(apiHandler http.Handler, authn *auth.Authenticator)
 		mux.Handle("/mcp", mcpserver.HTTPHandler(svc, authn, s.version))
 	}
 	mux.Handle("/", spa) // SPA + static assets (auth enforced client-side + API)
-	return securityHeaders(mux, s.Cfg.TrustProxy)
+	return securityHeaders(withTimeouts(mux), s.Cfg.TrustProxy)
+}
+
+// requestTimeout is the response deadline applied to ordinary (non-streaming)
+// requests. Streaming routes (see isStreamingPath) are exempt because they are
+// long-lived by design and http.TimeoutHandler's wrapper does not implement
+// http.Flusher — wrapping an SSE handler would both abort the stream on the
+// deadline and break flushing (the SSE hub 500s on a non-Flusher writer).
+const requestTimeout = 30 * time.Second
+
+// withTimeouts applies a per-request response deadline to normal routes while
+// exempting the long-lived streaming endpoints (SSE, NDJSON export, MCP
+// streamable-HTTP). It stands in for a global http.Server WriteTimeout, which
+// would otherwise kill those streams mid-flight.
+func withTimeouts(next http.Handler) http.Handler {
+	timed := http.TimeoutHandler(next, requestTimeout, "request timeout")
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isStreamingPath(r.URL.Path) {
+			next.ServeHTTP(w, r) // no deadline, preserve http.Flusher
+			return
+		}
+		timed.ServeHTTP(w, r)
+	})
+}
+
+// isStreamingPath reports whether path serves a long-lived/flushing response
+// that must not carry a write deadline: the SSE hub, the NDJSON event export,
+// and the MCP streamable-HTTP endpoint.
+func isStreamingPath(path string) bool {
+	switch {
+	case path == "/api/v1/stream":
+		return true
+	case path == "/api/v1/events:export":
+		return true
+	case path == "/mcp" || strings.HasPrefix(path, "/mcp/"):
+		return true
+	default:
+		return false
+	}
 }
 
 // Run starts all subsystems and serves until ctx is cancelled.
@@ -182,21 +229,35 @@ func (s *Server) Run(ctx context.Context) error {
 	for _, e := range s.cat.All() {
 		s.sched.Upsert(e)
 	}
-	go s.sched.Run(ctx)
-	go s.exec.Run(ctx, s.sched)
-	go s.pipe.Run(ctx)
-	go s.alert.Run(ctx)
-	go s.correl.Run(ctx)
-	go s.escal.Run(ctx)
-	go s.notify.Run(ctx)
-	go s.traps.Run(ctx)
-	go s.mail.Run(ctx)
-	go s.api.Janitor(ctx)
-	go s.api.WebhookDispatcher(ctx)
-	go s.api.ReportScheduler(ctx)
-	go s.deadManLoop(ctx)
+
+	// Track every background worker so graceful shutdown can wait for them
+	// to drain in-flight work (pipeline writes, notify/escalation delivery)
+	// after the HTTP server stops accepting requests. Each Run honours ctx
+	// cancellation; we only add the WaitGroup bookkeeping. spawn wraps the
+	// launch so a worker that doesn't return cleanly still releases the wg.
+	var wg sync.WaitGroup
+	spawn := func(run func(context.Context)) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			run(ctx)
+		}()
+	}
+	spawn(s.sched.Run)
+	spawn(func(ctx context.Context) { s.exec.Run(ctx, s.sched) })
+	spawn(s.pipe.Run)
+	spawn(s.alert.Run)
+	spawn(s.correl.Run)
+	spawn(s.escal.Run)
+	spawn(s.notify.Run)
+	spawn(s.traps.Run)
+	spawn(s.mail.Run)
+	spawn(s.api.Janitor)
+	spawn(s.api.WebhookDispatcher)
+	spawn(s.api.ReportScheduler)
+	spawn(s.deadManLoop)
 	if svc, ok := s.api.AI.(interface{ Run(context.Context) }); ok {
-		go svc.Run(ctx)
+		spawn(svc.Run)
 	}
 
 	ln, err := net.Listen("tcp", s.Cfg.Listen)
@@ -229,12 +290,34 @@ func (s *Server) Run(ctx context.Context) error {
 		s.Log.Info("northplane: shutting down")
 		shutCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		return s.httpSrv.Shutdown(shutCtx)
+		err := s.httpSrv.Shutdown(shutCtx)
+		// ctx is already cancelled (that's why we're here), so every worker
+		// is unwinding. Wait for them to finish draining in-flight work,
+		// bounded by the same shutdown budget so a stuck worker can't hang
+		// the process indefinitely.
+		s.waitWorkers(shutCtx, &wg)
+		return err
 	case err := <-errCh:
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
 		return err
+	}
+}
+
+// waitWorkers blocks until all background workers have returned or the
+// shutdown deadline (ctx) elapses, whichever comes first.
+func (s *Server) waitWorkers(ctx context.Context, wg *sync.WaitGroup) {
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		s.Log.Info("northplane: background workers drained")
+	case <-ctx.Done():
+		s.Log.Warn("northplane: shutdown budget elapsed, workers still running")
 	}
 }
 

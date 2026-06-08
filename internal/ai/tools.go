@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/northplane/northplane/internal/auth"
@@ -51,7 +52,7 @@ func buildTools() []Tool {
 
 		{Def: ToolDef{Name: "search_objects",
 			Description: "Find hosts/services by label selector or text query.",
-			Schema:      sch(`{"type":"object","properties":{"selector":{"type":"string"},"query":{"type":"string"},"kind":{"type":"string","enum":["host","service"]},"limit":{"type":"integer"}}}`)},
+			Schema:      sch(`{"type":"object","properties":{"selector":{"type":"string","description":"Label selector (e.g. env=prod,role!=db) to filter objects."},"query":{"type":"string","description":"Free-text match against object name/labels."},"kind":{"type":"string","description":"Restrict to a single object kind.","enum":["host","service"]},"limit":{"type":"integer","description":"Maximum number of objects to return (capped at 100, default 50)."}}}`)},
 			Perm: model.Permission("objects:read"),
 			Run: func(ctx context.Context, s *Service, p *auth.Principal, in json.RawMessage) (any, error) {
 				var args struct {
@@ -87,7 +88,7 @@ func buildTools() []Tool {
 
 		{Def: ToolDef{Name: "get_object",
 			Description: "Object detail incl. effective config, state and metric series.",
-			Schema:      sch(`{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}`)},
+			Schema:      sch(`{"type":"object","properties":{"id":{"type":"string","description":"ID of the object to fetch."}},"required":["id"]}`)},
 			Perm: model.Permission("objects:read"),
 			Run: func(ctx context.Context, s *Service, p *auth.Principal, in json.RawMessage) (any, error) {
 				var args struct{ ID string }
@@ -109,7 +110,7 @@ func buildTools() []Tool {
 
 		{Def: ToolDef{Name: "query_metrics",
 			Description: "Aggregated, downsampled time-series for an object/metric.",
-			Schema:      sch(`{"type":"object","properties":{"objectId":{"type":"string"},"metric":{"type":"string"},"fromHoursAgo":{"type":"number"},"agg":{"type":"string"}},"required":["objectId"]}`)},
+			Schema:      sch(`{"type":"object","properties":{"objectId":{"type":"string","description":"ID of the object whose metrics to query."},"metric":{"type":"string","description":"Metric name to query; empty returns all of the object's metrics."},"fromHoursAgo":{"type":"number","description":"Look-back window in hours (default 24)."},"agg":{"type":"string","description":"Bucket aggregation function (default avg).","enum":["avg","min","max","sum","last","count"]}},"required":["objectId"]}`)},
 			Perm: model.Permission("metrics:read"),
 			Run: func(ctx context.Context, s *Service, p *auth.Principal, in json.RawMessage) (any, error) {
 				var args struct {
@@ -130,7 +131,7 @@ func buildTools() []Tool {
 
 		{Def: ToolDef{Name: "get_alerts",
 			Description: "List alerts filtered by status/severity.",
-			Schema:      sch(`{"type":"object","properties":{"status":{"type":"string"},"limit":{"type":"integer"}}}`)},
+			Schema:      sch(`{"type":"object","properties":{"status":{"type":"string","description":"Alert lifecycle filter; defaults to open+acked when omitted.","enum":["open","acked","resolved","expired"]},"limit":{"type":"integer","description":"Maximum number of alerts to return."}}}`)},
 			Perm: model.Permission("alerts:read"),
 			Run: func(ctx context.Context, s *Service, p *auth.Principal, in json.RawMessage) (any, error) {
 				var args struct {
@@ -147,9 +148,145 @@ func buildTools() []Tool {
 				return s.store.ListAlerts(ctx, f)
 			}},
 
+		{Def: ToolDef{Name: "analyze_metric",
+			Description: "Deterministic statistics (no LLM) for an object/metric: seasonal baseline plus MAD-based anomaly detection. Returns the current value, baseline mean/σ, whether the latest sample is anomalous, its deviation in σ, and the length of any ongoing anomalous run (SPEC §10.6).",
+			Schema:      sch(`{"type":"object","properties":{"objectId":{"type":"string","description":"ID of the object whose metric to analyze."},"metric":{"type":"string","description":"Metric name on the object (e.g. cpu, mem, disk). Empty analyzes the object's only/first series."},"hours":{"type":"number","description":"Look-back window in hours used to build the baseline (default 168 = 4 weeks of seasonality is approximated from this window)."}},"required":["objectId"]}`)},
+			Perm: model.Permission("metrics:read"),
+			Run: func(ctx context.Context, s *Service, p *auth.Principal, in json.RawMessage) (any, error) {
+				var args struct {
+					ObjectID, Metric string
+					Hours            float64
+				}
+				_ = json.Unmarshal(in, &args)
+				if args.Hours <= 0 {
+					args.Hours = 168
+				}
+				points, meta, err := s.fetchSeries(ctx, p, args.ObjectID, args.Metric, args.Hours)
+				if err != nil {
+					return nil, err
+				}
+				if len(points) == 0 {
+					return nil, fmt.Errorf("no samples for object %q metric %q in the last %.0fh", args.ObjectID, args.Metric, args.Hours)
+				}
+				baseline := ComputeBaseline(points)
+				anomalies := DetectAnomalies(points, baseline, 0, 0)
+				last := points[len(points)-1]
+				lastT := time.UnixMilli(last.T).UTC()
+				expected := baseline.SeasonalExpected(lastT)
+				mad := baseline.MAD
+				if mad < 1e-9 {
+					mad = baseline.StdDev
+				}
+				deviationSigma := 0.0
+				if mad > 1e-9 {
+					deviationSigma = (last.V - expected) / mad
+				}
+				// Trailing anomalous-run length: count consecutive samples from
+				// the end of the window that deviate beyond the same k×MAD gate
+				// the detector uses (k=5 default). 0 ⇒ the series is currently
+				// back inside its baseline band.
+				const k = 5.0
+				runLen := 0
+				for i := len(points) - 1; i >= 0 && mad > 1e-9; i-- {
+					pt := points[i]
+					exp := baseline.SeasonalExpected(time.UnixMilli(pt.T).UTC())
+					if math.Abs(pt.V-exp)/mad > k {
+						runLen++
+					} else {
+						break
+					}
+				}
+				return map[string]any{
+					"objectId":          args.ObjectID,
+					"metric":            meta.Metric,
+					"samples":           len(points),
+					"currentValue":      last.V,
+					"baselineMean":      baseline.Mean,
+					"baselineStdDev":    baseline.StdDev,
+					"baselineMad":       baseline.MAD,
+					"seasonalExpected":  expected,
+					"deviationSigma":    deviationSigma,
+					"anomalous":         runLen > 0,
+					"anomalousRunLen":   runLen,
+					"totalAnomalyCount": len(anomalies),
+				}, nil
+			}},
+
+		{Def: ToolDef{Name: "forecast_capacity",
+			Description: "Deterministic capacity forecast (no LLM): fits a least-squares trend to an object/metric and projects when it reaches a threshold (e.g. \"disk full in ~9 days\"). Returns slope/hour, the projected current value, the projected exhaustion time and the fit confidence (R²) (SPEC §10.6).",
+			Schema:      sch(`{"type":"object","properties":{"objectId":{"type":"string","description":"ID of the object whose metric to forecast."},"metric":{"type":"string","description":"Metric name on the object (e.g. disk, mem). Empty forecasts the object's only/first series."},"threshold":{"type":"number","description":"Value whose crossing time to project (e.g. 100 for a percentage-full disk)."},"horizonHours":{"type":"number","description":"Look-back window in hours used to fit the trend (default 168)."}},"required":["objectId","threshold"]}`)},
+			Perm: model.Permission("metrics:read"),
+			Run: func(ctx context.Context, s *Service, p *auth.Principal, in json.RawMessage) (any, error) {
+				var args struct {
+					ObjectID, Metric string
+					Threshold        float64
+					HorizonHours     float64
+				}
+				_ = json.Unmarshal(in, &args)
+				if args.HorizonHours <= 0 {
+					args.HorizonHours = 168
+				}
+				points, meta, err := s.fetchSeries(ctx, p, args.ObjectID, args.Metric, args.HorizonHours)
+				if err != nil {
+					return nil, err
+				}
+				if len(points) < 10 {
+					return nil, fmt.Errorf("need at least 10 samples to forecast, have %d", len(points))
+				}
+				f := ComputeForecast(points, args.Threshold)
+				out := map[string]any{
+					"objectId":       args.ObjectID,
+					"metric":         meta.Metric,
+					"samples":        len(points),
+					"threshold":      args.Threshold,
+					"slopePerHour":   f.SlopePerHour,
+					"projectedValue": f.Projected,
+					"confidenceR2":   f.Confidence,
+				}
+				if f.HitsThreshold != nil {
+					out["projectedExhaustionAt"] = f.HitsThreshold.UTC().Format(time.RFC3339)
+					out["hoursToThreshold"] = time.Until(*f.HitsThreshold).Hours()
+				} else {
+					out["projectedExhaustionAt"] = nil
+					out["note"] = "threshold not reached within the projection horizon (flat/declining trend or > 1y out)"
+				}
+				return out, nil
+			}},
+
+		{Def: ToolDef{Name: "suggest_thresholds",
+			Description: "Deterministic threshold suggestion (no LLM): derives warn/crit from the observed distribution (P98/P99.5 quantiles) of an object/metric. Use to replace guessed thresholds with data-driven ones (SPEC §10.6).",
+			Schema:      sch(`{"type":"object","properties":{"objectId":{"type":"string","description":"ID of the object whose metric to analyze."},"metric":{"type":"string","description":"Metric name on the object. Empty uses the object's only/first series."},"hours":{"type":"number","description":"Look-back window in hours over which to compute the distribution (default 168)."}},"required":["objectId"]}`)},
+			Perm: model.Permission("metrics:read"),
+			Run: func(ctx context.Context, s *Service, p *auth.Principal, in json.RawMessage) (any, error) {
+				var args struct {
+					ObjectID, Metric string
+					Hours            float64
+				}
+				_ = json.Unmarshal(in, &args)
+				if args.Hours <= 0 {
+					args.Hours = 168
+				}
+				points, meta, err := s.fetchSeries(ctx, p, args.ObjectID, args.Metric, args.Hours)
+				if err != nil {
+					return nil, err
+				}
+				if len(points) < 20 {
+					return nil, fmt.Errorf("need at least 20 samples to suggest thresholds, have %d", len(points))
+				}
+				th := ComputeAdaptiveThresholds(points, 0, 0)
+				return map[string]any{
+					"objectId":      args.ObjectID,
+					"metric":        meta.Metric,
+					"samples":       len(points),
+					"suggestedWarn": th.Warn,
+					"suggestedCrit": th.Crit,
+					"basis":         "P98 (warn) / P99.5 (crit) of the observed distribution",
+				}, nil
+			}},
+
 		{Def: ToolDef{Name: "get_incidents",
 			Description: "List incidents with their alerts.",
-			Schema:      sch(`{"type":"object","properties":{"open":{"type":"boolean"}}}`)},
+			Schema:      sch(`{"type":"object","properties":{"open":{"type":"boolean","description":"When true, only open incidents are returned."}}}`)},
 			Perm: model.Permission("incidents:read"),
 			Run: func(ctx context.Context, s *Service, p *auth.Principal, in json.RawMessage) (any, error) {
 				var args struct{ Open bool }
@@ -159,7 +296,7 @@ func buildTools() []Tool {
 
 		{Def: ToolDef{Name: "who_is_oncall",
 			Description: "Current on-call per schedule.",
-			Schema:      sch(`{"type":"object","properties":{"schedule":{"type":"string"}}}`)},
+			Schema:      sch(`{"type":"object","properties":{"schedule":{"type":"string","description":"Restrict to a single schedule by name; empty returns all schedules."}}}`)},
 			Perm: model.Permission("oncall:read"),
 			Run: func(ctx context.Context, s *Service, p *auth.Principal, in json.RawMessage) (any, error) {
 				var args struct{ Schedule string }
@@ -194,7 +331,7 @@ func buildTools() []Tool {
 
 		{Def: ToolDef{Name: "explain_alert",
 			Description: "Deterministic context for an alert: topology, recent config changes, similar past incidents. Structured data for grounding an explanation.",
-			Schema:      sch(`{"type":"object","properties":{"alertId":{"type":"string"}},"required":["alertId"]}`)},
+			Schema:      sch(`{"type":"object","properties":{"alertId":{"type":"string","description":"ID of the alert to explain."}},"required":["alertId"]}`)},
 			Perm: model.Permission("alerts:read"),
 			Run: func(ctx context.Context, s *Service, p *auth.Principal, in json.RawMessage) (any, error) {
 				var args struct{ AlertID string }
@@ -204,7 +341,7 @@ func buildTools() []Tool {
 
 		{Def: ToolDef{Name: "run_check_now",
 			Description: "Trigger an immediate recheck.",
-			Schema:      sch(`{"type":"object","properties":{"objectId":{"type":"string"}},"required":["objectId"]}`)},
+			Schema:      sch(`{"type":"object","properties":{"objectId":{"type":"string","description":"ID of the object to recheck immediately."}},"required":["objectId"]}`)},
 			Perm:     model.Permission("checks:run"),
 			Mutating: true, AutoOK: true,
 			Run: func(ctx context.Context, s *Service, p *auth.Principal, in json.RawMessage) (any, error) {
@@ -219,7 +356,7 @@ func buildTools() []Tool {
 
 		{Def: ToolDef{Name: "acknowledge_alert",
 			Description: "Acknowledge an alert, stopping its escalation.",
-			Schema:      sch(`{"type":"object","properties":{"alertId":{"type":"string"},"comment":{"type":"string"}},"required":["alertId"]}`)},
+			Schema:      sch(`{"type":"object","properties":{"alertId":{"type":"string","description":"ID of the alert to acknowledge."},"comment":{"type":"string","description":"Optional note recorded with the acknowledgement."}},"required":["alertId"]}`)},
 			Perm:     model.Permission("alerts:ack"),
 			Mutating: true, AutoOK: true,
 			Run: func(ctx context.Context, s *Service, p *auth.Principal, in json.RawMessage) (any, error) {
@@ -235,7 +372,7 @@ func buildTools() []Tool {
 
 		{Def: ToolDef{Name: "create_downtime",
 			Description: "Schedule a downtime window (TTL-limited by policy).",
-			Schema:      sch(`{"type":"object","properties":{"objectId":{"type":"string"},"selector":{"type":"string"},"hours":{"type":"number"},"comment":{"type":"string"}},"required":["comment"]}`)},
+			Schema:      sch(`{"type":"object","properties":{"objectId":{"type":"string","description":"ID of the object to put into downtime (use this or selector)."},"selector":{"type":"string","description":"Label selector matching the objects to put into downtime (use this or objectId)."},"hours":{"type":"number","description":"Downtime duration in hours (default 2; capped by the AI policy limit)."},"comment":{"type":"string","description":"Reason for the downtime (required, recorded in the audit trail)."}},"required":["comment"]}`)},
 			Perm:     model.Permission("downtimes:write"),
 			Mutating: true,
 			Run: func(ctx context.Context, s *Service, p *auth.Principal, in json.RawMessage) (any, error) {
@@ -267,7 +404,7 @@ func buildTools() []Tool {
 
 		{Def: ToolDef{Name: "create_silence",
 			Description: "Silence matching alerts for a bounded TTL.",
-			Schema:      sch(`{"type":"object","properties":{"selector":{"type":"string"},"hours":{"type":"number"},"comment":{"type":"string"}},"required":["selector","comment"]}`)},
+			Schema:      sch(`{"type":"object","properties":{"selector":{"type":"string","description":"Label selector matching the alerts to silence."},"hours":{"type":"number","description":"Silence duration in hours (default 1)."},"comment":{"type":"string","description":"Reason for the silence (required, recorded in the audit trail)."}},"required":["selector","comment"]}`)},
 			Perm:     model.Permission("silences:write"),
 			Mutating: true,
 			Run: func(ctx context.Context, s *Service, p *auth.Principal, in json.RawMessage) (any, error) {
@@ -290,7 +427,7 @@ func buildTools() []Tool {
 
 		{Def: ToolDef{Name: "propose_config_change",
 			Description: "Produce a validated bundle diff (dry-run). Always returns a plan for human approval — never applies.",
-			Schema:      sch(`{"type":"object","properties":{"bundleYaml":{"type":"string"}},"required":["bundleYaml"]}`)},
+			Schema:      sch(`{"type":"object","properties":{"bundleYaml":{"type":"string","description":"YAML configuration bundle to validate and diff (dry-run only)."}},"required":["bundleYaml"]}`)},
 			Perm:     model.Permission("config:write"),
 			Mutating: true,
 			Run: func(ctx context.Context, s *Service, p *auth.Principal, in json.RawMessage) (any, error) {
@@ -301,7 +438,7 @@ func buildTools() []Tool {
 
 		{Def: ToolDef{Name: "apply_config_change",
 			Description: "Apply a configuration bundle. Queued for human approval; once approved the diff is applied atomically (SPEC §10.3).",
-			Schema:      sch(`{"type":"object","properties":{"bundleYaml":{"type":"string"}},"required":["bundleYaml"]}`)},
+			Schema:      sch(`{"type":"object","properties":{"bundleYaml":{"type":"string","description":"YAML configuration bundle to apply once approved."}},"required":["bundleYaml"]}`)},
 			Perm:     model.Permission("config:write"),
 			Mutating: true, // not AutoOK: rides the approval queue by design
 			Run: func(ctx context.Context, s *Service, p *auth.Principal, in json.RawMessage) (any, error) {
@@ -312,7 +449,7 @@ func buildTools() []Tool {
 
 		{Def: ToolDef{Name: "render_report",
 			Description: "Render a stored report on demand (availability/SLA/top-N) as structured JSON.",
-			Schema:      sch(`{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}`)},
+			Schema:      sch(`{"type":"object","properties":{"name":{"type":"string","description":"Name of the stored report to render."}},"required":["name"]}`)},
 			Perm: model.Permission("reports:render"),
 			Run: func(ctx context.Context, s *Service, p *auth.Principal, in json.RawMessage) (any, error) {
 				var args struct{ Name string }
@@ -323,4 +460,37 @@ func buildTools() []Tool {
 				return s.renderReport(ctx, p, args.Name)
 			}},
 	}
+}
+
+// fetchSeries pulls a raw metric series for an object over the last
+// `hours`, reusing the same fetch path as the query_metrics tool: tenant
+// ownership is enforced via the catalog, then the series is read from the
+// TSDB. Unlike query_metrics (which downsamples to ~100 pixels) the
+// statistics tools want full resolution, so MaxPoints is set high. When
+// `metric` is empty the object's first/only series is used. It returns
+// the flattened samples and the resolved series metadata.
+func (s *Service) fetchSeries(ctx context.Context, p *auth.Principal, objectID, metric string, hours float64) ([]tsdb.Sample, tsdb.SeriesMeta, error) {
+	var meta tsdb.SeriesMeta
+	if e := s.cat.Get(objectID); e == nil || e.Object.TenantID != p.TenantID {
+		return nil, meta, fmt.Errorf("object not found")
+	}
+	results, err := s.tsdb.Query(ctx, tsdb.Query{
+		ObjectID:  objectID,
+		Metric:    metric,
+		From:      time.Now().Add(-time.Duration(hours * float64(time.Hour))),
+		To:        time.Now(),
+		Agg:       tsdb.AggAvg,
+		MaxPoints: 10000,
+	})
+	if err != nil {
+		return nil, meta, err
+	}
+	if len(results) == 0 {
+		return nil, meta, nil
+	}
+	// When the metric was unspecified the query may return several series;
+	// the statistics operate on one. Use the first (deterministically the
+	// lowest metric name, since Query sorts its output).
+	r := results[0]
+	return r.Points, r.Series, nil
 }

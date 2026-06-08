@@ -82,6 +82,7 @@ func TestMCPToolSurface(t *testing.T) {
 		"run_check_now", "acknowledge_alert", "create_downtime",
 		"create_silence", "propose_config_change", "apply_config_change",
 		"render_report",
+		"analyze_metric", "forecast_capacity", "suggest_thresholds",
 	}
 	for _, name := range want {
 		if !got[name] {

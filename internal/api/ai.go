@@ -110,7 +110,9 @@ func (a *API) registerAI() {
 			}
 			a.audit(r, p, "ai.action.approve", param(r, "id"), nil, nil)
 			if a.AI != nil && a.AI.Enabled() {
-				result, err := a.AI.ExecuteApproved(r.Context(), tenant, param(r, "id"), p.Name)
+				// Execute under the approver's scopes (not god-mode): the human
+				// approval authorises only what the approver may themselves do.
+				result, err := a.AI.ExecuteApproved(r.Context(), tenant, param(r, "id"), p)
 				if err != nil {
 					a.problem(w, r, http.StatusBadGateway, "np:ai/execute",
 						"approved but execution failed", err.Error())

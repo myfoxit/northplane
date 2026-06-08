@@ -148,7 +148,16 @@ func (s *Service) RunTool(ctx context.Context, p *auth.Principal, name string,
 }
 
 // ExecuteApproved runs a previously approved proposal (api.AIService).
-func (s *Service) ExecuteApproved(ctx context.Context, tenantID, actionID, approvedBy string) (any, error) {
+//
+// Authorisation model (SPEC §10.1/§10.3): the proposal was created by the
+// AI actor under the *caller's* scopes, then a human approved it. Rather
+// than executing with god-mode ("*:*"), the action now runs under the
+// APPROVER's scopes — the approver must themselves hold the permission the
+// tool requires. This keeps the AI a privilege-less client end-to-end: a
+// human who cannot apply a config change cannot launder that capability
+// through the approval queue. The approver is threaded in from the
+// :approve handler.
+func (s *Service) ExecuteApproved(ctx context.Context, tenantID, actionID string, approver *auth.Principal) (any, error) {
 	action, err := s.store.GetAIAction(ctx, tenantID, actionID)
 	if err != nil {
 		return nil, err
@@ -160,9 +169,20 @@ func (s *Service) ExecuteApproved(ctx context.Context, tenantID, actionID, appro
 	if tool == nil {
 		return nil, fmt.Errorf("tool %q no longer exists", action.Tool)
 	}
+	if approver == nil {
+		return nil, fmt.Errorf("approver principal required to execute approved action")
+	}
+	// Enforce the approver's scopes for the tool's required permission: the
+	// human approval is only authorisation up to what the approver may do.
+	if tool.Perm != "" && !approver.Allow(tool.Perm) {
+		s.audit(ctx, approver, "ai.execute.denied."+action.Tool, actionID, action.Args)
+		return nil, fmt.Errorf("approver lacks permission %s required by %s", tool.Perm, action.Tool)
+	}
+	// Run under a principal carrying exactly the approver's scopes (and
+	// tenant/folder), audited as the AI actor that proposed the action.
 	p := &auth.Principal{ActorType: model.ActorAI, ActorID: "ai-approved",
 		Name: action.Actor, TenantID: tenantID,
-		Perms: []model.Permission{"*:*"}} // the human approval IS the authorisation
+		Perms: approver.Perms, Folder: approver.Folder}
 	result, err := tool.Run(ctx, s, p, action.Args)
 	raw, _ := json.Marshal(result)
 	if err != nil {
@@ -391,11 +411,11 @@ func (s *Service) audit(ctx context.Context, p *auth.Principal, action, resource
 // auditPrompt logs the redacted prompt + token cost (SPEC §13.6).
 func (s *Service) auditPrompt(ctx context.Context, p *auth.Principal, convID, prompt string, c *Completion) {
 	meta, _ := json.Marshal(map[string]any{
-		"conversation": convID,
-		"promptHash":   hashTag(prompt),
+		"conversation":   convID,
+		"promptHash":     hashTag(prompt),
 		"redactedPrompt": truncate(s.redactor.Redact(prompt), 500),
-		"tokensIn":     c.InputTokens, "tokensOut": c.OutputTokens,
-		"toolCalls":    len(c.ToolCalls),
+		"tokensIn":       c.InputTokens, "tokensOut": c.OutputTokens,
+		"toolCalls": len(c.ToolCalls),
 	})
 	_, _ = s.store.AppendAudit(ctx, &model.AuditEntry{
 		TenantID: p.TenantID, ActorType: model.ActorAI, ActorID: p.ActorID,

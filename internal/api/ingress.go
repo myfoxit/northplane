@@ -183,7 +183,7 @@ func (a *API) registerIngress() {
 			ev := &model.Event{ID: model.NewID(), TenantID: tenant, TS: time.Now().UTC(),
 				Type: model.EventHeartbeatMiss, SourceID: h.ID,
 				Severity: model.SevOK, Payload: raw}
-			_ = a.Store.InsertEvents(r.Context(), []*model.Event{ev})
+			a.insertEvents(r.Context(), ev)
 			_ = a.Bus.PublishEventCtx(r.Context(), ev)
 		}
 		a.writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -278,7 +278,7 @@ func (a *API) publishNorm(r *http.Request, tenantID string, src *model.EventSour
 	}
 	ev := &model.Event{ID: model.NewID(), TenantID: tenantID, TS: norm.ReceivedAt,
 		Type: model.EventIngress, SourceID: src.ID, Severity: sev, Payload: raw}
-	_ = a.Store.InsertEvents(r.Context(), []*model.Event{ev})
+	a.insertEvents(r.Context(), ev)
 	_ = a.Bus.PublishEventCtx(r.Context(), ev)
 }
 

@@ -220,16 +220,21 @@ func (db *DB) seriesRange(id uint64, fromMS, toMS, stepMS int64, fn AggFunc) ([]
 			}
 			continue
 		}
-		if ws < covered {
-			covered = ws
-		}
 		path := db.blockPath(ws)
 		idx, _, err := readBlockIndex(path)
 		if err != nil {
+			// The block-starts list is cached, so a start may name a file that
+			// has since vanished (out-of-band removal / retention racing a
+			// query). Skip it *without* marking the sub-range as raw-covered,
+			// so the aggregate tiers still fill that gap below.
 			if os.IsNotExist(err) {
 				continue
 			}
 			return nil, err
+		}
+		// Only now that the block is readable does it count as raw coverage.
+		if ws < covered {
+			covered = ws
 		}
 		samples, err := readBlockSeries(path, idx, blockHeaderSize(len(idx)), id)
 		if err != nil {

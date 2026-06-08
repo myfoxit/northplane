@@ -84,7 +84,19 @@ func Open(ctx context.Context, o Options) (*Store, error) {
 		if err != nil {
 			return nil, err
 		}
+		// Connection pool (SPEC §7.3). Unlike SQLite (single writer, idle-warm
+		// and non-expiring on purpose — see below), PostgreSQL handles
+		// concurrency server-side, so the goal here is the opposite: bound the
+		// open conns and actively *recycle* idle ones. A connection left open
+		// across a pgbouncer/LB idle timeout looks alive to database/sql but is
+		// silently dead server-side, surfacing as a "bad connection" on the next
+		// query. SetConnMaxIdleTime retires conns before that reaper fires;
+		// SetConnMaxLifetime caps total age so the pool follows DNS/failover
+		// changes; SetMaxIdleConns keeps a warm subset without pinning all 16.
 		db.SetMaxOpenConns(16)
+		db.SetMaxIdleConns(8)
+		db.SetConnMaxLifetime(30 * time.Minute)
+		db.SetConnMaxIdleTime(5 * time.Minute)
 		s.db, s.dialect = db, pgDialect{}
 	default:
 		path := o.DSN
@@ -223,8 +235,8 @@ type Dialect interface {
 
 type sqliteDialect struct{}
 
-func (sqliteDialect) Name() string            { return "sqlite" }
-func (sqliteDialect) Rebind(q string) string  { return q }
+func (sqliteDialect) Name() string           { return "sqlite" }
+func (sqliteDialect) Rebind(q string) string { return q }
 func (sqliteDialect) TimeValue(t time.Time) any {
 	return t.UTC().Format(time.RFC3339Nano)
 }

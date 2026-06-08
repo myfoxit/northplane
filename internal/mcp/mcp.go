@@ -42,6 +42,16 @@ func Build(svc *ai.Service, principal *auth.Principal, version string) *sdk.Serv
 		Name: "northplane", Title: "Northplane Monitoring", Version: version,
 	}, nil)
 
+	// Tools that perform destructive (non-additive) updates to the
+	// environment when executed. The SDK's DestructiveHint is only
+	// meaningful for write tools, so this set is intersected with the
+	// registry's Mutating flag below (it never marks a read tool).
+	destructive := map[string]bool{
+		"apply_config_change": true,
+		"create_downtime":     true,
+		"create_silence":      true,
+	}
+
 	for _, tool := range svc.Tools() {
 		t := tool // capture
 		desc := t.Def.Description
@@ -50,10 +60,28 @@ func Build(svc *ai.Service, principal *auth.Principal, version string) *sdk.Serv
 		} else if t.Mutating {
 			desc += " (mutating: executes immediately, audited)"
 		}
+		// Annotations are advisory hints (MCP 2025-06-18). Derive read-vs-write
+		// straight from the registry's Mutating flag so the hint can never
+		// drift from the actual tool behaviour. AutoOK mutating tools (ack,
+		// recheck) are idempotent — repeating them has no extra effect.
+		ann := &sdk.ToolAnnotations{ReadOnlyHint: !t.Mutating}
+		if t.Mutating {
+			if destructive[t.Def.Name] {
+				yes := true
+				ann.DestructiveHint = &yes
+			} else {
+				no := false
+				ann.DestructiveHint = &no
+			}
+			if t.AutoOK {
+				ann.IdempotentHint = true
+			}
+		}
 		server.AddTool(&sdk.Tool{
 			Name:        t.Def.Name,
 			Description: desc,
 			InputSchema: json.RawMessage(t.Def.Schema),
+			Annotations: ann,
 		}, func(ctx context.Context, req *sdk.CallToolRequest) (*sdk.CallToolResult, error) {
 			args, err := json.Marshal(req.Params.Arguments)
 			if err != nil {

@@ -20,18 +20,18 @@ import (
 
 // Window and tier geometry (SPEC §7.3).
 const (
-	rawWindow   = 2 * time.Hour
-	flushGrace  = 5 * time.Minute
-	aggWindow   = 24 * time.Hour
-	bucket5m    = 5 * time.Minute
-	bucket1h    = time.Hour
+	rawWindow  = 2 * time.Hour
+	flushGrace = 5 * time.Minute
+	aggWindow  = 24 * time.Hour
+	bucket5m   = 5 * time.Minute
+	bucket1h   = time.Hour
 )
 
 // Retention defaults (SPEC §7.3: raw 30 d → 5-min 400 d → 1-h 5 a).
 type Retention struct {
-	Raw    time.Duration
-	Agg5m  time.Duration
-	Agg1h  time.Duration
+	Raw   time.Duration
+	Agg5m time.Duration
+	Agg1h time.Duration
 }
 
 var DefaultRetention = Retention{
@@ -39,6 +39,12 @@ var DefaultRetention = Retention{
 	Agg5m: 400 * 24 * time.Hour,
 	Agg1h: 5 * 365 * 24 * time.Hour,
 }
+
+// DefaultMaxSeries bounds registry cardinality (SPEC §7.3): a misbehaving
+// integration that emits unbounded label combinations would otherwise grow
+// the in-memory maps without limit. Past the cap, new series are dropped and
+// counted (Stats.SeriesDropped). Override per instance with SetMaxSeries.
+const DefaultMaxSeries = 100_000
 
 // SeriesKey identifies a series (SPEC §7.3): object + metric + unit +
 // labels hash.
@@ -60,6 +66,11 @@ type SeriesMeta struct {
 	Crit     string            `json:"crit,omitempty"`
 	Min      *float64          `json:"min,omitempty"`
 	Max      *float64          `json:"max,omitempty"`
+	// Deleted marks a tombstone record in the append-only journal: a later
+	// line with this set removes the series from the registry on replay (see
+	// DropObject / loadSeries). Set on the journal line only, never on a live
+	// registry entry.
+	Deleted bool `json:"deleted,omitempty"`
 }
 
 func labelsHash(labels map[string]string) uint64 {
@@ -100,6 +111,18 @@ type DB struct {
 	byObject map[string][]uint64
 	heads    map[uint64]*headSeries
 
+	// maxSeries caps registry cardinality; new series past it are dropped
+	// (statSeriesDropped++) so a runaway label explosion can't grow the maps
+	// unboundedly. 0 = unlimited.
+	maxSeries int
+
+	// blockStarts caches the sorted window starts on disk so seriesRange does
+	// not glob the blocks dir on every call. Guarded by blockMu; invalidated
+	// (set blockCacheOK=false) whenever a block is written or retention runs.
+	blockMu      sync.Mutex
+	blockStarts  []int64
+	blockCacheOK bool
+
 	seriesF *os.File
 	seriesW *bufio.Writer
 
@@ -111,8 +134,17 @@ type DB struct {
 	fsyncWG   sync.WaitGroup
 	closeOnce sync.Once
 
-	statSamples uint64
-	statDropped uint64
+	statSamples       uint64
+	statDropped       uint64
+	statSeriesDropped uint64
+}
+
+// SetMaxSeries overrides the cardinality cap (0 = unlimited). Safe to call
+// after Open; existing series are kept, only new registrations are bounded.
+func (db *DB) SetMaxSeries(n int) {
+	db.mu.Lock()
+	db.maxSeries = n
+	db.mu.Unlock()
 }
 
 // Open loads (or initialises) the engine at dir.
@@ -133,6 +165,7 @@ func Open(dir string, log *slog.Logger, ret Retention) (*DB, error) {
 		byKey: map[SeriesKey]uint64{}, byID: map[uint64]*SeriesMeta{},
 		byObject: map[string][]uint64{}, heads: map[uint64]*headSeries{},
 		nextID: 1, stopFsync: make(chan struct{}),
+		maxSeries: DefaultMaxSeries,
 	}
 	if err := db.loadSeries(); err != nil {
 		return nil, err
@@ -182,6 +215,15 @@ func (db *DB) loadSeries() error {
 			continue // tolerate torn tail line
 		}
 		key := SeriesKey{ObjectID: m.ObjectID, Metric: m.Metric, Unit: m.Unit, LabelsH: labelsHash(m.Labels)}
+		if m.Deleted {
+			// Tombstone: drop the series resurrected by earlier lines.
+			if old, ok := db.byKey[key]; ok {
+				delete(db.byKey, key)
+				delete(db.byID, old)
+				removeID(db.byObject, m.ObjectID, old)
+			}
+			continue
+		}
 		if old, ok := db.byKey[key]; ok {
 			// later line updates metadata in place (thresholds)
 			meta := db.byID[old]
@@ -225,6 +267,13 @@ func (db *DB) series(objectID, metric, unit string, labels map[string]string, wa
 			db.seriesW.WriteByte('\n')
 		}
 		return meta
+	}
+	// Cardinality cap: refuse to register a brand-new series once the registry
+	// is full. Returning nil makes Append drop the sample (statSeriesDropped++)
+	// instead of growing byKey/byID/byObject without bound.
+	if db.maxSeries > 0 && len(db.byID) >= db.maxSeries {
+		db.statSeriesDropped++
+		return nil
 	}
 	meta := &SeriesMeta{ID: db.nextID, ObjectID: objectID, Metric: metric, Unit: unit,
 		Labels: labels, Warn: warn, Crit: crit, Min: min, Max: max}
@@ -372,8 +421,11 @@ func (db *DB) Append(objectID, metric, unit string, labels map[string]string,
 	}
 	db.mu.Lock()
 	meta := db.series(objectID, metric, unit, labels, warn, crit, min, max)
-	id := meta.ID
 	db.mu.Unlock()
+	if meta == nil {
+		return // cardinality cap reached (counted in series())
+	}
+	id := meta.ID
 
 	t := ts.UnixMilli()
 	if db.headAppend(id, t, v) {
@@ -429,7 +481,11 @@ func (db *DB) writeBlock(ws int64, list []flushEntry) error {
 		entries = append(entries, blockEntry{p.seriesID, p.app.Bytes(), p.app.Count()})
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].seriesID < entries[j].seriesID })
-	return writeBlockFile(db.blockPath(ws), ws, ws+rawWindow.Milliseconds(), entries)
+	if err := writeBlockFile(db.blockPath(ws), ws, ws+rawWindow.Milliseconds(), entries); err != nil {
+		return err
+	}
+	db.invalidateBlockCache() // a new block start is now on disk
+	return nil
 }
 
 // rewriteWAL re-logs only still-open head windows (atomically).
@@ -544,19 +600,80 @@ func (db *DB) SeriesForObject(objectID string) []*SeriesMeta {
 	return out
 }
 
+// removeID deletes one series ID from m[objectID], pruning the key when the
+// last ID is gone. Caller holds db.mu (write).
+func removeID(m map[string][]uint64, objectID string, id uint64) {
+	ids := m[objectID]
+	for i, v := range ids {
+		if v == id {
+			ids = append(ids[:i], ids[i+1:]...)
+			break
+		}
+	}
+	if len(ids) == 0 {
+		delete(m, objectID)
+	} else {
+		m[objectID] = ids
+	}
+}
+
+// DropObject tombstones and removes every series belonging to the given
+// object IDs so an object deletion can reclaim TSDB space. It clears the
+// in-memory registry (byKey/byID/byObject) and any open head windows, and
+// appends a tombstone line per series to the journal so the removal survives
+// a restart. On-disk block/agg files are left to retention (they are pruned
+// by age and a dropped series simply stops being read).
+//
+// Wiring this into object-deletion call sites is the caller's job; this only
+// provides the reclaim primitive. Safe for concurrent use.
+func (db *DB) DropObject(objectIDs ...string) {
+	if len(objectIDs) == 0 {
+		return
+	}
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	for _, objectID := range objectIDs {
+		ids := db.byObject[objectID]
+		if len(ids) == 0 {
+			continue
+		}
+		for _, id := range ids {
+			meta := db.byID[id]
+			if meta != nil {
+				key := SeriesKey{ObjectID: meta.ObjectID, Metric: meta.Metric,
+					Unit: meta.Unit, LabelsH: labelsHash(meta.Labels)}
+				delete(db.byKey, key)
+				// Append a tombstone so replay drops it after a restart.
+				tomb := SeriesMeta{ObjectID: meta.ObjectID, Metric: meta.Metric,
+					Unit: meta.Unit, Labels: meta.Labels, Deleted: true}
+				if line, err := json.Marshal(tomb); err == nil {
+					db.seriesW.Write(line)
+					db.seriesW.WriteByte('\n')
+				}
+			}
+			delete(db.byID, id)
+			delete(db.heads, id)
+		}
+		delete(db.byObject, objectID)
+	}
+	db.seriesW.Flush()
+}
+
 // Stats for self-monitoring (SPEC §15.4).
 type Stats struct {
-	Series   int    `json:"series"`
-	Samples  uint64 `json:"samplesIngested"`
-	Dropped  uint64 `json:"samplesDropped"`
-	Blocks   int    `json:"blocks"`
-	WALBytes int64  `json:"walBytes"`
+	Series        int    `json:"series"`
+	Samples       uint64 `json:"samplesIngested"`
+	Dropped       uint64 `json:"samplesDropped"`
+	SeriesDropped uint64 `json:"seriesDropped"`
+	Blocks        int    `json:"blocks"`
+	WALBytes      int64  `json:"walBytes"`
 }
 
 // Stats snapshots counters.
 func (db *DB) Stats() Stats {
 	db.mu.RLock()
-	st := Stats{Series: len(db.byID), Samples: db.statSamples, Dropped: db.statDropped}
+	st := Stats{Series: len(db.byID), Samples: db.statSamples,
+		Dropped: db.statDropped, SeriesDropped: db.statSeriesDropped}
 	db.mu.RUnlock()
 	if fi, err := os.Stat(db.walPath()); err == nil {
 		st.WALBytes = fi.Size()
@@ -609,6 +726,7 @@ func (db *DB) enforceRetention(now time.Time) error {
 	if err := drop(filepath.Join(db.dir, "blocks", "block-*.npb"), db.ret.Raw, parseBlock); err != nil {
 		return err
 	}
+	db.invalidateBlockCache() // raw blocks may have been removed above
 	if err := drop(filepath.Join(db.dir, "agg", "agg-*-5m.npa"), db.ret.Agg5m, parseAgg); err != nil {
 		return err
 	}
@@ -620,8 +738,16 @@ func mathFloat64frombits(b uint64) float64 { return math.Float64frombits(b) }
 func mathIsNaN(v float64) bool             { return math.IsNaN(v) }
 func mathIsInf(v float64) bool             { return math.IsInf(v, 0) }
 
-// listBlockStarts returns sorted window starts present on disk.
+// listBlockStarts returns sorted window starts present on disk. The result is
+// cached (seriesRange calls this per query): the blocks dir only changes when
+// a block is written (Flush→writeBlock) or removed (enforceRetention), both of
+// which call invalidateBlockCache. Callers must not mutate the returned slice.
 func (db *DB) listBlockStarts() []int64 {
+	db.blockMu.Lock()
+	defer db.blockMu.Unlock()
+	if db.blockCacheOK {
+		return db.blockStarts
+	}
 	matches, _ := filepath.Glob(filepath.Join(db.dir, "blocks", "block-*.npb"))
 	out := make([]int64, 0, len(matches))
 	for _, m := range matches {
@@ -631,7 +757,16 @@ func (db *DB) listBlockStarts() []int64 {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	db.blockStarts, db.blockCacheOK = out, true
 	return out
+}
+
+// invalidateBlockCache forces the next listBlockStarts to re-glob the dir.
+func (db *DB) invalidateBlockCache() {
+	db.blockMu.Lock()
+	db.blockCacheOK = false
+	db.blockStarts = nil
+	db.blockMu.Unlock()
 }
 
 func sanitizeMetric(m string) string {

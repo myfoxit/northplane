@@ -67,7 +67,7 @@ type API struct {
 // Go's ServeMux forbids text after a wildcard, so the last segment is
 // matched as one wildcard and split here.
 type actionRouter struct {
-	paramName string                            // wildcard name of the plain route
+	paramName string // wildcard name of the plain route
 	plain     func(http.ResponseWriter, *http.Request)
 	bySuffix  map[string]actionEntry
 }
@@ -99,7 +99,7 @@ type AIService interface {
 	Enabled() bool
 	Converse(ctx context.Context, principal *auth.Principal, conversationID, message string) (any, error)
 	SummarizeIncident(ctx context.Context, tenantID, incidentID string) (string, error)
-	ExecuteApproved(ctx context.Context, tenantID, actionID, approvedBy string) (any, error)
+	ExecuteApproved(ctx context.Context, tenantID, actionID string, approver *auth.Principal) (any, error)
 }
 
 type routeMeta struct {
@@ -237,14 +237,67 @@ func (a *API) withMiddleware(next http.Handler) http.Handler {
 		if principal != nil {
 			ctx = auth.WithPrincipal(ctx, principal)
 		}
-		next.ServeHTTP(w, r.WithContext(ctx))
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		routed := r.WithContext(ctx)
+		next.ServeHTTP(rec, routed)
 
 		if strings.HasPrefix(r.URL.Path, "/api/") {
-			a.Metrics.Counter(`np_http_requests_total{method="`+r.Method+`"}`,
-				"API requests").Inc()
-			_ = start
+			// Label by method + status code + matched route template
+			// (routed.Pattern, set by ServeMux — bounded cardinality, never
+			// the raw path). Both the request counter and the latency
+			// histogram carry the same label set so they correlate.
+			labels := fmt.Sprintf(`{method=%q,status=%q,route=%q}`,
+				r.Method, strconv.Itoa(rec.status), routeLabel(routed))
+			a.Metrics.Counter("np_http_requests_total"+labels, "API requests").Inc()
+			a.Metrics.Histogram("np_http_request_duration_seconds"+labels,
+				"API request latency in seconds").Observe(time.Since(start).Seconds())
 		}
 	})
+}
+
+// routeLabel is the matched ServeMux pattern (method-stripped) for the
+// request — a low-cardinality template like "/api/v1/objects/{id}", not
+// the raw path. Empty when nothing matched (404).
+func routeLabel(r *http.Request) string {
+	pat := r.Pattern
+	if pat == "" {
+		return ""
+	}
+	if _, path, ok := strings.Cut(pat, " "); ok { // strip leading "METHOD "
+		return path
+	}
+	return pat
+}
+
+// statusRecorder captures the response status code (and whether the
+// body was started) for request metrics while transparently forwarding
+// to the underlying writer. It preserves http.Flusher so SSE streaming
+// (internal/sse) keeps working through the middleware.
+type statusRecorder struct {
+	http.ResponseWriter
+	status  int
+	written bool
+}
+
+func (s *statusRecorder) WriteHeader(code int) {
+	if !s.written {
+		s.status = code
+		s.written = true
+	}
+	s.ResponseWriter.WriteHeader(code)
+}
+
+func (s *statusRecorder) Write(b []byte) (int, error) {
+	s.written = true // implicit 200 on first write without WriteHeader
+	return s.ResponseWriter.Write(b)
+}
+
+// Flush forwards to the wrapped writer so SSE/streaming handlers, which
+// type-assert http.Flusher, continue to flush.
+func (s *statusRecorder) Flush() {
+	if f, ok := s.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 type ctxKeyType int
@@ -271,7 +324,7 @@ func (a *API) problem(w http.ResponseWriter, r *http.Request, status int, code, 
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(problemDoc{
-		Type: "https://northplane.dev/problems/" + strings.ReplaceAll(code, ":", "/"),
+		Type:  "https://northplane.dev/problems/" + strings.ReplaceAll(code, ":", "/"),
 		Title: title, Status: status, Detail: detail, Code: code,
 		Instance: r.URL.Path,
 	})
@@ -502,8 +555,25 @@ func (a *API) emitConfigEvent(ctx context.Context, tenantID string, kinds []stri
 	raw, _ := json.Marshal(map[string]any{"kinds": kinds})
 	ev := &model.Event{ID: model.NewID(), TenantID: tenantID, TS: time.Now().UTC(),
 		Type: model.EventConfig, Severity: model.SevInfo, Payload: raw}
-	_ = a.Store.InsertEvents(ctx, []*model.Event{ev})
+	a.insertEvents(ctx, ev)
 	a.Bus.FanoutOnly(ev)
+}
+
+// insertEvents persists best-effort audit/lifecycle events. Insert
+// failures are intentionally non-fatal (the fanout to live subscribers
+// still happens), but must not be silent: log a warning and bump the
+// dropped-events counter so the loss is observable on /metrics rather
+// than vanishing into a discarded error.
+func (a *API) insertEvents(ctx context.Context, events ...*model.Event) {
+	if err := a.Store.InsertEvents(ctx, events); err != nil {
+		typ := ""
+		if len(events) > 0 {
+			typ = string(events[0].Type)
+		}
+		a.Log.Warn("api: event insert dropped", "err", err, "count", len(events), "type", typ)
+		a.Metrics.Counter(`np_events_dropped_total{source="api"}`,
+			"events dropped on insert (best-effort, not persisted)").Add(uint64(len(events)))
+	}
 }
 
 // registerAll wires every resource group (SPEC §11.3 catalog).
