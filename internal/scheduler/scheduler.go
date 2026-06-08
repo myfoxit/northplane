@@ -33,7 +33,6 @@ type entry struct {
 	interval time.Duration
 	due      time.Time
 	slot     int
-	paused   bool
 }
 
 // Scheduler owns the wheel.

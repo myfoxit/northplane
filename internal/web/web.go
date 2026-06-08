@@ -48,7 +48,7 @@ func SPAHandler() http.Handler {
 			fileServer.ServeHTTP(w, r2)
 			return
 		}
-		f.Close()
+		_ = f.Close() // opened only to test existence
 		if strings.HasPrefix(path, "assets/") {
 			// hashed filenames → immutable (SPEC §12.2)
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")

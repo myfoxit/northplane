@@ -82,17 +82,23 @@ func sqliteQuote(path string) string {
 	return "'" + strings.ReplaceAll(path, "'", "''") + "'"
 }
 
-func copyFile(src, dst string) error {
+func copyFile(src, dst string) (err error) {
 	in, err := os.Open(src)
 	if err != nil {
 		return err
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }() // read-only source
 	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o640)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer func() {
+		// Surface a Close error on the destination only if nothing already
+		// failed — a failed close can mean buffered data never reached disk.
+		if cerr := out.Close(); err == nil {
+			err = cerr
+		}
+	}()
 	if _, err := io.Copy(out, in); err != nil {
 		return err
 	}

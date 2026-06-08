@@ -356,7 +356,7 @@ func (p *poller) poll(ctx context.Context, log *slog.Logger) (int, error) {
 		return 0, fmt.Errorf("connect %s: %w", addr, err)
 	}
 	// Always close the socket; LOGOUT is best-effort before that.
-	defer cl.Close()
+	defer func() { _ = cl.Close() }()
 
 	if err := cl.Login(p.cfg.username, pass); err != nil {
 		return 0, err
@@ -468,7 +468,8 @@ func (p *poller) buildEvent(raw []byte) (*model.Event, error) {
 		From      string `json:"from"`
 		Date      string `json:"date"`
 		MessageID string `json:"messageId"`
-	}{Subject: subject, From: fromAddr, Date: dateStr, MessageID: messageID})
+		Body      string `json:"body,omitempty"`
+	}{Subject: subject, From: fromAddr, Date: dateStr, MessageID: messageID, Body: body})
 
 	norm := &model.NormEvent{
 		Source:     p.src.ID,

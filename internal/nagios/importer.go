@@ -143,7 +143,7 @@ func expandMainCfg(main string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	base := filepath.Dir(main)
 	var files []string
 	sc := bufio.NewScanner(f)
@@ -178,7 +178,7 @@ func parseCfgFile(path string) ([]*nagiosObject, []Deviation, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	var objects []*nagiosObject
 	var devs []Deviation
 	var cur *nagiosObject
@@ -386,9 +386,7 @@ func convert(objects []*nagiosObject, res *ImportResult) {
 		case "hostgroup":
 			name := o.props["hostgroup_name"]
 			if name != "" {
-				for _, m := range splitList(o.props["members"]) {
-					hostgroups[name] = append(hostgroups[name], m)
-				}
+				hostgroups[name] = append(hostgroups[name], splitList(o.props["members"])...)
 			}
 		case "servicegroup", "hostextinfo", "serviceextinfo":
 			res.Stats.Skipped++

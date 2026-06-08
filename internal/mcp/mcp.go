@@ -80,7 +80,7 @@ func Build(svc *ai.Service, principal *auth.Principal, version string) *sdk.Serv
 		server.AddTool(&sdk.Tool{
 			Name:        t.Def.Name,
 			Description: desc,
-			InputSchema: json.RawMessage(t.Def.Schema),
+			InputSchema: t.Def.Schema,
 			Annotations: ann,
 		}, func(ctx context.Context, req *sdk.CallToolRequest) (*sdk.CallToolResult, error) {
 			args, err := json.Marshal(req.Params.Arguments)

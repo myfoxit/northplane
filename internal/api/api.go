@@ -609,12 +609,3 @@ func (a *API) tenantOf(r *http.Request, p *auth.Principal) string {
 	}
 	return p.TenantID
 }
-
-var startTime = time.Now()
-
-func fmtUptime() string {
-	d := time.Since(startTime).Round(time.Second)
-	return d.String()
-}
-
-var _ = fmt.Sprintf

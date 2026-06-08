@@ -56,7 +56,7 @@ func checkICMP(ctx context.Context, t Target, a Args) (model.State, nagios.Outpu
 	if err != nil {
 		return unknownf("icmp socket: %v (unprivileged ICMP unavailable — run as root, grant cap_net_raw, or use builtin:tcp)", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	deadline := time.Now().Add(timeout)
 	if dl, ok := ctx.Deadline(); ok && dl.Before(deadline) {
 		deadline = dl
@@ -134,7 +134,7 @@ func checkTCP(ctx context.Context, t Target, a Args) (model.State, nagios.Output
 	if err != nil {
 		return criticalf("connect to %s failed: %v", addr, err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	elapsed := time.Since(start).Seconds()
 
 	if send := a.Get("s", "send"); send != "" {
@@ -167,7 +167,7 @@ func checkSSHBanner(ctx context.Context, t Target, a Args) (model.State, nagios.
 	if err != nil {
 		return criticalf("connect to %s failed: %v", addr, err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	_ = conn.SetReadDeadline(time.Now().Add(timeout))
 	banner, err := bufio.NewReader(conn).ReadString('\n')
 	if err != nil {
@@ -195,7 +195,7 @@ func checkSMTP(ctx context.Context, t Target, a Args) (model.State, nagios.Outpu
 	if err != nil {
 		return criticalf("connect to %s failed: %v", addr, err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	_ = conn.SetDeadline(time.Now().Add(timeout))
 	r := bufio.NewReader(conn)
 	greet, err := r.ReadString('\n')
@@ -261,7 +261,7 @@ func checkIMAP(ctx context.Context, t Target, a Args) (model.State, nagios.Outpu
 	if err != nil {
 		return criticalf("connect to %s failed: %v", addr, err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	_ = conn.SetReadDeadline(time.Now().Add(timeout))
 	greet, err := bufio.NewReader(conn).ReadString('\n')
 	if err != nil || !strings.HasPrefix(greet, "* OK") {
@@ -282,7 +282,7 @@ func checkNTP(ctx context.Context, t Target, a Args) (model.State, nagios.Output
 	if err != nil {
 		return criticalf("ntp dial %s: %v", addr, err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	_ = conn.SetDeadline(time.Now().Add(timeout))
 
 	// SNTP v4 client request

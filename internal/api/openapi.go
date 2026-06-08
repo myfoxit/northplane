@@ -154,7 +154,7 @@ func muxToOpenAPI(pattern string) string {
 
 // schemaRef reflects a Go type into components/schemas.
 func schemaRef(t reflect.Type, schemas map[string]any) map[string]any {
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	switch t.Kind() {
@@ -233,7 +233,7 @@ func structSchema(t reflect.Type, schemas map[string]any) map[string]any {
 			name = f.Name
 		}
 		props[name] = schemaRef(f.Type, schemas)
-		if !strings.Contains(opts, "omitempty") && f.Type.Kind() != reflect.Ptr {
+		if !strings.Contains(opts, "omitempty") && f.Type.Kind() != reflect.Pointer {
 			required = append(required, name)
 		}
 	}

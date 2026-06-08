@@ -1,0 +1,65 @@
+version: "2"
+
+# Report every finding (golangci-lint otherwise caps at 50 per linter / 3
+# identical) so nothing is silently hidden.
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+linters:
+  # Start from the standard default set (errcheck, govet, ineffassign,
+  # staticcheck, unused) and add a few high-signal extras that pass cleanly.
+  default: standard
+  enable:
+    - misspell
+    - unconvert
+    - bodyclose
+
+  settings:
+    errcheck:
+      # Narrowly exclude genuinely value-less returns only. Every function
+      # here either writes to stdout/stderr/an in-memory builder, or is a
+      # buffered-writer call whose error is sticky and surfaced at the
+      # checked Flush() (the bufio.Writer contract), or a CLI parse that
+      # falls through to a default. Real I/O (DB/file/network) errors are
+      # NOT excluded here — those are handled in code.
+      exclude-functions:
+        # fmt print-to-writer family (stdout/stderr/strings.Builder/tabwriter)
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        # CLI numeric parsing that falls through to a default on failure
+        - fmt.Sscanf
+        # Buffered writer: errors are sticky and surface at the checked Flush()
+        - (*bufio.Writer).Write
+        - (*bufio.Writer).WriteByte
+        - (*bufio.Writer).WriteString
+        - (*bufio.Writer).Flush
+        # tabwriter / tab-aligned stdout output flush
+        - (*text/tabwriter.Writer).Flush
+        # Read-side closes whose failure carries no recoverable signal:
+        #   - *sql.Rows: iteration errors surface via rows.Err(), and Close is
+        #     also called implicitly when Next() exhausts the result set.
+        #   - HTTP response bodies (io.ReadCloser): closed after the body has
+        #     been read/drained; a close error cannot change the result.
+        - (*database/sql.Rows).Close
+        - (io.ReadCloser).Close
+
+  exclusions:
+    # Lint our own code only — vendored third-party Go under node_modules is
+    # not ours to fix and pulls in irrelevant govet/staticcheck noise.
+    paths:
+      - web/node_modules
+    rules:
+      # Test helpers commonly ignore Close()/Unsetenv() on teardown where a
+      # failure cannot affect the assertion under test.
+      - path: _test\.go
+        linters:
+          - errcheck
+        text: "Error return value of .*(Close|Unsetenv). is not checked"
+      # bodyclose is kept as a production-code guard, but it cannot see that a
+      # test's local request helper already closes resp.Body via defer before
+      # returning the *http.Response — those are false positives in tests.
+      - path: _test\.go
+        linters:
+          - bodyclose

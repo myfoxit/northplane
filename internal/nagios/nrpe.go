@@ -62,7 +62,7 @@ func NRPEQuery(ctx context.Context, o NRPEOptions, command string, args []string
 	if err != nil {
 		return nil, fmt.Errorf("nrpe: dial %s: %w", addr, err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	deadline := time.Now().Add(o.Timeout)
 	if dl, ok := ctx.Deadline(); ok && dl.Before(deadline) {
 		deadline = dl

@@ -651,7 +651,7 @@ func (a *API) exportBundle(ctx context.Context, tenantID, folder string) ([]bund
 	}
 	for _, o := range objs {
 		doc := bundle.Doc{
-			Kind:     strings.Title(string(o.Kind)),
+			Kind:     titleKind(string(o.Kind)),
 			Metadata: bundle.Metadata{Name: o.Name, Folder: o.Folder, Labels: o.Labels},
 		}
 		if o.Kind == model.KindService {
@@ -701,6 +701,21 @@ func (a *API) exportBundle(ctx context.Context, tenantID, folder string) ([]bund
 		}
 	}
 	return docs, nil
+}
+
+// titleKind capitalizes the first ASCII letter of an object kind
+// ("host" -> "Host", "service" -> "Service") to match bundle Doc kinds.
+// Object kinds are always single lowercase ASCII words, so this is a safe
+// replacement for the deprecated strings.Title.
+func titleKind(s string) string {
+	if s == "" {
+		return s
+	}
+	b := []byte(s)
+	if b[0] >= 'a' && b[0] <= 'z' {
+		b[0] -= 'a' - 'A'
+	}
+	return string(b)
 }
 
 var _ = kindResourceMap

@@ -136,7 +136,7 @@ func TestRender_SortedAndStableOrdering(t *testing.T) {
 	ai := strings.Index(out, "np_a_total 1")
 	bi := strings.Index(out, "np_b_total 1")
 	ci := strings.Index(out, "np_c 1")
-	if !(ai < bi && bi < ci) {
+	if ai >= bi || bi >= ci {
 		t.Errorf("rows not sorted by name: a=%d b=%d c=%d\n%s", ai, bi, ci, out)
 	}
 }
@@ -304,7 +304,7 @@ func TestHistogram_UnsortedBoundsAreSorted(t *testing.T) {
 	b1 := strings.Index(out, `np_sorted_seconds_bucket{le="1"}`)
 	b2 := strings.Index(out, `np_sorted_seconds_bucket{le="2"}`)
 	b5 := strings.Index(out, `np_sorted_seconds_bucket{le="5"}`)
-	if !(b1 >= 0 && b1 < b2 && b2 < b5) {
+	if b1 < 0 || b1 >= b2 || b2 >= b5 {
 		t.Errorf("buckets not rendered in ascending le order: 1=%d 2=%d 5=%d\n%s", b1, b2, b5, out)
 	}
 	if !hasLine(out, `np_sorted_seconds_bucket{le="2"} 1`) {

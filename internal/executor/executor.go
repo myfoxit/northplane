@@ -45,7 +45,6 @@ type Executor struct {
 	sem     chan struct{} // exec pool
 	allowed map[string]bool
 
-	statRunning  int64
 	statTimeouts uint64
 	mu           sync.Mutex
 }

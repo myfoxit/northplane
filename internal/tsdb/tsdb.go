@@ -2,6 +2,7 @@ package tsdb
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"encoding/binary"
 	"encoding/json"
@@ -13,7 +14,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 )
@@ -238,7 +238,7 @@ func (db *DB) loadSeries() error {
 			db.nextID = m.ID + 1
 		}
 	}
-	f.Close()
+	_ = f.Close() // read-only series journal
 	if err := sc.Err(); err != nil {
 		return err
 	}
@@ -302,12 +302,17 @@ func (db *DB) openWAL() error {
 
 func (db *DB) syncWAL() {
 	db.walMu.Lock()
-	db.walW.Flush()
-	db.walF.Sync()
+	ferr := db.walW.Flush()
+	serr := db.walF.Sync()
 	db.walMu.Unlock()
 	db.mu.Lock()
-	db.seriesW.Flush()
+	sferr := db.seriesW.Flush()
 	db.mu.Unlock()
+	// A periodic fsync failure means recent samples may not survive a crash;
+	// surface it rather than silently losing durability.
+	if err := cmp.Or(ferr, serr, sferr); err != nil {
+		db.log.Warn("tsdb: periodic WAL sync failed", "err", err)
+	}
 }
 
 func (db *DB) walAppend(seriesID uint64, t int64, vbits uint64) {
@@ -328,7 +333,7 @@ func (db *DB) replayWAL() error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // read-only WAL replay
 	r := bufio.NewReaderSize(f, 1<<20)
 	var rec [25]byte
 	n := 0
@@ -532,19 +537,25 @@ func (db *DB) rewriteWAL() error {
 		}
 	}
 	if err := w.Flush(); err != nil {
-		f.Close()
+		_ = f.Close() // already failing
 		return err
 	}
 	if err := f.Sync(); err != nil {
-		f.Close()
+		_ = f.Close() // already failing
 		return err
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		return err
+	}
 
 	db.walMu.Lock()
 	defer db.walMu.Unlock()
 	db.walW.Flush()
-	db.walF.Close()
+	// Close the old WAL handle before swapping it out; a stale handle leaks
+	// a descriptor, but a Close error here is not fatal to the rotation.
+	if cerr := db.walF.Close(); cerr != nil {
+		db.log.Warn("tsdb: closing old WAL during rewrite", "err", cerr)
+	}
 	if err := os.Rename(tmp, db.walPath()); err != nil {
 		return err
 	}
@@ -572,14 +583,17 @@ func (db *DB) Close() error {
 		// flush every non-empty window regardless of age
 		err = db.Flush(time.Now().Add(rawWindow + flushGrace))
 		db.walMu.Lock()
-		db.walW.Flush()
-		db.walF.Sync()
-		db.walF.Close()
+		walFlush := db.walW.Flush()
+		walSync := db.walF.Sync()
+		walClose := db.walF.Close()
 		db.walMu.Unlock()
 		db.mu.Lock()
-		db.seriesW.Flush()
-		db.seriesF.Close()
+		seriesFlush := db.seriesW.Flush()
+		seriesClose := db.seriesF.Close()
 		db.mu.Unlock()
+		// Report the first shutdown error (flush/sync/close) so a caller that
+		// checks DB.Close() learns the on-disk state may be incomplete.
+		err = cmp.Or(err, walFlush, walSync, walClose, seriesFlush, seriesClose)
 	})
 	_ = closed
 	return err
@@ -767,15 +781,4 @@ func (db *DB) invalidateBlockCache() {
 	db.blockCacheOK = false
 	db.blockStarts = nil
 	db.blockMu.Unlock()
-}
-
-func sanitizeMetric(m string) string {
-	return strings.Map(func(r rune) rune {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9',
-			r == '_', r == '-', r == '.':
-			return r
-		}
-		return '_'
-	}, m)
 }

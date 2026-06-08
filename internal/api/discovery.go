@@ -135,7 +135,7 @@ func (a *API) runScan(scan *discoveryScan, ipnet *net.IPNet) {
 				conn, err := d.DialContext(ctx, "tcp",
 					net.JoinHostPort(addr, fmt.Sprint(port)))
 				if err == nil {
-					conn.Close()
+					_ = conn.Close()
 					open = append(open, port)
 				}
 			}

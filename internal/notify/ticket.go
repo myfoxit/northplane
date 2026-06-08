@@ -372,7 +372,7 @@ func (m *Manager) closeGenericTicket(ctx context.Context, ch *model.Notification
 		return err
 	}
 	defer resp.Body.Close()
-	io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096)) // drain for keep-alive
 	if resp.StatusCode >= 300 {
 		return fmt.Errorf("ticket close: HTTP %d", resp.StatusCode)
 	}

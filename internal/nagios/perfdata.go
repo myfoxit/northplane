@@ -242,7 +242,7 @@ func ParseRange(s string) (Range, error) {
 			// Fault tolerance (SPEC §8.3): real-world plugins emit UOM
 			// suffixes in range bounds ("80%", "5948MB") — strip them.
 			end := len(v)
-			for end > 0 && !(v[end-1] >= '0' && v[end-1] <= '9') && v[end-1] != '.' {
+			for end > 0 && (v[end-1] < '0' || v[end-1] > '9') && v[end-1] != '.' {
 				end--
 			}
 			if end == 0 {

@@ -146,7 +146,7 @@ func (m *Manager) sendGenericVoice(ctx context.Context, ch *model.NotificationCh
 		return "", err
 	}
 	defer resp.Body.Close()
-	io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096)) // drain for keep-alive
 	if resp.StatusCode >= 300 {
 		return "", fmt.Errorf("voice gateway: HTTP %d", resp.StatusCode)
 	}

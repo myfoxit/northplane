@@ -502,10 +502,10 @@ func (a *API) resourceCRUD(path, kind, permPrefix string, proto any) {
 				a.fail(w, r, err)
 				return
 			}
-			a.audit(r, p, kind+".create", name, nil, json.RawMessage(env.Doc))
+			a.audit(r, p, kind+".create", name, nil, env.Doc)
 			a.configChanged(r.Context(), a.tenantOf(r, p), kind)
 			etag(w, env.Version)
-			a.writeJSON(w, http.StatusCreated, json.RawMessage(env.Doc))
+			a.writeJSON(w, http.StatusCreated, env.Doc)
 		})
 
 	a.handle("GET /api/v1/"+path+"/{name}", "Get "+kind, readPerm, nil, proto,
@@ -516,7 +516,7 @@ func (a *API) resourceCRUD(path, kind, permPrefix string, proto any) {
 				return
 			}
 			etag(w, env.Version)
-			a.writeJSON(w, http.StatusOK, json.RawMessage(env.Doc))
+			a.writeJSON(w, http.StatusOK, env.Doc)
 		})
 
 	a.handle("PUT /api/v1/"+path+"/{name}", "Update "+kind+" (If-Match)", writePerm, proto, proto,
@@ -544,10 +544,10 @@ func (a *API) resourceCRUD(path, kind, permPrefix string, proto any) {
 			if old != nil {
 				beforeDoc = old.Doc
 			}
-			a.audit(r, p, kind+".update", name, beforeDoc, json.RawMessage(env.Doc))
+			a.audit(r, p, kind+".update", name, beforeDoc, env.Doc)
 			a.configChanged(r.Context(), a.tenantOf(r, p), kind)
 			etag(w, env.Version)
-			a.writeJSON(w, http.StatusOK, json.RawMessage(env.Doc))
+			a.writeJSON(w, http.StatusOK, env.Doc)
 		})
 
 	a.handle("DELETE /api/v1/"+path+"/{name}", "Delete "+kind, writePerm, nil, nil,

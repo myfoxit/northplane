@@ -57,8 +57,10 @@ func diskUsage(mount string) (float64, uint64, bool) {
 	if err := syscall.Statfs(mount, &st); err != nil {
 		return 0, 0, false
 	}
-	total := uint64(st.Blocks) * uint64(st.Bsize)
-	free := uint64(st.Bavail) * uint64(st.Bsize)
+	// st.Blocks/st.Bavail are uint64 on both darwin and linux; st.Bsize is
+	// uint32 (darwin) / int64 (linux), so it still needs a conversion.
+	total := st.Blocks * uint64(st.Bsize)
+	free := st.Bavail * uint64(st.Bsize)
 	if total == 0 {
 		return 0, 0, false
 	}

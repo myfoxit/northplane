@@ -176,7 +176,7 @@ func (c *cli) do(method, path string, body io.Reader, contentType string) ([]byt
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
 	if resp.StatusCode >= 300 {
 		var prob struct {
@@ -198,7 +198,9 @@ func (c *cli) getJSON(path string, dst any) error {
 		return err
 	}
 	if c.jsonOut {
-		os.Stdout.Write(pretty(data))
+		if err := writeStdout(pretty(data)); err != nil {
+			return err
+		}
 		return errPrinted
 	}
 	return json.Unmarshal(data, dst)
@@ -210,6 +212,14 @@ func handled(err error) error {
 	if err == errPrinted {
 		return nil
 	}
+	return err
+}
+
+// writeStdout writes b to stdout, returning any error (e.g. a broken pipe
+// when output is piped into `head`) so callers can surface it instead of
+// silently producing truncated output.
+func writeStdout(b []byte) error {
+	_, err := os.Stdout.Write(b)
 	return err
 }
 
@@ -342,7 +352,7 @@ func (c *cli) get(args []string) error {
 		if err != nil {
 			return err
 		}
-		os.Stdout.Write(pretty(data))
+		return writeStdout(pretty(data))
 	case "events":
 		var resp struct {
 			Items []struct {
@@ -395,11 +405,13 @@ func (c *cli) describe(args []string) error {
 	if err != nil {
 		return err
 	}
-	os.Stdout.Write(pretty(data))
+	if err := writeStdout(pretty(data)); err != nil {
+		return err
+	}
 	eff, err := c.do(http.MethodGet, "/api/v1/objects/"+args[0]+"/effective-config", nil, "")
 	if err == nil {
 		fmt.Println("--- effective config (templates resolved) ---")
-		os.Stdout.Write(pretty(eff))
+		return writeStdout(pretty(eff))
 	}
 	return nil
 }
@@ -431,7 +443,7 @@ func (c *cli) apply(args []string) error {
 		if err != nil {
 			return err
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		body = f
 	}
 	path := "/api/v1/config/bundles:apply?"
@@ -452,8 +464,7 @@ func (c *cli) apply(args []string) error {
 		Warnings []string `json:"warnings"`
 	}
 	if err := json.Unmarshal(data, &result); err != nil || c.jsonOut {
-		os.Stdout.Write(pretty(data))
-		return nil
+		return writeStdout(pretty(data))
 	}
 	verb := "applied"
 	if dry {
@@ -480,8 +491,7 @@ func (c *cli) export(args []string) error {
 	if err != nil {
 		return err
 	}
-	os.Stdout.Write(data)
-	return nil
+	return writeStdout(data)
 }
 
 func (c *cli) ack(args []string) error {
@@ -664,8 +674,9 @@ func (c *cli) doctor(args []string) error {
 		return err
 	}
 	fmt.Println("--- system/info ---")
-	os.Stdout.Write(pretty(info))
+	if err := writeStdout(pretty(info)); err != nil {
+		return err
+	}
 	fmt.Println("--- system/health ---")
-	os.Stdout.Write(pretty(health))
-	return nil
+	return writeStdout(pretty(health))
 }

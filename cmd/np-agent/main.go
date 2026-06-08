@@ -185,7 +185,7 @@ func submit(ctx context.Context, client *http.Client, cfg agentConfig, results [
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		return fmt.Errorf("HTTP %d", resp.StatusCode)
 	}

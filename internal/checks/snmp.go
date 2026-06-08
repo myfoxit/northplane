@@ -118,7 +118,7 @@ func checkSNMP(ctx context.Context, t Target, a Args) (model.State, nagios.Outpu
 	if err := g.Connect(); err != nil {
 		return criticalf("snmp connect %s: %v", g.Target, err)
 	}
-	defer g.Conn.Close()
+	defer func() { _ = g.Conn.Close() }()
 
 	done := make(chan struct{})
 	var pkt *gosnmp.SnmpPacket
@@ -199,7 +199,7 @@ func checkSNMPWalk(ctx context.Context, t Target, a Args) (model.State, nagios.O
 	if err := g.Connect(); err != nil {
 		return criticalf("snmp connect %s: %v", g.Target, err)
 	}
-	defer g.Conn.Close()
+	defer func() { _ = g.Conn.Close() }()
 
 	count := 0
 	done := make(chan error, 1)

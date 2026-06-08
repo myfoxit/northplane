@@ -56,11 +56,11 @@ func dialIMAP(addr string, useTLS bool, serverName string) (*imapClient, error) 
 	c.extend()
 	line, err := c.readLine()
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("imap: read greeting: %w", err)
 	}
 	if !strings.HasPrefix(line, "* OK") && !strings.HasPrefix(line, "* PREAUTH") {
-		conn.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("imap: unexpected greeting: %q", line)
 	}
 	return c, nil
@@ -125,11 +125,10 @@ func (c *imapClient) command(cmd string, untagged func(line string) error) error
 					return err
 				}
 			}
-		case strings.HasPrefix(line, "+ "):
-			// Continuation request — none of our commands send literals, so
-			// this is unexpected; ignore tolerantly.
 		default:
-			// Stray line (some servers emit blank or bare lines); ignore.
+			// Continuation requests ("+ ", unexpected since our commands send
+			// no literals) and stray lines (blank/bare lines some servers
+			// emit) are both ignored tolerantly.
 		}
 	}
 }

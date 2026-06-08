@@ -111,7 +111,9 @@ func Render(docs []Doc) ([]byte, error) {
 			return nil, err
 		}
 	}
-	enc.Close()
+	if err := enc.Close(); err != nil {
+		return nil, err
+	}
 	return buf.Bytes(), nil
 }
 

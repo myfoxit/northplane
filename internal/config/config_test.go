@@ -599,9 +599,9 @@ func TestDefaultPathHelpers_NonEmpty(t *testing.T) {
 	// These are environment dependent; assert only that they produce
 	// non-empty, plausibly-rooted paths and do not panic.
 	for name, got := range map[string]string{
-		"DefaultDataDir":        DefaultDataDir(),
-		"DefaultConfigDir":      DefaultConfigDir(),
-		"DefaultConfigPath":     DefaultConfigPath(),
+		"DefaultDataDir":         DefaultDataDir(),
+		"DefaultConfigDir":       DefaultConfigDir(),
+		"DefaultConfigPath":      DefaultConfigPath(),
 		"DefaultAgentConfigPath": DefaultAgentConfigPath(),
 	} {
 		if got == "" {

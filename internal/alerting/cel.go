@@ -11,7 +11,6 @@ import (
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types"
-	"github.com/google/cel-go/common/types/ref"
 
 	"github.com/northplane/northplane/internal/model"
 )
@@ -80,11 +79,10 @@ func (cr *CompiledRule) Matches(view map[string]any) (bool, error) {
 		}
 		return false, fmt.Errorf("rule %q eval: %w", cr.Rule.Name, err)
 	}
-	b, ok := out.(ref.Val)
-	if !ok {
-		return false, fmt.Errorf("rule %q: non-boolean result", cr.Rule.Name)
-	}
-	if b == types.True {
+	// out is already a ref.Val (program.Eval's first return); a true CEL
+	// boolean compares equal to types.True. Any non-boolean (or error) value
+	// is treated as "no match" rather than a panic.
+	if out == types.True {
 		return true, nil
 	}
 	return false, nil

@@ -265,8 +265,8 @@ func TestFireAckStillNotifiesWhenNotUnlessAcked(t *testing.T) {
 	eng, st, ctx := testEngine(t)
 	seedContact(t, st, ctx, "alice")
 	seedPolicy(t, st, ctx, "pol", []model.EscalationStep{
-		contactStep(0, "alice"),                    // UnlessAcked = false
-		contactStep(10*time.Minute, "alice"),       // would-be next step
+		contactStep(0, "alice"),              // UnlessAcked = false
+		contactStep(10*time.Minute, "alice"), // would-be next step
 	})
 	opened := time.Now().UTC().Add(-time.Minute)
 	alert := seedAlert(t, st, ctx, opened)
