@@ -1961,6 +1961,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/users/{id}/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a user's UI preferences ({id} may be "me") */
+        get: operations["get_users_id_preferences"];
+        /** Set a user's UI preferences ({id} may be "me") */
+        put: operations["put_users_id_preferences"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/users/{id}:set-password": {
         parameters: {
             query?: never;
@@ -2480,6 +2498,12 @@ export interface components {
             applyToken?: string;
             plan: components["schemas"]["PlanAction"][];
             warnings?: string[];
+        };
+        Preferences: {
+            extra?: {
+                [key: string]: string;
+            };
+            refreshIntervalMs?: number;
         };
         Report: {
             /** Format: date-time */
@@ -8386,6 +8410,72 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    get_users_id_preferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Preferences"];
+                };
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    put_users_id_preferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["Preferences"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Preferences"];
+                };
             };
             /** @description Problem Details (RFC 9457) */
             default: {

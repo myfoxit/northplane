@@ -54,6 +54,10 @@ export default async function globalSetup(): Promise<void> {
   const proc = spawn(BIN, ['serve', '-config', cfgPath, '--demo'], {
     stdio: ['ignore', logFd, logFd],
     detached: true,
+    // Suppress the break-glass default-admin seed: the suite provisions its
+    // own admin below and the last-admin-guard test depends on it being the
+    // ONLY enabled local admin.
+    env: { ...process.env, NP_DEFAULT_ADMIN_DISABLED: '1' },
   })
   proc.unref()
   try {

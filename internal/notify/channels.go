@@ -3,13 +3,10 @@ package notify
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
-	"net/smtp"
 	"net/url"
 	"strings"
 	"time"
@@ -89,128 +86,6 @@ func (m *Manager) send(ctx context.Context, ch *model.NotificationChannel,
 		return "", fmt.Errorf("unsupported channel type %q", ch.Type)
 	}
 	return fn(m, ctx, ch, target, subject, body, rc)
-}
-
-// --- e-mail: native SMTP client (STARTTLS/implicit, SPEC §9.6) ---
-
-func (m *Manager) sendEmail(ctx context.Context, ch *model.NotificationChannel,
-	to, subject, body string) (string, error) {
-	host := ch.Config["host"]
-	if host == "" {
-		return "", fmt.Errorf("email channel: config.host required")
-	}
-	port := ch.Config["port"]
-	if port == "" {
-		port = "587"
-	}
-	from := ch.Config["from"]
-	if from == "" {
-		from = "northplane@" + host
-	}
-	user := ch.Config["username"]
-	pass := m.resolveSecret(ch.TenantID, ch.Config["password"])
-
-	// HTML bodies (scheduled-report mail, §9.8) are detected by their
-	// leading tag and sent as text/html; alert bodies stay text/plain.
-	contentType := "text/plain; charset=utf-8"
-	if isHTMLBody(body) {
-		contentType = "text/html; charset=utf-8"
-	}
-
-	msg := &bytes.Buffer{}
-	fmt.Fprintf(msg, "From: %s\r\n", from)
-	fmt.Fprintf(msg, "To: %s\r\n", to)
-	fmt.Fprintf(msg, "Subject: %s\r\n", mimeHeader(subject))
-	fmt.Fprintf(msg, "Date: %s\r\n", time.Now().Format(time.RFC1123Z))
-	fmt.Fprintf(msg, "Message-ID: <%d.northplane@%s>\r\n", time.Now().UnixNano(), host)
-	fmt.Fprintf(msg, "MIME-Version: 1.0\r\nContent-Type: %s\r\n\r\n", contentType)
-	msg.WriteString(body)
-
-	addr := net.JoinHostPort(host, port)
-	implicit := port == "465" || ch.Config["tls"] == "implicit"
-
-	dial := func() (*smtp.Client, error) {
-		d := net.Dialer{Timeout: 15 * time.Second}
-		if implicit {
-			conn, err := tls.DialWithDialer(&d, "tcp", addr, &tls.Config{ServerName: host})
-			if err != nil {
-				return nil, err
-			}
-			return smtp.NewClient(conn, host)
-		}
-		conn, err := d.DialContext(ctx, "tcp", addr)
-		if err != nil {
-			return nil, err
-		}
-		c, err := smtp.NewClient(conn, host)
-		if err != nil {
-			return nil, err
-		}
-		if ok, _ := c.Extension("STARTTLS"); ok {
-			if err := c.StartTLS(&tls.Config{ServerName: host}); err != nil {
-				_ = c.Close()
-				return nil, err
-			}
-		} else if ch.Config["allowPlaintext"] != "true" {
-			_ = c.Close()
-			return nil, fmt.Errorf("server offers no STARTTLS (set allowPlaintext=true to override)")
-		}
-		return c, nil
-	}
-	c, err := dial()
-	if err != nil {
-		return "", fmt.Errorf("smtp connect: %w", err)
-	}
-	defer func() { _ = c.Close() }()
-	if user != "" {
-		if err := c.Auth(smtp.PlainAuth("", user, pass, host)); err != nil {
-			return "", fmt.Errorf("smtp auth: %w", err)
-		}
-	}
-	if err := c.Mail(from); err != nil {
-		return "", err
-	}
-	if err := c.Rcpt(to); err != nil {
-		return "", err
-	}
-	w, err := c.Data()
-	if err != nil {
-		return "", err
-	}
-	if _, err := w.Write(msg.Bytes()); err != nil {
-		return "", err
-	}
-	if err := w.Close(); err != nil {
-		return "", err
-	}
-	return "", c.Quit()
-}
-
-func mimeHeader(s string) string {
-	if isASCII(s) {
-		return s
-	}
-	return "=?UTF-8?B?" + base64Std(s) + "?="
-}
-
-func isASCII(s string) bool {
-	for i := 0; i < len(s); i++ {
-		if s[i] > 127 {
-			return false
-		}
-	}
-	return true
-}
-
-// isHTMLBody reports whether a body should be sent as text/html, by its
-// leading tag (case-insensitive, after whitespace).
-func isHTMLBody(body string) bool {
-	t := strings.TrimSpace(body)
-	if len(t) > 16 {
-		t = t[:16]
-	}
-	t = strings.ToLower(t)
-	return strings.HasPrefix(t, "<!doctype html") || strings.HasPrefix(t, "<html")
 }
 
 // --- webhook: templated payload + HMAC + retry (handled by outbox) ---

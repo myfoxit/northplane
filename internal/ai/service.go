@@ -37,10 +37,11 @@ type Service struct {
 	log      *slog.Logger
 	baseURL  string
 
-	tools   []Tool
-	byName  map[string]*Tool
-	planner BundlePlanner
-	reports ReportRenderer
+	tools     []Tool
+	byName    map[string]*Tool
+	planner   BundlePlanner
+	reports   ReportRenderer
+	resources ResourceAdmin
 
 	maxDowntimeHours float64
 }
@@ -59,20 +60,33 @@ type ReportRenderer interface {
 	RenderReportJSON(ctx context.Context, tenantID, name string) (any, error)
 }
 
+// ResourceAdmin lets the generic config-resource tools reuse the API
+// layer's validation and cache-invalidation logic without an import
+// cycle (same pattern as BundlePlanner). Implemented by *api.API; the
+// MCP/AI surface thereby manages exactly the documents the REST CRUD
+// manages — full configuration parity (SPEC P1).
+type ResourceAdmin interface {
+	ListResourceDocs(ctx context.Context, tenantID, kind, query string, limit int) ([]json.RawMessage, error)
+	GetResourceDoc(ctx context.Context, tenantID, kind, name string) (json.RawMessage, error)
+	UpsertResourceDoc(ctx context.Context, tenantID, kind, name string, doc map[string]any, expectVersion int64) (json.RawMessage, error)
+	DeleteResourceDoc(ctx context.Context, tenantID, kind, name string) error
+}
+
 // Deps wires the service.
 type Deps struct {
-	Cfg     config.AIConfig
-	Store   *storage.Store
-	Catalog *catalog.Catalog
-	Sched   *scheduler.Scheduler
-	Escal   *escalation.Engine
-	Bus     *eventbus.Bus
-	TSDB    *tsdb.DB
-	BaseURL string
-	Planner BundlePlanner
-	Reports ReportRenderer
-	API     any // kept for wiring symmetry; unused directly
-	Log     *slog.Logger
+	Cfg       config.AIConfig
+	Store     *storage.Store
+	Catalog   *catalog.Catalog
+	Sched     *scheduler.Scheduler
+	Escal     *escalation.Engine
+	Bus       *eventbus.Bus
+	TSDB      *tsdb.DB
+	BaseURL   string
+	Planner   BundlePlanner
+	Reports   ReportRenderer
+	Resources ResourceAdmin
+	API       any // kept for wiring symmetry; unused directly
+	Log       *slog.Logger
 }
 
 // New builds the service (works with provider=none: deterministic
@@ -88,6 +102,7 @@ func New(d Deps) *Service {
 		bus: d.Bus, tsdb: d.TSDB, log: d.Log, baseURL: d.BaseURL,
 		planner:          d.Planner,
 		reports:          d.Reports,
+		resources:        d.Resources,
 		maxDowntimeHours: 4,
 	}
 	s.tools = buildTools()
@@ -115,9 +130,9 @@ func (s *Service) RunTool(ctx context.Context, p *auth.Principal, name string,
 	// RBAC: the AI/MCP session is a privilegeless client — it may only do
 	// what the calling token's scopes permit (SPEC §10.3). Enforce the
 	// same permission the equivalent REST route requires.
-	if tool.Perm != "" && !p.Allow(tool.Perm) {
+	if perm := tool.requiredPerm(input); perm != "" && !p.Allow(perm) {
 		s.audit(ctx, p, "ai.denied."+name, "", input)
-		return nil, false, fmt.Errorf("permission denied: %s required", tool.Perm)
+		return nil, false, fmt.Errorf("permission denied: %s required", perm)
 	}
 	if tool.Mutating && !tool.AutoOK {
 		// propose: queue for human approval
@@ -174,9 +189,9 @@ func (s *Service) ExecuteApproved(ctx context.Context, tenantID, actionID string
 	}
 	// Enforce the approver's scopes for the tool's required permission: the
 	// human approval is only authorisation up to what the approver may do.
-	if tool.Perm != "" && !approver.Allow(tool.Perm) {
+	if perm := tool.requiredPerm(action.Args); perm != "" && !approver.Allow(perm) {
 		s.audit(ctx, approver, "ai.execute.denied."+action.Tool, actionID, action.Args)
-		return nil, fmt.Errorf("approver lacks permission %s required by %s", tool.Perm, action.Tool)
+		return nil, fmt.Errorf("approver lacks permission %s required by %s", perm, action.Tool)
 	}
 	// Run under a principal carrying exactly the approver's scopes (and
 	// tenant/folder), audited as the AI actor that proposed the action.

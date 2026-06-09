@@ -140,8 +140,9 @@ test.describe('admin · channels', () => {
     const dialog = page.getByRole('dialog')
     await expect(dialog.getByRole('heading', { name: 'Anlegen' })).toBeVisible()
     await field(dialog, 'Name').fill(name)
-    // Type Select (defaults to "email") → switch to "webhook".
-    await dialog.getByRole('combobox').click()
+    // Type Select (defaults to "email") → switch to "webhook". The email
+    // form also carries a provider Select, so take the first combobox.
+    await dialog.getByRole('combobox').first().click()
     await page.getByRole('option', { name: 'webhook', exact: true }).click()
     // The webhook config block now renders a "URL" field.
     await field(dialog, 'URL').fill('http://127.0.0.1:65535/never')

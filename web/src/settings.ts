@@ -3,11 +3,13 @@
 // Each "live" list view feeds this into React Query's refetchInterval, so the
 // UI stays fresh on a cadence the user controls instead of a fragile stream.
 //
-// It's a plain client setting today (persisted in localStorage, synced across
-// tabs). Because every feature should be AI/MCP-configurable, the intended
-// follow-up is to back this with server-side config so an agent can set it;
-// keep all reads/writes going through this module so that swap stays local.
+// The setting is server-backed (P1 parity: PUT /users/me/preferences — the
+// same knob an API client or MCP agent can set) with localStorage as an
+// instant-boot cache: the UI starts on the cached value, adopts the server
+// value once syncPreferencesFromServer() resolves (Layout mount), and every
+// local change is written through to both.
 import { useSyncExternalStore } from 'react'
+import { api } from './api'
 
 export type RefreshValue = number | false // milliseconds, or false = off (manual refresh only)
 
@@ -19,10 +21,13 @@ export const REFRESH_PRESETS: { label: string; value: RefreshValue }[] = [
   { label: 'Aus', value: false },
 ]
 
+// Mirrors model.Preferences (types.gen.ts Preferences).
+type Preferences = { refreshIntervalMs?: number; extra?: Record<string, string> }
+
 const KEY = 'np.refreshInterval'
 const DEFAULT: RefreshValue = 30_000
 
-function read(): RefreshValue {
+function readCache(): RefreshValue {
   try {
     const raw = localStorage.getItem(KEY)
     if (raw === 'off') return false
@@ -34,20 +39,52 @@ function read(): RefreshValue {
   return DEFAULT
 }
 
-let current: RefreshValue = read()
+function writeCache(v: RefreshValue): void {
+  try { localStorage.setItem(KEY, v === false ? 'off' : String(v)) } catch { /* ignore */ }
+}
+
+let current: RefreshValue = readCache()
+// Last server document — preserved on write so refreshIntervalMs updates
+// don't clobber other preference keys (PUT replaces the whole doc).
+let serverPrefs: Preferences = {}
 const listeners = new Set<() => void>()
 const emit = () => { for (const l of listeners) l() }
 
+// wire-format mapping: 0 = off (false); undefined = not set on the server.
+const fromWire = (ms: number | undefined | null): RefreshValue | undefined =>
+  ms === undefined || ms === null ? undefined : ms === 0 ? false : ms
+const toWire = (v: RefreshValue): number => (v === false ? 0 : v)
+
+// syncPreferencesFromServer adopts the authoritative server value (e.g. set
+// by an admin or an MCP agent). Called once from the authenticated shell;
+// failures (offline, demo) keep the cached value — never disruptive.
+export async function syncPreferencesFromServer(): Promise<void> {
+  try {
+    serverPrefs = (await api<Preferences>('/users/me/preferences')) ?? {}
+    const v = fromWire(serverPrefs.refreshIntervalMs)
+    if (v !== undefined && v !== current) {
+      current = v
+      writeCache(v)
+      emit()
+    }
+  } catch { /* keep cache */ }
+}
+
 export function setRefreshInterval(v: RefreshValue): void {
   current = v
-  try { localStorage.setItem(KEY, v === false ? 'off' : String(v)) } catch { /* ignore */ }
+  writeCache(v)
   emit()
+  // write-through to the server; fire-and-forget (the local value already
+  // applied — a failed write just means other devices won't pick it up).
+  serverPrefs = { ...serverPrefs, refreshIntervalMs: toWire(v) }
+  void api('/users/me/preferences', { method: 'PUT', body: JSON.stringify(serverPrefs) })
+    .catch(() => { /* offline — cache still holds the value */ })
 }
 
 // Adopt a change made in another tab so every open view shares one cadence.
 if (typeof window !== 'undefined') {
   window.addEventListener('storage', (e) => {
-    if (e.key === KEY) { current = read(); emit() }
+    if (e.key === KEY) { current = readCache(); emit() }
   })
 }
 

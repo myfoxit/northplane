@@ -43,6 +43,18 @@ type User struct {
 	UpdatedAt  time.Time  `json:"updatedAt"`
 }
 
+// Preferences are per-actor UI settings (P1 parity: every knob the UI
+// offers is equally readable and writable via API and MCP). Stored as
+// one generic resource per actor (resource name = actor ID), served at
+// /api/v1/users/{id|me}/preferences.
+type Preferences struct {
+	// RefreshIntervalMs is the live-view polling cadence in milliseconds.
+	// 0 disables auto-refresh (manual only); nil/absent = client default.
+	RefreshIntervalMs *int `json:"refreshIntervalMs,omitempty"`
+	// Extra carries additional client settings without a schema change.
+	Extra map[string]string `json:"extra,omitempty"`
+}
+
 // Permission is "resource:action" ("objects:read", "alerts:ack",
 // "config:write", "admin:*" — SPEC §11.2).
 type Permission string

@@ -33,14 +33,9 @@ type FieldSpec = { key: string; label: string; secret?: boolean; hint?: string; 
 // Per-channel-type key sets (SPEC §12.3). "push"/"voice" need no config
 // here (VAPID / provider are server-side) — only the KVEditor fallback.
 const CONFIG_FIELDS: Record<string, FieldSpec[]> = {
-  email: [
-    { key: 'host', label: 'SMTP-Host' },
-    { key: 'port', label: 'Port', type: 'number' },
-    { key: 'from', label: 'Absender (From)' },
-    { key: 'username', label: 'Benutzername' },
-    { key: 'password', label: 'Passwort', secret: true },
-    { key: 'starttls', label: 'STARTTLS (true/false)' },
-  ],
+  // email is provider-driven (smtp | sendmail | resend | ses) — the
+  // concrete keys come from emailFields() based on config.provider.
+  email: [],
   webhook: [
     { key: 'url', label: 'URL' },
     { key: 'secret', label: 'HMAC-Secret', secret: true },
@@ -107,6 +102,48 @@ const CONFIG_FIELDS: Record<string, FieldSpec[]> = {
     { key: 'closeUrl', label: 'Close-URL', hint: '{ref}-Platzhalter' },
     { key: 'autoClose', label: 'Auto-Close (true/false)' },
   ],
+}
+
+// emailFields builds the e-mail key set for the selected provider
+// (backend: internal/notify/email.go). smtp covers jeden Relay (Postfix,
+// SES-SMTP, Mailgun …); sendmail nutzt den lokalen MTA; resend/ses sind
+// HTTP-APIs.
+const EMAIL_PROVIDERS = ['smtp', 'sendmail', 'resend', 'ses'] as const
+function emailFields(provider: string): FieldSpec[] {
+  const common: FieldSpec[] = [
+    { key: 'provider', label: 'Provider', hint: 'smtp (Standard) | sendmail | resend | ses' },
+    { key: 'from', label: 'Absender (From)' },
+  ]
+  switch (provider || 'smtp') {
+    case 'sendmail':
+      return [...common, { key: 'sendmailPath', label: 'sendmail-Pfad', hint: 'Standard: sendmail aus PATH bzw. /usr/sbin/sendmail' }]
+    case 'resend':
+      return [...common, { key: 'apiKey', label: 'API-Key', secret: true }]
+    case 'ses':
+      return [
+        ...common,
+        { key: 'region', label: 'AWS-Region', hint: 'z.B. eu-central-1' },
+        { key: 'accessKeyId', label: 'Access-Key-ID' },
+        { key: 'secretAccessKey', label: 'Secret-Access-Key', secret: true },
+        { key: 'sessionToken', label: 'Session-Token (optional)', secret: true },
+      ]
+    default: // smtp
+      return [
+        ...common,
+        { key: 'host', label: 'SMTP-Host' },
+        { key: 'port', label: 'Port', type: 'number', hint: '587 STARTTLS (Standard), 465 implizites TLS' },
+        { key: 'username', label: 'Benutzername' },
+        { key: 'password', label: 'Passwort', secret: true },
+        { key: 'tls', label: 'TLS-Modus', hint: 'leer = STARTTLS, implicit = direktes TLS' },
+        { key: 'allowPlaintext', label: 'Klartext erlauben (true/false)', hint: 'nur falls der Server kein STARTTLS bietet' },
+      ]
+  }
+}
+
+// fieldsFor resolves the visible key set; e-mail hängt vom Provider ab.
+function fieldsFor(type: ChannelType, config: Record<string, string>): FieldSpec[] {
+  if (type === 'email') return emailFields(config['provider'] ?? '')
+  return CONFIG_FIELDS[type] ?? []
 }
 
 export function ChannelsTab() {
@@ -218,7 +255,7 @@ function ChannelForm({ doc, etag, isNew, onClose }: {
   const [config, setConfig] = useState<Record<string, string>>(doc.config ?? {})
   const [template, setTemplate] = useState(doc.template ?? '')
 
-  const known = CONFIG_FIELDS[type] ?? []
+  const known = fieldsFor(type, config)
   const knownKeys = new Set(known.map((f) => f.key))
   const extra = Object.fromEntries(Object.entries(config).filter(([k]) => !knownKeys.has(k)))
 
@@ -262,11 +299,20 @@ function ChannelForm({ doc, etag, isNew, onClose }: {
               <div className="text-xs text-muted-foreground font-medium">Konfiguration ({type})</div>
               {known.map((f) => (
                 <Field key={f.key} label={f.label} hint={f.secret ? secretHint : f.hint}>
-                  <Input
-                    type={f.type === 'number' ? 'number' : (f.secret ? 'text' : 'text')}
-                    value={config[f.key] ?? ''}
-                    onChange={(e) => setField(f.key, e.target.value)}
-                  />
+                  {type === 'email' && f.key === 'provider' ? (
+                    <Select value={config['provider'] || 'smtp'} onValueChange={(v) => setField('provider', v === 'smtp' ? '' : v)}>
+                      <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {EMAIL_PROVIDERS.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      type={f.type === 'number' ? 'number' : (f.secret ? 'text' : 'text')}
+                      value={config[f.key] ?? ''}
+                      onChange={(e) => setField(f.key, e.target.value)}
+                    />
+                  )}
                 </Field>
               ))}
             </div>

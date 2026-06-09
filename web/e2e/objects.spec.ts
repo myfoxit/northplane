@@ -59,7 +59,7 @@ test.describe('Objects explorer (operator)', () => {
     // The first combobox is the kind filter (Hosts + Services / Hosts /
     // Services). Pick "Hosts" — services must drop out of the list and the
     // URL must persist the filter (?kind=host) via validateSearch.
-    const [kindFilter, stateFilter] = await page.getByRole('combobox').all()
+    const [kindFilter, stateFilter] = await page.getByRole('main').getByRole('combobox').all()
     await kindFilter.click()
     await page.getByRole('option', { name: 'Hosts', exact: true }).click()
 
@@ -101,7 +101,7 @@ test.describe('Objects explorer (operator)', () => {
 
     // The second combobox is the state filter. "Pending" / AUSSTEHEND maps to
     // ?state=pending and narrows to objects that have never been checked.
-    const stateFilter = page.getByRole('combobox').nth(1)
+    const stateFilter = page.getByRole('main').getByRole('combobox').nth(1)
     await stateFilter.click()
     await page.getByRole('option', { name: 'Pending', exact: true }).click()
 

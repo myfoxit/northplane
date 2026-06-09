@@ -27,10 +27,15 @@ import { SourcesTab } from '../components/admin/Sources'
 import { WebhooksTab, HeartbeatsTab } from '../components/admin/Integrations'
 import { TenantsTab } from '../components/admin/Tenants'
 import { SecretsTab } from '../components/admin/Secrets'
+import { MCPTab } from '../components/admin/MCP'
+import { AgentsTab } from '../components/admin/Agents'
+import { DeadLettersTab } from '../components/admin/DeadLetters'
+import { BundlesTab } from '../components/admin/Bundles'
 
 const tabs = [
   'users', 'roles', 'contacts', 'contactGroups', 'channels', 'eventSources',
-  'webhooks', 'heartbeats', 'tenants', 'secrets', 'tokens', 'audit', 'aiQueue', 'health',
+  'webhooks', 'heartbeats', 'tenants', 'secrets', 'tokens', 'mcp', 'agents',
+  'deadLetters', 'bundles', 'audit', 'aiQueue', 'health',
 ] as const
 type Tab = typeof tabs[number]
 
@@ -55,6 +60,10 @@ export function AdminPage() {
       {tab === 'tenants' && <TenantsTab />}
       {tab === 'secrets' && <SecretsTab />}
       {tab === 'tokens' && <TokensTab />}
+      {tab === 'mcp' && <MCPTab />}
+      {tab === 'agents' && <AgentsTab />}
+      {tab === 'deadLetters' && <DeadLettersTab />}
+      {tab === 'bundles' && <BundlesTab />}
       {tab === 'audit' && <AuditTab />}
       {tab === 'aiQueue' && <AIQueueTab />}
       {tab === 'health' && <HealthTab />}

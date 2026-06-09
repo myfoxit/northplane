@@ -579,6 +579,81 @@ func (a *API) registerUsers() {
 				map[string]any{"name": before.Name, "email": before.Email}, nil)
 			w.WriteHeader(http.StatusNoContent)
 		})
+
+	a.registerPreferences()
+}
+
+// registerPreferences wires per-actor UI settings (P1 parity: every knob
+// the UI offers is equally settable via API/MCP — SPEC §12). "me" (or the
+// caller's own actor ID) needs no extra permission; reading or writing
+// someone else's preferences is an admin:users operation so an agent can
+// administer them.
+func (a *API) registerPreferences() {
+	// resolve maps {id} to the target actor ID, enforcing the self-vs-admin
+	// permission split. Returns "" after writing the error response.
+	resolve := func(w http.ResponseWriter, r *http.Request, p *auth.Principal) string {
+		if p == nil {
+			a.problem(w, r, http.StatusUnauthorized, "np:auth/required",
+				"authentication required", "")
+			return ""
+		}
+		id := param(r, "id")
+		if id == "me" || id == p.ActorID {
+			return p.ActorID
+		}
+		if !p.Allow("admin:users") {
+			a.problem(w, r, http.StatusForbidden, "np:auth/forbidden",
+				"missing permission", "admin:users")
+			return ""
+		}
+		return id
+	}
+
+	a.handle("GET /api/v1/users/{id}/preferences", "Get a user's UI preferences ({id} may be \"me\")",
+		"", nil, model.Preferences{},
+		func(w http.ResponseWriter, r *http.Request, p *auth.Principal) {
+			id := resolve(w, r, p)
+			if id == "" {
+				return
+			}
+			prefs, err := storage.LoadOne[model.Preferences](r.Context(), a.Store,
+				a.tenantOf(r, p), storage.KindPreference, id)
+			if errors.Is(err, storage.ErrNotFound) {
+				prefs = &model.Preferences{} // unset → defaults
+			} else if err != nil {
+				a.fail(w, r, err)
+				return
+			}
+			a.writeJSON(w, http.StatusOK, prefs)
+		})
+
+	a.handle("PUT /api/v1/users/{id}/preferences", "Set a user's UI preferences ({id} may be \"me\")",
+		"", model.Preferences{}, model.Preferences{},
+		func(w http.ResponseWriter, r *http.Request, p *auth.Principal) {
+			id := resolve(w, r, p)
+			if id == "" {
+				return
+			}
+			var req model.Preferences
+			if !a.decode(w, r, &req) {
+				return
+			}
+			if v := req.RefreshIntervalMs; v != nil && *v != 0 && (*v < 1000 || *v > 24*60*60*1000) {
+				a.validationError(w, r, "preferences",
+					"refreshIntervalMs must be 0 (off) or between 1000 and 86400000")
+				return
+			}
+			tenant := a.tenantOf(r, p)
+			before, _ := storage.LoadOne[model.Preferences](r.Context(), a.Store,
+				tenant, storage.KindPreference, id)
+			if _, err := a.Store.PutResource(r.Context(), tenant,
+				storage.KindPreference, id, req, 0); err != nil {
+				a.fail(w, r, err)
+				return
+			}
+			a.audit(r, p, "preferences.update", id, before, req)
+			a.writeJSON(w, http.StatusOK, req)
+		})
 }
 
 // wouldOrphanAdmins reports (and answers 409 np:users/last-admin) when the

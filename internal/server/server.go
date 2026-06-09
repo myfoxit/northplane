@@ -143,7 +143,7 @@ func New(ctx context.Context, cfg config.Config, store *storage.Store, ts *tsdb.
 	s.api.AI = ai.New(ai.Deps{
 		Cfg: cfg.AI, Store: store, Catalog: s.cat, Sched: s.sched,
 		Escal: s.escal, Bus: s.bus, TSDB: ts, BaseURL: cfg.BaseURL,
-		Planner: s.api, Reports: s.api, Log: log,
+		Planner: s.api, Reports: s.api, Resources: s.api, Log: log,
 	})
 
 	apiHandler := api.New(s.api)

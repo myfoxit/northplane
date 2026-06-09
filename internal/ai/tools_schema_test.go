@@ -28,6 +28,7 @@ type jsonSchemaShape struct {
 func TestToolSchemasWellFormed(t *testing.T) {
 	validTypes := map[string]bool{
 		"string": true, "integer": true, "number": true, "boolean": true,
+		"object": true, // free-form document payloads (config-resource doc)
 	}
 	for _, tool := range buildTools() {
 		t.Run(tool.Def.Name, func(t *testing.T) {
@@ -94,6 +95,20 @@ func TestToolSchemaRoundTripsInputStruct(t *testing.T) {
 		"propose_config_change": &proposeConfigChangeInput{},
 		"apply_config_change":   &applyConfigChangeInput{},
 		"render_report":         &renderReportInput{},
+		// generic config CRUD — schemas carry the computed kind enum, so
+		// their expected form is configToolSchema, not bare reflectSchema.
+		"list_config_resources":  &listConfigResourcesInput{},
+		"get_config_resource":    &getConfigResourceInput{},
+		"upsert_config_resource": &upsertConfigResourceInput{},
+		"delete_config_resource": &deleteConfigResourceInput{},
+	}
+	expectedSchema := func(name string, proto any) string {
+		switch name {
+		case "list_config_resources", "get_config_resource",
+			"upsert_config_resource", "delete_config_resource":
+			return string(configToolSchema(proto))
+		}
+		return string(reflectSchema(proto))
 	}
 	for _, tool := range buildTools() {
 		t.Run(tool.Def.Name, func(t *testing.T) {
@@ -104,7 +119,7 @@ func TestToolSchemaRoundTripsInputStruct(t *testing.T) {
 			// The declared schema must equal what the input struct reflects:
 			// any divergence means a Run closure unmarshals into a different
 			// struct than the one the schema is built from.
-			if got, want := string(tool.Def.Schema), string(reflectSchema(proto)); got != want {
+			if got, want := string(tool.Def.Schema), expectedSchema(tool.Def.Name, proto); got != want {
 				t.Errorf("schema does not match input struct:\n got:  %s\n want: %s", got, want)
 			}
 

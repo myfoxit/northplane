@@ -7,6 +7,7 @@ import {
   Network, FileText, Zap, Phone, Wrench, Files, Telescope, Settings, Sparkles, Search, LogOut,
 } from 'lucide-react'
 import { t } from '../i18n'
+import { syncPreferencesFromServer } from '../settings'
 import { CommandPalette } from './CommandPalette'
 import { AISidebar } from './AISidebar'
 import { RefreshControl } from './RefreshControl'
@@ -36,6 +37,10 @@ export function Layout({ children }: { children: ReactNode }) {
   const [aiOpen, setAIOpen] = useState(false)
   const router = useRouterState()
   const navigate = useNavigate()
+
+  // Adopt server-side preferences once per shell mount (settings.ts keeps
+  // the localStorage cache for instant boot).
+  useEffect(() => { void syncPreferencesFromServer() }, [])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

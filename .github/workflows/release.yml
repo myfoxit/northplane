@@ -44,6 +44,9 @@ jobs:
           - { goos: linux, goarch: arm64 }
           - { goos: darwin, goarch: amd64 }
           - { goos: darwin, goarch: arm64 }
+          # windows ships the agent + CLI only (northplaned needs unix
+          # process groups for plugin execution)
+          - { goos: windows, goarch: amd64 }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -61,20 +64,32 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           mkdir -p dist
-          for bin in northplaned np np-agent; do
+          BINS="northplaned np np-agent"
+          EXT=""
+          if [ "${GOOS}" = "windows" ]; then
+            BINS="np np-agent"
+            EXT=".exe"
+          fi
+          for bin in ${BINS}; do
             CGO_ENABLED=0 go build -trimpath \
               -ldflags "-s -w -X main.version=${VERSION}" \
-              -o "dist/${bin}" "./cmd/${bin}"
+              -o "dist/${bin}${EXT}" "./cmd/${bin}"
           done
           cp LICENSE dist/
-          ASSET="northplane_${GITHUB_REF_NAME}_${GOOS}_${GOARCH}.tar.gz"
-          tar -czf "${ASSET}" -C dist northplaned np np-agent LICENSE
+          if [ "${GOOS}" = "windows" ]; then
+            ASSET="northplane_${GITHUB_REF_NAME}_${GOOS}_${GOARCH}.zip"
+            (cd dist && zip -q "../${ASSET}" np.exe np-agent.exe LICENSE)
+          else
+            ASSET="northplane_${GITHUB_REF_NAME}_${GOOS}_${GOARCH}.tar.gz"
+            tar -czf "${ASSET}" -C dist northplaned np np-agent LICENSE
+          fi
           sha256sum "${ASSET}" > "${ASSET}.sha256"
       - uses: actions/upload-artifact@v4
         with:
           name: archive-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
             northplane_*.tar.gz
+            northplane_*.zip
             northplane_*.sha256
           retention-days: 1
 
@@ -95,6 +110,7 @@ jobs:
         with:
           files: |
             northplane_*.tar.gz
+            northplane_*.zip
             checksums.txt
           generate_release_notes: true
 

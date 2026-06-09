@@ -33,8 +33,16 @@ type metricsPayload struct {
 	UptimeSec int64         `json:"uptimeSeconds"`
 	CPUs      int           `json:"cpus"`
 	Load1     *float64      `json:"load1,omitempty"`
+	CPUPct    *float64      `json:"cpuPct,omitempty"` // platforms without loadavg (Windows)
 	Memory    *memMetrics   `json:"memory,omitempty"`
 	Disks     []diskMetrics `json:"disks,omitempty"`
+	Processes *procMetrics  `json:"processes,omitempty"`
+	Network   []netRate     `json:"network,omitempty"`
+}
+
+type procMetrics struct {
+	Total   int `json:"total"`
+	Running int `json:"running"`
 }
 
 type memMetrics struct {
@@ -128,6 +136,9 @@ func collectMetrics(cfg agentConfig) metricsPayload {
 	if load, ok := loadAvg(); ok {
 		m.Load1 = &load
 	}
+	if pct, ok := cpuPercent(); ok {
+		m.CPUPct = &pct
+	}
 	if usedPct, total, avail, ok := memUsage(); ok {
 		m.Memory = &memMetrics{UsedPct: usedPct, TotalBytes: total, AvailableBytes: avail}
 	}
@@ -135,6 +146,12 @@ func collectMetrics(cfg agentConfig) metricsPayload {
 		if usedPct, freeBytes, ok := diskUsage(mount); ok {
 			m.Disks = append(m.Disks, diskMetrics{Mount: mount, UsedPct: usedPct, FreeBytes: freeBytes})
 		}
+	}
+	if total, running, ok := procCount(); ok {
+		m.Processes = &procMetrics{Total: total, Running: running}
+	}
+	if rates, ok := netRatesTracker.rates(cfg.Net); ok {
+		m.Network = rates
 	}
 	return m
 }

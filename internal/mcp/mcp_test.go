@@ -3,18 +3,22 @@ package mcp_test
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"strings"
 	"testing"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/northplane/northplane/internal/ai"
+	"github.com/northplane/northplane/internal/api"
 	"github.com/northplane/northplane/internal/auth"
 	"github.com/northplane/northplane/internal/catalog"
 	"github.com/northplane/northplane/internal/config"
 	"github.com/northplane/northplane/internal/escalation"
 	"github.com/northplane/northplane/internal/eventbus"
 	"github.com/northplane/northplane/internal/mcp"
+	"github.com/northplane/northplane/internal/metrics"
 	"github.com/northplane/northplane/internal/model"
 	"github.com/northplane/northplane/internal/scheduler"
 	"github.com/northplane/northplane/internal/storage"
@@ -43,10 +47,15 @@ func connect(t *testing.T, perms []model.Permission) (*sdk.ClientSession, *stora
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { ts.Close() })
+	// the real API layer backs the generic config tools (validation +
+	// cache invalidation), exactly as the server wires it.
+	resAdmin := &api.API{Store: store, Catalog: cat, Sched: scheduler.New(cat, nil),
+		Bus: bus, Metrics: metrics.NewRegistry(),
+		Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	svc := ai.New(ai.Deps{
 		Cfg: config.AIConfig{}, Store: store, Catalog: cat,
 		Sched: scheduler.New(cat, nil), Escal: escalation.New(store, bus, nil),
-		Bus: bus, TSDB: ts,
+		Bus: bus, TSDB: ts, Resources: resAdmin,
 	})
 	principal := &auth.Principal{ActorType: model.ActorAI, ActorID: "tok-1",
 		Name: "mcp-test", TenantID: model.DefaultTenant, Perms: perms}
@@ -83,6 +92,9 @@ func TestMCPToolSurface(t *testing.T) {
 		"create_silence", "propose_config_change", "apply_config_change",
 		"render_report",
 		"analyze_metric", "forecast_capacity", "suggest_thresholds",
+		// generic config CRUD (P1 parity: full configuration over MCP)
+		"list_config_resources", "get_config_resource",
+		"upsert_config_resource", "delete_config_resource",
 	}
 	for _, name := range want {
 		if !got[name] {
@@ -166,6 +178,62 @@ func TestMCPPrompts(t *testing.T) {
 	p, err := session.GetPrompt(ctx, &sdk.GetPromptParams{Name: "morning-briefing"})
 	if err != nil || len(p.Messages) == 0 {
 		t.Fatalf("get prompt: %v", err)
+	}
+}
+
+// TestMCPConfigResourceRead: configuration documents are readable over
+// MCP via the generic tools (P1 parity), under per-kind RBAC.
+func TestMCPConfigResourceRead(t *testing.T) {
+	session, store, ctx := connect(t, []model.Permission{"objects:read"})
+	if _, err := store.PutResource(ctx, model.DefaultTenant, storage.KindChannel, "ops-mail",
+		&model.NotificationChannel{Name: "ops-mail", Type: model.ChannelEmail, Enabled: true,
+			Config: map[string]string{"provider": "sendmail"}}, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := session.CallTool(ctx, &sdk.CallToolParams{Name: "list_config_resources",
+		Arguments: map[string]any{"kind": "channel"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError {
+		t.Fatalf("list errored: %s", contentText(res))
+	}
+	if text := contentText(res); !strings.Contains(text, "ops-mail") {
+		t.Fatalf("channel missing: %s", text)
+	}
+
+	// per-kind RBAC: schedules need oncall:read which this token lacks
+	res, err = session.CallTool(ctx, &sdk.CallToolParams{Name: "list_config_resources",
+		Arguments: map[string]any{"kind": "schedule"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.IsError || !strings.Contains(contentText(res), "oncall:read") {
+		t.Fatalf("schedule list must be denied: %s", contentText(res))
+	}
+}
+
+// TestMCPConfigResourceWriteProposed: a config write over MCP lands in
+// the approval queue and applies through the same validated path as REST.
+func TestMCPConfigResourceWriteProposed(t *testing.T) {
+	session, store, ctx := connect(t, []model.Permission{"config:write"})
+	res, err := session.CallTool(ctx, &sdk.CallToolParams{Name: "upsert_config_resource",
+		Arguments: map[string]any{"kind": "channel", "name": "mcp-mail",
+			"doc": map[string]any{"name": "mcp-mail", "type": "email", "enabled": true,
+				"config": map[string]any{"provider": "resend", "apiKey": "$SECRET:resend$", "from": "np@example.com"}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError {
+		t.Fatalf("upsert errored: %s", contentText(res))
+	}
+	if text := contentText(res); !strings.Contains(text, `"status": "proposed"`) {
+		t.Fatalf("write must be proposed: %s", text)
+	}
+	actions, err := store.ListAIActions(ctx, model.DefaultTenant, "proposed", 10)
+	if err != nil || len(actions) != 1 || actions[0].Tool != "upsert_config_resource" {
+		t.Fatalf("queue: %v %+v", err, actions)
 	}
 }
 

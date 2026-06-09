@@ -167,6 +167,9 @@ func jsonSchemaType(t reflect.Type) (string, bool) {
 		return "integer", true
 	case reflect.Float32, reflect.Float64:
 		return "number", true
+	case reflect.Map:
+		// free-form JSON object (generic config-resource documents)
+		return "object", true
 	default:
 		return "", false
 	}

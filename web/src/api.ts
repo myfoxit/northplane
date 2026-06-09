@@ -66,8 +66,11 @@ export async function api<T>(
     throw new APIError(401, 'auth', 'login required', '')
   }
   if (!res.ok) throw await parseError(res)
-  if (res.status === 204) return undefined as T
-  return validate(await res.json(), init?.schema)
+  // 204 and other empty-body successes (e.g. 202 Accepted on :replay)
+  // carry no JSON to parse.
+  const text = await res.text()
+  if (text === '') return undefined as T
+  return validate(JSON.parse(text), init?.schema)
 }
 
 export const get = <T,>(path: string) => api<T>(path)

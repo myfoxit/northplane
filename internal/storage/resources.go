@@ -36,6 +36,7 @@ const (
 	KindWebhookSub       = "webhook-subscription"
 	KindSavedFilter      = "saved-filter"
 	KindStaticGroup      = "static-group" // Nagios import fidelity (SPEC §6.2)
+	KindPreference       = "preference"   // per-actor UI settings (name = actor ID)
 )
 
 // ResourceEnvelope wraps a stored document.

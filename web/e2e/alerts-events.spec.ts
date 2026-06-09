@@ -64,8 +64,9 @@ test.describe('alerts', () => {
     await expect(page).toHaveURL(/\/alerts/)
     // Heading with the live count, e.g. "Alarme (3)".
     await expect(page.getByRole('heading', { name: /Alarme/ })).toBeVisible()
-    // Both filter Selects are present (severity + status).
-    await expect(page.getByRole('combobox')).toHaveCount(2)
+    // Both filter Selects are present (severity + status); scope to the
+    // content area — the sidebar's refresh-cadence Select is also a combobox.
+    await expect(page.getByRole('main').getByRole('combobox')).toHaveCount(2)
     // Either alert rows are shown, or the explicit empty state. The default
     // status filter is "offen + quittiert" so this captures whatever is open.
     const empty = page.getByText('Keine Einträge.')

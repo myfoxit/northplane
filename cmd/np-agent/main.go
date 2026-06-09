@@ -60,6 +60,9 @@ type agentConfig struct {
 	Checks []agentCheck `yaml:"checks"`
 	// Builtin metric collection toggles.
 	Disk []string `yaml:"disk"` // mount points, default ["/"]
+	// Net filters the network interfaces reported (empty = all non-
+	// loopback, capped at 8).
+	Net []string `yaml:"net"`
 
 	// Active listener mode (NCPA-style, SPEC §8.4): the server queries the
 	// agent over HTTPS instead of (or in addition to) passive pushes.
@@ -241,6 +244,40 @@ func collect(ctx context.Context, cfg agentConfig) []passiveResult {
 				Output: fmt.Sprintf("%s %.1f%% used, %.1f GB free | used=%.1f%%;85;95;0;100 free=%dB;;;0;",
 					mount, usedPct, float64(freeBytes)/(1<<30), usedPct, freeBytes)})
 		}
+	}
+
+	// cpu utilisation (platforms without a load average, i.e. Windows)
+	if pct, ok := cpuPercent(); ok {
+		state := 0
+		if pct > 95 {
+			state = 2
+		} else if pct > 85 {
+			state = 1
+		}
+		out = append(out, passiveResult{Host: host, Service: "cpu", State: state,
+			Output: fmt.Sprintf("CPU %.1f%% busy (%d cpus) | cpu=%.1f%%;85;95;0;100",
+				pct, runtime.NumCPU(), pct)})
+	}
+
+	// processes (informational; thresholds belong to alert rules)
+	if total, running, ok := procCount(); ok {
+		out = append(out, passiveResult{Host: host, Service: "processes", State: 0,
+			Output: fmt.Sprintf("%d processes (%d running) | total=%d;;;0; running=%d;;;0;",
+				total, running, total, running)})
+	}
+
+	// network throughput since the previous tick (first tick primes)
+	if rates, ok := netRatesTracker.rates(cfg.Net); ok {
+		var perf, summary strings.Builder
+		for i, r := range rates {
+			if i > 0 {
+				summary.WriteString(", ")
+			}
+			fmt.Fprintf(&summary, "%s rx %.0f B/s tx %.0f B/s", r.Name, r.RxBps, r.TxBps)
+			fmt.Fprintf(&perf, " rx_%s=%.0fB/s;;;0; tx_%s=%.0fB/s;;;0;", r.Name, r.RxBps, r.Name, r.TxBps)
+		}
+		out = append(out, passiveResult{Host: host, Service: "network", State: 0,
+			Output: "throughput " + summary.String() + " |" + perf.String()})
 	}
 
 	// configured plugin checks

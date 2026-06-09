@@ -27,8 +27,21 @@ type Tool struct {
 	// the equivalent REST route requires (SPEC §10.3: the AI/MCP session
 	// is a privilegeless client that inherits exactly the token's scopes).
 	Perm model.Permission
+	// PermFor derives the required permission from the input when the
+	// tool's scope depends on its arguments (the generic config-resource
+	// tools: the kind decides). Takes precedence over Perm when set, and
+	// is re-evaluated against the approver in ExecuteApproved.
+	PermFor func(input json.RawMessage) model.Permission
 	// Run executes the tool against the platform with the principal's RBAC.
 	Run func(ctx context.Context, s *Service, p *auth.Principal, input json.RawMessage) (any, error)
+}
+
+// requiredPerm resolves the effective permission for an invocation.
+func (t *Tool) requiredPerm(input json.RawMessage) model.Permission {
+	if t.PermFor != nil {
+		return t.PermFor(input)
+	}
+	return t.Perm
 }
 
 // --- tool input types ---
@@ -129,9 +142,10 @@ type renderReportInput struct {
 	Name string `json:"name" desc:"Name of the stored report to render."`
 }
 
-// tools is the canonical registry.
+// tools is the canonical registry (plus the generic config-resource
+// tools from buildConfigTools — full configuration parity over MCP).
 func buildTools() []Tool {
-	return []Tool{
+	return append(buildConfigTools(), []Tool{
 		{Def: ToolDef{Name: "get_overview",
 			Description: "State summary: problem counts, open incidents, on-call.",
 			Schema:      reflectSchema(emptyInput{})},
@@ -530,7 +544,7 @@ func buildTools() []Tool {
 				}
 				return s.renderReport(ctx, p, args.Name)
 			}},
-	}
+	}...)
 }
 
 // fetchSeries pulls a raw metric series for an object over the last

@@ -28,6 +28,7 @@ type agentMetrics struct {
 	UptimeSec int64    `json:"uptimeSeconds"`
 	CPUs      int      `json:"cpus"`
 	Load1     *float64 `json:"load1"`
+	CPUPct    *float64 `json:"cpuPct"` // platforms without loadavg (Windows)
 	Memory    *struct {
 		UsedPct        float64 `json:"usedPct"`
 		TotalBytes     uint64  `json:"totalBytes"`
@@ -38,6 +39,15 @@ type agentMetrics struct {
 		UsedPct   float64 `json:"usedPct"`
 		FreeBytes uint64  `json:"freeBytes"`
 	} `json:"disks"`
+	Processes *struct {
+		Total   int `json:"total"`
+		Running int `json:"running"`
+	} `json:"processes"`
+	Network []struct {
+		Name  string  `json:"name"`
+		RxBps float64 `json:"rxBytesPerSec"`
+		TxBps float64 `json:"txBytesPerSec"`
+	} `json:"network"`
 }
 
 // checkAgent queries an np-agent active listener (SPEC §8.4, NCPA-style):
@@ -127,8 +137,43 @@ func checkAgent(ctx context.Context, t Target, a Args) (model.State, nagios.Outp
 				}
 			}
 			return unknownf("agent %s monitors no mount %q", host, mount)
+		case metric == "cpu":
+			if m.CPUPct == nil {
+				return unknownf("agent %s reports no cpu metric (unix agents expose load1)", host)
+			}
+			return evalPerf("cpu", *m.CPUPct, "%", warn, crit,
+				fmt.Sprintf("%s CPU %.1f%% busy (%d cpus)", m.Hostname, *m.CPUPct, m.CPUs))
+		case metric == "processes":
+			if m.Processes == nil {
+				return unknownf("agent %s reports no process metric", host)
+			}
+			return evalPerf("processes", float64(m.Processes.Total), "", warn, crit,
+				fmt.Sprintf("%s %d processes (%d running)", m.Hostname,
+					m.Processes.Total, m.Processes.Running))
+		case strings.HasPrefix(metric, "net:"):
+			ifname := strings.TrimPrefix(metric, "net:")
+			for _, n := range m.Network {
+				if n.Name != ifname {
+					continue
+				}
+				// graded on rx (the usual saturation direction); tx rides
+				// along as perfdata
+				st := model.StateOK
+				if warn != "" || crit != "" {
+					code, err := nagios.Evaluate(n.RxBps, warn, crit)
+					if err != nil {
+						return unknownf("agent: bad threshold: %v", err)
+					}
+					st = model.State(code)
+				}
+				label := map[model.State]string{0: "OK", 1: "WARNING", 2: "CRITICAL", 3: "UNKNOWN"}[st]
+				text := fmt.Sprintf("NET %s - %s %s rx %.0f B/s tx %.0f B/s | rx_%s=%.0fB/s;%s;%s;0; tx_%s=%.0fB/s;;;0;",
+					label, m.Hostname, ifname, n.RxBps, n.TxBps, ifname, n.RxBps, warn, crit, ifname, n.TxBps)
+				return st, nagios.ParseOutput(text)
+			}
+			return unknownf("agent %s reports no interface %q", host, ifname)
 		default:
-			return unknownf("agent: unknown --metric %q (load1 | memory | disk:<mount>)", metric)
+			return unknownf("agent: unknown --metric %q (load1 | cpu | memory | disk:<mount> | processes | net:<iface>)", metric)
 		}
 	}
 
@@ -151,6 +196,16 @@ func checkAgent(ctx context.Context, t Target, a Args) (model.State, nagios.Outp
 		parts = append(parts, fmt.Sprintf("load %.2f", *m.Load1))
 		perf = append(perf, fmt.Sprintf("load1=%.2f;%.0f;%.0f;0;", *m.Load1, ncpu*2, ncpu*4))
 	}
+	if m.CPUPct != nil {
+		switch {
+		case *m.CPUPct > 95:
+			bump(model.StateCritical)
+		case *m.CPUPct > 85:
+			bump(model.StateWarning)
+		}
+		parts = append(parts, fmt.Sprintf("cpu %.1f%%", *m.CPUPct))
+		perf = append(perf, fmt.Sprintf("cpu=%.1f%%;85;95;0;100", *m.CPUPct))
+	}
 	if m.Memory != nil {
 		switch {
 		case m.Memory.UsedPct > 95:
@@ -170,6 +225,10 @@ func checkAgent(ctx context.Context, t Target, a Args) (model.State, nagios.Outp
 		}
 		parts = append(parts, fmt.Sprintf("disk %s %.1f%%", d.Mount, d.UsedPct))
 		perf = append(perf, fmt.Sprintf("%s=%.1f%%;85;95;0;100", perfLabel("disk "+d.Mount), d.UsedPct))
+	}
+	if m.Processes != nil {
+		parts = append(parts, fmt.Sprintf("%d procs", m.Processes.Total))
+		perf = append(perf, fmt.Sprintf("processes=%d;;;0;", m.Processes.Total))
 	}
 	label := map[model.State]string{0: "OK", 1: "WARNING", 2: "CRITICAL", 3: "UNKNOWN"}[st]
 	text := fmt.Sprintf("AGENT %s - %s v%s up %s: %s | %s", label, m.Hostname, m.Version,
