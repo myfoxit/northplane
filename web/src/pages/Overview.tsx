@@ -11,14 +11,16 @@ import { Badge } from '@/components/ui/badge'
 import { Empty, ErrorState } from '@/components/kit'
 import { TileLink } from '../components/dash/widgets'
 import { t } from '../i18n'
+import { useRefreshInterval } from '../settings'
 
 export function OverviewPage() {
   const search = useSearch({ strict: false }) as Record<string, unknown>
   const wallboard = !!search.wallboard
+  const refresh = useRefreshInterval()
   const { data, isError, error, refetch } = useQuery({
     queryKey: ['overview'],
     queryFn: () => get<OverviewData>('/overview'),
-    refetchInterval: wallboard ? 10_000 : 30_000,
+    refetchInterval: wallboard ? 10_000 : refresh,
   })
   const { data: oncall } = useQuery({
     queryKey: ['oncall'],
@@ -28,6 +30,7 @@ export function OverviewPage() {
   const { data: problems } = useQuery({
     queryKey: ['problems'],
     queryFn: () => get<{ items: ProblemRow[] | null }>('/problems?limit=15'),
+    refetchInterval: wallboard ? 10_000 : refresh,
   })
 
   const s = data?.summary

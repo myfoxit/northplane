@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Empty, ErrorState } from '@/components/kit'
 import { t } from '../i18n'
+import { useRefreshInterval } from '../settings'
 
 const eventTypes = ['', 'state_change', 'alert_opened', 'alert_resolved', 'notification',
   'escalation', 'ack', 'ingress', 'config', 'downtime', 'silence', 'heartbeat_missed', 'ai_action']
@@ -16,11 +17,13 @@ const eventTypes = ['', 'state_change', 'alert_opened', 'alert_resolved', 'notif
 export function EventsPage() {
   const [type, setType] = useState('')
   const [objectId, setObjectId] = useState('')
+  const refresh = useRefreshInterval()
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['events', type, objectId],
     queryFn: () => get<ListResponse<NPEvent>>(
       `/events?types=${type}&objectId=${encodeURIComponent(objectId)}&limit=200`),
     placeholderData: keepPreviousData, // filter changes render instantly
+    refetchInterval: refresh,
   })
   const rows = data?.items ?? []
   if (isError && !data) {

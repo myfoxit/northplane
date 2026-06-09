@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest'
 import * as z from 'zod'
 import {
   APIError, parseError, parseEtag, validate,
-  invalidations, streamTypes, liveKeys,
 } from './api'
 
 // Minimal Response stand-in: parseError/validate only touch .status,
@@ -105,36 +104,5 @@ describe('validate', () => {
       expect(e.code).toBe('invalid_response')
       expect(e.detail).toContain('n')
     }
-  })
-})
-
-describe('SSE invalidation mapping', () => {
-  it('streamTypes lists exactly the invalidation keys (server ?types= filter)', () => {
-    expect(streamTypes.split(',').sort()).toEqual(Object.keys(invalidations).sort())
-  })
-
-  it('every invalidation entry is a list of single-segment [string] tuples', () => {
-    for (const keys of Object.values(invalidations)) {
-      expect(Array.isArray(keys)).toBe(true)
-      for (const k of keys) {
-        expect(k).toHaveLength(1)
-        expect(typeof k[0]).toBe('string')
-      }
-    }
-  })
-
-  it('liveKeys is the de-duplicated union of all first segments', () => {
-    const expected = Array.from(
-      new Set(Object.values(invalidations).flat().map((k) => k[0])),
-    )
-    expect(liveKeys.sort()).toEqual(expected.sort())
-    // de-duplicated
-    expect(new Set(liveKeys).size).toBe(liveKeys.length)
-  })
-
-  it('maps representative events to the expected query keys', () => {
-    expect(invalidations.alert_resolved).toEqual([['alerts'], ['overview'], ['problems'], ['events']])
-    expect(invalidations.silence).toEqual([['silences']])
-    expect(invalidations.state_change?.map((k) => k[0])).toContain('problems')
   })
 })

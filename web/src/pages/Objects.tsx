@@ -11,6 +11,7 @@ import { X, RefreshCw } from 'lucide-react'
 import { get, post, del, fmtTime, fmtAgo, queryClient, type ListResponse } from '../api'
 import type { NPObject, NPEvent, SeriesResult, ObjectSpec, ObjectsSearch } from '../types'
 import { stateLabel, stateIcon, stateColor } from '../types'
+import { useRefreshInterval } from '../settings'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -73,11 +74,13 @@ export function ObjectsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selector, query])
 
+  const refresh = useRefreshInterval()
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['objects', selector, query],
     queryFn: () => get<ListResponse<NPObject>>(
       `/objects?selector=${encodeURIComponent(selector)}&q=${encodeURIComponent(query)}&limit=2000`),
     placeholderData: keepPreviousData, // navigation shows the last list instantly
+    refetchInterval: refresh,
   })
   const all = useMemo(() => data?.items ?? [], [data])
   // State/kind filtering happens client-side over the loaded window —

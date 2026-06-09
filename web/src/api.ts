@@ -1,10 +1,9 @@
 // API client (SPEC P1: the UI consumes only the public, documented API)
-// with RFC 9457 problem handling, ETag/If-Match support and the SSE
-// live-update hook (SPEC §12.2: one multiplexed stream per tab, query
-// cache patched per event instead of full refetches).
+// with RFC 9457 problem handling and ETag/If-Match support. Live freshness is
+// interval polling (see settings.ts / useRefreshInterval), not server push —
+// the old SSE stream held a browser connection open and starved other fetches.
 
 import { QueryClient } from '@tanstack/react-query'
-import { useEffect, useRef } from 'react'
 import type { ZodType } from 'zod'
 
 export const queryClient = new QueryClient({
@@ -127,88 +126,12 @@ export function resourceApi<T extends { name: string }>(base: string, schema?: Z
   }
 }
 
-// Live updates: one EventSource per tab; events invalidate the matching
-// query keys. Visibility throttling per SPEC §12.2. Each entry is a list of
-// single-segment query keys ([string] tuples) so the first segment is always
-// present (noUncheckedIndexedAccess-safe).
-export const invalidations: Record<string, [string][]> = {
-  state_change: [['problems'], ['objects'], ['overview'], ['events']],
-  alert_opened: [['alerts'], ['overview'], ['events']],
-  alert_resolved: [['alerts'], ['overview'], ['problems'], ['events']],
-  ack: [['alerts'], ['problems'], ['events']],
-  notification: [['events']],
-  escalation: [['events']],
-  incident_update: [['incidents'], ['overview']],
-  downtime: [['downtimes'], ['problems']],
-  silence: [['silences']],
-  config: [['objects'], ['rules'], ['resources']],
-  heartbeat_missed: [['heartbeats'], ['events']],
-  flapping_start: [['problems'], ['objects']],
-  flapping_end: [['problems'], ['objects']],
-}
-
-// Event types the client consumes — sent as ?types= so the server doesn't
-// push (and buffer) unrelated tenant events, which is what arms a `resync`
-// when the per-subscriber buffer overflows.
-export const streamTypes = Object.keys(invalidations).join(',')
-// All live query keys, for a `resync` (missed-events signal): refresh just
-// these through the throttled flush instead of nuking the whole query cache.
-export const liveKeys = Array.from(new Set(Object.values(invalidations).flat().map((k) => k[0])))
-
-export function useLiveUpdates(onEvent?: (type: string, data: unknown) => void) {
-  // Keep the latest callback in a ref so the EventSource effect (below, with
-  // an empty dep array) never has to re-subscribe when onEvent changes. The
-  // ref is written in its own effect — not during render — so we don't read
-  // or mutate ref.current while rendering (react-hooks/refs).
-  const handler = useRef(onEvent)
-  useEffect(() => { handler.current = onEvent }, [onEvent])
-  useEffect(() => {
-    let es: EventSource | null = null
-    let backoff = 1000
-    let closed = false
-    const pending = new Set<string>()
-    let flushTimer: number | undefined
-
-    const flush = () => {
-      flushTimer = undefined
-      if (document.hidden) return // throttle while invisible
-      for (const key of pending) queryClient.invalidateQueries({ queryKey: [key] })
-      pending.clear()
-    }
-
-    const connect = () => {
-      if (closed) return
-      es = new EventSource('/api/v1/stream?types=' + encodeURIComponent(streamTypes))
-      es.onopen = () => { backoff = 1000 }
-      es.onerror = () => {
-        es?.close()
-        if (!closed) setTimeout(connect, backoff = Math.min(backoff * 2, 30000))
-      }
-      for (const [type, keys] of Object.entries(invalidations)) {
-        es.addEventListener(type, (ev) => {
-          for (const key of keys) pending.add(key[0])
-          if (!flushTimer) flushTimer = window.setTimeout(flush, 400)
-          try { handler.current?.(type, JSON.parse((ev as MessageEvent).data)) } catch { /* ignore */ }
-        })
-      }
-      es.addEventListener('resync', () => {
-        // Missed events: refresh the live keys via the same throttled,
-        // visibility-gated flush — not invalidateQueries() with no key,
-        // which refetches every mounted query at once.
-        for (const key of liveKeys) pending.add(key)
-        if (!flushTimer) flushTimer = window.setTimeout(flush, 400)
-      })
-    }
-    connect()
-    const onVisible = () => { if (!document.hidden) flush() }
-    document.addEventListener('visibilitychange', onVisible)
-    return () => {
-      closed = true
-      es?.close()
-      document.removeEventListener('visibilitychange', onVisible)
-    }
-  }, [])
-}
+// Live freshness is interval polling, not server push. Each live view sets
+// React Query's refetchInterval from the user's refresh setting (settings.ts).
+// The previous SSE EventSource was removed: on HTTP/1.1 it held one of the
+// browser's ~6 per-origin connections open for the tab's lifetime, so once a
+// few accumulated across navigation every other fetch queued behind them and
+// the whole UI hung. Polling has no held-open connection to leak.
 
 export function fmtTime(iso?: string): string {
   if (!iso) return '—'

@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Empty, ErrorState } from '@/components/kit'
 import { AckDialog } from '../components/AckDialog'
 import { t } from '../i18n'
+import { useRefreshInterval } from '../settings'
 
 export function AlertsPage() {
   // Status + severity filters live in the URL (linkable, back-button).
@@ -27,10 +28,12 @@ export function AlertsPage() {
       replace: true,
     })
   const [ackTarget, setAckTarget] = useState<Alert | null>(null)
+  const refresh = useRefreshInterval()
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['alerts', status],
     queryFn: () => get<ListResponse<Alert>>(`/alerts?status=${status}&limit=200`),
     placeholderData: keepPreviousData,
+    refetchInterval: refresh,
   })
   const resolve = useMutation({
     mutationFn: (id: string) => post(`/alerts/${id}:resolve`),
@@ -96,9 +99,11 @@ export function AlertsPage() {
 }
 
 export function IncidentsPage() {
+  const refresh = useRefreshInterval()
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['incidents'],
     queryFn: () => get<ListResponse<Incident>>('/incidents?limit=100'),
+    refetchInterval: refresh,
   })
   const resolve = useMutation({
     mutationFn: (id: string) => post(`/incidents/${id}:resolve`),

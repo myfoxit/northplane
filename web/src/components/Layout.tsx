@@ -7,9 +7,9 @@ import {
   Network, FileText, Zap, Phone, Wrench, Files, Telescope, Settings, Sparkles, Search, LogOut,
 } from 'lucide-react'
 import { t } from '../i18n'
-import { useLiveUpdates } from '../api'
 import { CommandPalette } from './CommandPalette'
 import { AISidebar } from './AISidebar'
+import { RefreshControl } from './RefreshControl'
 
 type IconType = ComponentType<{ size?: number; className?: string }>
 
@@ -36,7 +36,6 @@ export function Layout({ children }: { children: ReactNode }) {
   const [aiOpen, setAIOpen] = useState(false)
   const router = useRouterState()
   const navigate = useNavigate()
-  useLiveUpdates()
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -96,6 +95,7 @@ export function Layout({ children }: { children: ReactNode }) {
           })}
         </nav>
         <div className="p-3 border-t border-border/80 space-y-2">
+          <RefreshControl />
           <button
             onClick={() => setPaletteOpen(true)}
             className="w-full flex items-center gap-2 text-xs text-muted-foreground bg-card border border-border rounded-lg px-3 py-1.5 hover:border-input cursor-pointer transition-colors"

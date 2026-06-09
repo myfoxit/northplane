@@ -1,5 +1,5 @@
 // Problems view (SPEC §12.3): priority-sorted, inline ack/downtime in
-// ≤ 3 clicks, handled toggle, live via SSE invalidation.
+// ≤ 3 clicks, handled toggle, refreshed on the user's polling interval.
 import { useState } from 'react'
 import { keepPreviousData, useQuery, useMutation } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
@@ -12,9 +12,11 @@ import { Badge } from '@/components/ui/badge'
 import { Empty, ErrorState } from '@/components/kit'
 import { AckDialog, DowntimeDialog } from '../components/AckDialog'
 import { t } from '../i18n'
+import { useRefreshInterval } from '../settings'
 
 export function ProblemsPage() {
   const [includeHandled, setIncludeHandled] = useState(false)
+  const refresh = useRefreshInterval()
   const [ackTarget, setAckTarget] = useState<{ alertId: string; name: string } | null>(null)
   const [dtTarget, setDtTarget] = useState<{ objectId: string; name: string } | null>(null)
 
@@ -22,10 +24,12 @@ export function ProblemsPage() {
     queryKey: ['problems', includeHandled],
     queryFn: () => get<{ items: ProblemRow[] | null }>(`/problems?includeHandled=${includeHandled}`),
     placeholderData: keepPreviousData, // toggle shows the last list instantly
+    refetchInterval: refresh,
   })
   const { data: alerts } = useQuery({
     queryKey: ['alerts', 'open-map'],
     queryFn: () => get<{ items: Alert[] | null }>('/alerts?status=open&limit=500'),
+    refetchInterval: refresh,
   })
   const alertByObject: Record<string, Alert> = {}
   for (const a of alerts?.items ?? []) {
