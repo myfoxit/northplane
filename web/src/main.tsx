@@ -106,9 +106,14 @@ declare module '@tanstack/react-router' {
   interface Register { router: typeof router }
 }
 
-// PWA service worker (ADR-12: shell caching + push-ready)
-if ('serviceWorker' in navigator && import.meta.env.PROD) {
-  navigator.serviceWorker.register('/sw.js').catch(() => {})
+// No service worker. A monitoring console has no offline use case, and the
+// previous caching worker wedged the app by serving a stale shell. Actively
+// unregister any worker a prior build installed; the served /sw.js is now a
+// self-destroying stub that cleans up browsers still controlled by the old one.
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations()
+    .then((regs) => regs.forEach((r) => r.unregister()))
+    .catch(() => {})
 }
 
 createRoot(document.getElementById('root')!).render(
