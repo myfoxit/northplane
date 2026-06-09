@@ -207,6 +207,59 @@ func TestSetupRaceDoublePOST(t *testing.T) {
 	}
 }
 
+func loginForm(email, password string, remember bool) *http.Request {
+	form := url.Values{"email": {email}, "password": {password}}
+	if remember {
+		form.Set("remember", "1")
+	}
+	r := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	return r
+}
+
+func sessionCookie(t *testing.T, rec *httptest.ResponseRecorder) *http.Cookie {
+	t.Helper()
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "np_session" {
+			return c
+		}
+	}
+	t.Fatal("no np_session cookie set")
+	return nil
+}
+
+// TestLoginRememberMeCookieTTL pins the two session lifetimes (12h default,
+// 30d with "remember me") and the hardening flags on the session cookie.
+func TestLoginRememberMeCookieTTL(t *testing.T) {
+	p, store := testPages(t)
+	const pw = "korrekt-pferd-batterie"
+	if _, err := store.CreateLocalUser(context.Background(), "Admin", "admin@example.net", auth.HashSecret(pw)); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	p.ServeHTTP(rec, loginForm("admin@example.net", pw, false))
+	if rec.Code != http.StatusFound {
+		t.Fatalf("login: %d (%s)", rec.Code, rec.Body.String())
+	}
+	c := sessionCookie(t, rec)
+	if c.MaxAge != int(sessionTTL.Seconds()) {
+		t.Fatalf("default session MaxAge = %d, want %d", c.MaxAge, int(sessionTTL.Seconds()))
+	}
+	if !c.HttpOnly || c.SameSite != http.SameSiteLaxMode {
+		t.Fatalf("session cookie not hardened: HttpOnly=%v SameSite=%v", c.HttpOnly, c.SameSite)
+	}
+
+	rec = httptest.NewRecorder()
+	p.ServeHTTP(rec, loginForm("admin@example.net", pw, true))
+	if rec.Code != http.StatusFound {
+		t.Fatalf("login remember: %d", rec.Code)
+	}
+	if got := sessionCookie(t, rec).MaxAge; got != int(rememberTTL.Seconds()) {
+		t.Fatalf("remember session MaxAge = %d, want %d", got, int(rememberTTL.Seconds()))
+	}
+}
+
 func TestSetupRateLimited(t *testing.T) {
 	p, _ := testPages(t)
 	var last *httptest.ResponseRecorder

@@ -170,6 +170,7 @@ func serve(args []string) {
 	if *demoSeed {
 		seedDemo(ctx, store, log, *demoSNMP, *demoTraps)
 	}
+	seedDefaultAdmin(ctx, store, log)
 
 	srv, err := server.New(ctx, cfg, store, ts, log, version)
 	if err != nil {
@@ -207,6 +208,70 @@ func seedDemo(ctx context.Context, store *storage.Store, log *slog.Logger, snmpT
 		log.Info("demo: hint", "msg", h)
 	}
 	log.Info("demo: environment seeded", "counts", fmt.Sprintf("%v", sum.Counts))
+}
+
+// seedDefaultAdmin guarantees a break-glass local admin exists so a fresh
+// install is reachable immediately, without the interactive /setup flow.
+// It seeds only when no enabled local admin is present and the chosen email
+// is free — so an admin you create later is never duplicated, and changing
+// this account's password (or deleting it once another admin exists) sticks
+// across restarts. Credentials are env-overridable; the built-in default is
+// intentionally weak and MUST be rotated in production. Opt out entirely
+// with NP_DEFAULT_ADMIN_DISABLED (or an empty NP_DEFAULT_ADMIN_PASSWORD) —
+// e.g. installs that provision the admin via /setup or OIDC.
+func seedDefaultAdmin(ctx context.Context, store *storage.Store, log *slog.Logger) {
+	if os.Getenv("NP_DEFAULT_ADMIN_DISABLED") != "" {
+		return
+	}
+	email := envOr("NP_DEFAULT_ADMIN_EMAIL", "info@myfoxit.com")
+	name := envOr("NP_DEFAULT_ADMIN_NAME", "Administrator")
+	password, custom := os.LookupEnv("NP_DEFAULT_ADMIN_PASSWORD")
+	if !custom {
+		password = "net7toor"
+	}
+	if password == "" {
+		return // explicit opt-out via empty password
+	}
+
+	users, err := store.ListUsers(ctx)
+	if err != nil {
+		log.Error("default admin: list users failed — skipping seed", "err", err)
+		return
+	}
+	for _, u := range users {
+		if u.Local && !u.Disabled && hasRole(u.Roles, "admin") {
+			return // a real local admin already exists — nothing to do
+		}
+		if u.Email == email {
+			return // address already taken — never clobber an existing account
+		}
+	}
+	if _, err := store.CreateLocalUser(ctx, name, email, auth.HashSecret(password)); err != nil {
+		log.Error("default admin: create failed", "email", email, "err", err)
+		return
+	}
+	log.Warn("seeded default admin — CHANGE THE PASSWORD",
+		"email", email, "using_builtin_default_password", !custom,
+		"override_env", "NP_DEFAULT_ADMIN_EMAIL / NP_DEFAULT_ADMIN_PASSWORD / NP_DEFAULT_ADMIN_NAME")
+}
+
+// envOr returns the environment variable for key, or def when it is unset or
+// empty.
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
+// hasRole reports whether roles contains name.
+func hasRole(roles []string, name string) bool {
+	for _, r := range roles {
+		if r == name {
+			return true
+		}
+	}
+	return false
 }
 
 func initCmd(args []string) {

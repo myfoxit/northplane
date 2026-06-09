@@ -106,6 +106,15 @@ var setupMu sync.Mutex
 // minSetupPasswordLen is the minimum length for the initial admin password.
 const minSetupPasswordLen = 12
 
+// Session lifetimes. A normal login lasts sessionTTL; ticking "remember me"
+// extends it to rememberTTL and makes the cookie persist across browser
+// restarts (longer MaxAge). Both are DB-backed, so either way the session
+// also survives a server restart.
+const (
+	sessionTTL  = 12 * time.Hour
+	rememberTTL = 30 * 24 * time.Hour
+)
+
 // FirstRunOpen reports whether the install is fresh enough to expose the
 // /setup page: no local (break-glass) user and no API token exists yet.
 // SSO-provisioned users do not close the gate — an OIDC install may still
@@ -229,12 +238,19 @@ func (p *Pages) localLogin(w http.ResponseWriter, r *http.Request) {
 	if len(roles) == 0 {
 		roles = []string{"admin"}
 	}
-	session, err := p.auth.NewSession(r.Context(), user.ID, model.DefaultTenant, roles, nil, 12*time.Hour)
+	// "Remember me" trades a longer-lived, browser-persistent session for
+	// convenience; the default stays short so a shared/forgotten browser
+	// logs out the same day.
+	ttl := sessionTTL
+	if r.FormValue("remember") != "" {
+		ttl = rememberTTL
+	}
+	session, err := p.auth.NewSession(r.Context(), user.ID, model.DefaultTenant, roles, nil, ttl)
 	if err != nil {
 		p.loginPage(w, r, "Interner Fehler.")
 		return
 	}
-	p.setSession(w, r, session)
+	p.setSession(w, r, session, ttl)
 	_, _ = p.store.AppendAudit(r.Context(), &model.AuditEntry{
 		TenantID: model.DefaultTenant, ActorType: model.ActorUser, ActorID: user.ID,
 		Action: "login.local", SourceIP: remoteIP(r),
@@ -252,15 +268,15 @@ func (p *Pages) callback(w http.ResponseWriter, r *http.Request) {
 		p.loginPage(w, r, "SSO-Anmeldung fehlgeschlagen: "+err.Error())
 		return
 	}
-	p.setSession(w, r, session)
+	p.setSession(w, r, session, sessionTTL)
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
-func (p *Pages) setSession(w http.ResponseWriter, r *http.Request, session string) {
+func (p *Pages) setSession(w http.ResponseWriter, r *http.Request, session string, ttl time.Duration) {
 	http.SetCookie(w, &http.Cookie{
 		Name: "np_session", Value: session, Path: "/",
 		HttpOnly: true, Secure: auth.RequestIsHTTPS(r, p.cfg.TrustProxy), SameSite: http.SameSiteLaxMode,
-		MaxAge: int((12 * time.Hour).Seconds()),
+		MaxAge: int(ttl.Seconds()),
 	})
 }
 
@@ -305,6 +321,7 @@ button:hover{background:#1d4ed8}
   <input id="email" name="email" type="email" autocomplete="username" required>
   <label for="password">Passwort</label>
   <input id="password" name="password" type="password" autocomplete="current-password" required>
+  <label style="display:flex;align-items:center;gap:.45rem;font-size:.8rem;color:#94a3b8;margin-top:.9rem"><input type="checkbox" name="remember" value="1" style="width:auto;margin:0"> Angemeldet bleiben</label>
   <button type="submit">Anmelden</button>
   {{if .SSO}}<button type="button" class="sso" onclick="location.href='/auth/oidc'">Single Sign-On</button>{{end}}
   <div class="v">{{.Version}}</div>
@@ -413,12 +430,12 @@ func (p *Pages) setupSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	roles := []string{"admin"} // break-glass local accounts are admins
-	session, err := p.auth.NewSession(r.Context(), user.ID, model.DefaultTenant, roles, nil, 12*time.Hour)
+	session, err := p.auth.NewSession(r.Context(), user.ID, model.DefaultTenant, roles, nil, sessionTTL)
 	if err != nil {
 		p.setupPage(w, r, "Interner Fehler.")
 		return
 	}
-	p.setSession(w, r, session)
+	p.setSession(w, r, session, sessionTTL)
 	_, _ = p.store.AppendAudit(r.Context(), &model.AuditEntry{
 		TenantID: model.DefaultTenant, ActorType: model.ActorUser, ActorID: user.ID,
 		Action: "setup.admin", SourceIP: remoteIP(r),
