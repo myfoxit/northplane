@@ -95,6 +95,7 @@ func bootAPI(t *testing.T) *testAPI {
 	a.registerSites()
 	a.registerAgentConfig()
 	a.registerDirectory()
+	a.registerOpenAPI()
 	h := a.withMiddleware(a.mux)
 
 	mk := func(name string, perms ...model.Permission) string {
