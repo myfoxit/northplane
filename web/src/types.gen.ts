@@ -7,6 +7,23 @@
  */
 
 export interface paths {
+    "/api/v1/agent/checks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Agent-class checks for a host (np-agent pull) */
+        get: operations["get_agent_checks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ai/actions": {
         parameters: {
             query?: never;
@@ -759,6 +776,40 @@ export interface paths {
         post?: never;
         /** Delete dashboard */
         delete: operations["delete_dashboards_name"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/directory/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Directory (LDAP) sync status */
+        get: operations["get_directory_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/directory:sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run a directory (LDAP) sync now */
+        post: operations["post_directory_sync"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1764,6 +1815,94 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List sites */
+        get: operations["get_sites"];
+        put?: never;
+        /** Create site */
+        post: operations["post_sites"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sites/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get site */
+        get: operations["get_sites_name"];
+        /** Update site (If-Match) */
+        put: operations["put_sites_name"];
+        post?: never;
+        /** Delete site */
+        delete: operations["delete_sites_name"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sites/{name}:heartbeat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Edge status heartbeat */
+        post: operations["post_sites_name_heartbeat"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sites/{name}:pull": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Edge config bundle pull (conditional) */
+        get: operations["get_sites_name_pull"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sites:overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Sites with connection status */
+        get: operations["get_sites_overview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/stream": {
         parameters: {
             query?: never;
@@ -2071,6 +2210,17 @@ export interface components {
             scopes: string[];
             tenantId: string;
             version: number;
+        };
+        AgentCheck: {
+            args?: string[];
+            command: string;
+            intervalSeconds?: number;
+            service: string;
+            timeoutSeconds?: number;
+        };
+        AgentChecksResponse: {
+            checks: components["schemas"]["AgentCheck"][];
+            host: string;
         };
         Alert: {
             /** Format: date-time */
@@ -2522,8 +2672,12 @@ export interface components {
             version: number;
         };
         Result: {
-            points: components["schemas"]["Sample"][];
-            series: components["schemas"]["SeriesMeta"];
+            created: number;
+            disabled: number;
+            skipped: number;
+            unchanged: number;
+            updated: number;
+            warnings?: string[];
         };
         Role: {
             /** Format: date-time */
@@ -2560,10 +2714,6 @@ export interface components {
             expectEvery: number;
             source: string;
         };
-        Sample: {
-            t: number;
-            v: number;
-        };
         Schedule: {
             /** Format: date-time */
             createdAt: string;
@@ -2575,20 +2725,6 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
             version: number;
-        };
-        SeriesMeta: {
-            crit?: string;
-            deleted?: boolean;
-            id: number;
-            labels?: {
-                [key: string]: string;
-            };
-            max?: number;
-            metric: string;
-            min?: number;
-            objectId: string;
-            unit?: string;
-            warn?: string;
         };
         ServiceNowAction: {
             assignmentGroup: string;
@@ -2608,6 +2744,24 @@ export interface components {
             tenantId: string;
             textRegex?: string;
             version: number;
+        };
+        Site: {
+            bundle?: string;
+            description?: string;
+            disabled?: boolean;
+            labels?: {
+                [key: string]: string;
+            };
+            name: string;
+            version?: number;
+        };
+        SiteHeartbeat: {
+            applyError?: string;
+            bundleEtag?: string;
+            stats?: {
+                [key: string]: number;
+            };
+            version?: string;
         };
         StateSummary: {
             acked: number;
@@ -2629,6 +2783,15 @@ export interface components {
             notifyDepth: number;
             resultsDepth: number;
             subscribers: number;
+        };
+        Status: {
+            configured: boolean;
+            lastError?: string;
+            lastResult?: components["schemas"]["Result"];
+            /** Format: date-time */
+            lastSyncAt?: string;
+            syncInterval?: string;
+            url?: string;
         };
         Template: {
             /** Format: date-time */
@@ -2960,6 +3123,35 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_agent_checks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentChecksResponse"];
+                };
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
     get_ai_actions: {
         parameters: {
             query?: never;
@@ -5057,6 +5249,64 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    get_directory_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Status"];
+                };
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    post_directory_sync: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Result"];
+                };
             };
             /** @description Problem Details (RFC 9457) */
             default: {
@@ -7767,6 +8017,250 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    get_sites: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["listResponse"];
+                };
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    post_sites: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["Site"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Site"];
+                };
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    get_sites_name: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Site"];
+                };
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    put_sites_name: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["Site"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Site"];
+                };
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    delete_sites_name: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    post_sites_name_heartbeat: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SiteHeartbeat"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    get_sites_name_pull: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    get_sites_overview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["listResponse"];
+                };
             };
             /** @description Problem Details (RFC 9457) */
             default: {

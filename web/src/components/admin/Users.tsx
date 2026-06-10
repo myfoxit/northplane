@@ -54,7 +54,9 @@ export function UsersTab() {
             <TableRow key={u.id}>
               <TableCell className="px-3 py-2 text-foreground">
                 {u.name}
-                {!u.local && <Badge variant="outline" className="ml-2 bg-sky-500/10 text-sky-400 border-sky-800">OIDC</Badge>}
+                {!u.local && (u.subject?.startsWith('ldap|')
+                  ? <Badge variant="outline" className="ml-2 bg-amber-500/10 text-amber-400 border-amber-800">LDAP</Badge>
+                  : <Badge variant="outline" className="ml-2 bg-sky-500/10 text-sky-400 border-sky-800">OIDC</Badge>)}
               </TableCell>
               <TableCell className="px-3 py-2 text-muted-foreground text-xs">{u.email}</TableCell>
               <TableCell className="px-3 py-2 text-xs text-muted-foreground">{u.roles?.join(', ') || '—'}</TableCell>
@@ -82,6 +84,7 @@ export function UsersTab() {
       )}
       {pwUser && <SetPasswordDialog user={pwUser} onClose={() => setPwUser(null)} />}
 
+      <DirectorySyncCard />
       <ChangeOwnPassword />
     </div>
   )
@@ -211,6 +214,61 @@ function ChangeOwnPassword() {
           {ok && <span className="text-sm text-emerald-400">{t('saved')}</span>}
         </form>
         <div className="mt-2"><FormError error={save.error} /></div>
+      </CardContent>
+    </Card>
+  )
+}
+
+// Directory sync (LDAP): visible only when configured — shows the last
+// pass and offers a manual sync. Users arriving from the directory carry
+// the LDAP badge above; their roles come from group→role mappings.
+interface DirectoryStatus {
+  configured: boolean
+  url?: string
+  syncInterval?: string
+  lastSyncAt?: string
+  lastError?: string
+  lastResult?: { created: number; updated: number; unchanged: number; disabled: number; skipped: number; warnings?: string[] }
+}
+
+function DirectorySyncCard() {
+  const { data } = useQuery({
+    queryKey: ['directory', 'status'],
+    queryFn: () => get<DirectoryStatus>('/directory/status'),
+  })
+  const sync = useSave(() => post('/directory:sync', {}), {
+    invalidate: [['directory', 'status'], [...USERS]],
+  })
+  if (!data?.configured) return null
+  const r = data.lastResult
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t('directorySync')}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2 text-sm text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <span className="font-mono text-xs">{data.url}</span>
+          <span>Intervall {data.syncInterval}</span>
+          <span>Letzter Lauf: {data.lastSyncAt ? fmtTime(data.lastSyncAt) : '—'}</span>
+          {r && (
+            <span className="tabular-nums">
+              {r.created} neu · {r.updated} aktualisiert · {r.disabled} deaktiviert · {r.skipped} übersprungen
+            </span>
+          )}
+        </div>
+        {data.lastError && <div className="text-red-400 text-xs">⚠ {data.lastError}</div>}
+        {(r?.warnings?.length ?? 0) > 0 && (
+          <div className="text-xs text-amber-400 space-y-0.5">
+            {r!.warnings!.map((w, i) => <div key={i}>⚠ {w}</div>)}
+          </div>
+        )}
+        <div>
+          <Button size="sm" variant="outline" onClick={() => sync.mutate(undefined)} disabled={sync.isPending}>
+            {sync.isPending ? 'Synchronisiert…' : 'Jetzt synchronisieren'}
+          </Button>
+        </div>
+        <FormError error={sync.error} />
       </CardContent>
     </Card>
   )
