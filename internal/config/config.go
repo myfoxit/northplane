@@ -32,11 +32,13 @@ type Config struct {
 	// when the proxy is trusted and strips inbound forwarded headers.
 	TrustProxy bool `yaml:"trustProxy"`
 
-	Storage StorageConfig `yaml:"storage"`
-	TLS     TLSConfig     `yaml:"tls"`
-	OIDC    OIDCConfig    `yaml:"oidc"`
-	AI      AIConfig      `yaml:"ai"`
-	Backup  BackupConfig  `yaml:"backup"`
+	Storage    StorageConfig    `yaml:"storage"`
+	TLS        TLSConfig        `yaml:"tls"`
+	OIDC       OIDCConfig       `yaml:"oidc"`
+	LDAP       LDAPConfig       `yaml:"ldap"`
+	AI         AIConfig         `yaml:"ai"`
+	Backup     BackupConfig     `yaml:"backup"`
+	Federation FederationConfig `yaml:"federation"`
 
 	// DeadManURL: outgoing heartbeat ping (healthchecks.io-compatible,
 	// SPEC §14.2 / P7). Empty = disabled.
@@ -82,6 +84,61 @@ type OIDCConfig struct {
 	Scopes       []string `yaml:"scopes"`      // default: openid profile email groups
 	GroupsClaim  string   `yaml:"groupsClaim"` // default "groups"
 	AdminGroup   string   `yaml:"adminGroup"`  // bootstrap mapping
+}
+
+// LDAPConfig drives directory user synchronisation and directory login
+// (SPEC §11.2): users are periodically mirrored into the local user
+// table (subject "ldap|…"), groups map onto roles via Role.IdPGroups,
+// and the login form verifies directory users with a search-then-bind.
+// Linux servers are the supported deployment target for directory sync.
+type LDAPConfig struct {
+	URL                string `yaml:"url"`      // ldap://host:389 or ldaps://host:636
+	StartTLS           bool   `yaml:"startTls"` // upgrade ldap:// with StartTLS
+	InsecureSkipVerify bool   `yaml:"insecureSkipVerify"`
+
+	BindDN       string `yaml:"bindDn"`       // service account for sync/search
+	BindPassword string `yaml:"bindPassword"` // env: NORTHPLANE_LDAP_BIND_PASSWORD
+
+	BaseDN     string `yaml:"baseDn"`
+	UserFilter string `yaml:"userFilter"` // default (&(objectClass=person)(mail=*))
+	UserAttr   string `yaml:"userAttr"`   // login/e-mail attribute, default mail
+	NameAttr   string `yaml:"nameAttr"`   // display name, default cn
+	IDAttr     string `yaml:"idAttr"`     // stable id (entryUUID/objectGUID); empty = DN
+
+	GroupAttr   string `yaml:"groupAttr"`   // membership attribute, default memberOf
+	GroupFilter string `yaml:"groupFilter"` // optional member search, {dn}/{user} placeholders
+	GroupBaseDN string `yaml:"groupBaseDn"` // default baseDn
+
+	SyncInterval   time.Duration `yaml:"syncInterval"`   // default 15m
+	DefaultRoles   []string      `yaml:"defaultRoles"`   // when no group maps, default [viewer]
+	AdminGroup     string        `yaml:"adminGroup"`     // group DN/CN bootstrap-mapped to admin
+	DisableMissing bool          `yaml:"disableMissing"` // disable users gone from the directory
+}
+
+// Enabled reports whether directory sync is configured.
+func (l LDAPConfig) Enabled() bool { return l.URL != "" }
+
+// FederationConfig connects this instance to a main instance (SPEC §7.7
+// variant B): the edge instance dials out, reports status and pulls its
+// config bundle — no inbound connectivity to the customer site needed.
+type FederationConfig struct {
+	Mode               string        `yaml:"mode"`    // "" = standalone, "edge"
+	MainURL            string        `yaml:"mainUrl"` // https://main.example.net
+	Token              string        `yaml:"token"`   // np_… minted on main (scope sites:connect)
+	Site               string        `yaml:"site"`    // site name registered on main
+	Interval           time.Duration `yaml:"interval"`
+	InsecureSkipVerify bool          `yaml:"insecureSkipVerify"`
+	// ApplyConfig: pull the site bundle from main and apply it locally
+	// (true = the edge is configured from the main instance).
+	ApplyConfig *bool `yaml:"applyConfig"` // default true
+}
+
+// EdgeEnabled reports whether this instance runs as a connected edge.
+func (f FederationConfig) EdgeEnabled() bool { return f.Mode == "edge" }
+
+// ApplyConfigEnabled defaults to true when unset.
+func (f FederationConfig) ApplyConfigEnabled() bool {
+	return f.ApplyConfig == nil || *f.ApplyConfig
 }
 
 // AIConfig per SPEC §10.2.
@@ -176,8 +233,15 @@ func Defaults() Config {
 		DeadManInterval: time.Minute,
 		Storage:         StorageConfig{EventRetentionMonths: 12},
 		OIDC:            OIDCConfig{Scopes: []string{"openid", "profile", "email", "groups"}, GroupsClaim: "groups"},
-		AI:              AIConfig{Provider: "none", Model: "claude-sonnet-4-6"},
-		Backup:          BackupConfig{Interval: 5 * time.Minute},
+		LDAP: LDAPConfig{
+			UserFilter: "(&(objectClass=person)(mail=*))",
+			UserAttr:   "mail", NameAttr: "cn", GroupAttr: "memberOf",
+			SyncInterval: 15 * time.Minute, DefaultRoles: []string{"viewer"},
+			DisableMissing: true,
+		},
+		AI:         AIConfig{Provider: "none", Model: "claude-sonnet-4-6"},
+		Backup:     BackupConfig{Interval: 5 * time.Minute},
+		Federation: FederationConfig{Interval: time.Minute},
 	}
 }
 
@@ -271,6 +335,42 @@ func (c Config) Validate() error {
 		return fmt.Errorf("ai.provider %q: must be one of none|anthropic|azure-openai|openai-compat", c.AI.Provider)
 	}
 
+	// LDAP coherence: a touched block needs url + baseDn; a bind DN
+	// without its password silently degrades to anonymous bind — refuse.
+	if c.LDAP.Enabled() || c.LDAP.BindDN != "" || c.LDAP.BaseDN != "" {
+		if c.LDAP.URL == "" {
+			return errors.New("ldap configured but ldap.url is empty")
+		}
+		if !strings.HasPrefix(c.LDAP.URL, "ldap://") && !strings.HasPrefix(c.LDAP.URL, "ldaps://") {
+			return fmt.Errorf("ldap.url %q: must start with ldap:// or ldaps://", c.LDAP.URL)
+		}
+		if c.LDAP.BaseDN == "" {
+			return errors.New("ldap configured but ldap.baseDn is empty")
+		}
+		if c.LDAP.BindDN != "" && c.LDAP.BindPassword == "" {
+			return errors.New("ldap.bindDn set without ldap.bindPassword (set it or NORTHPLANE_LDAP_BIND_PASSWORD)")
+		}
+	}
+
+	// Federation: edge mode needs the main URL, a token and a site name.
+	switch c.Federation.Mode {
+	case "", "edge":
+	default:
+		return fmt.Errorf("federation.mode %q: must be empty or \"edge\"", c.Federation.Mode)
+	}
+	if c.Federation.EdgeEnabled() {
+		if !strings.HasPrefix(c.Federation.MainURL, "https://") &&
+			!strings.HasPrefix(c.Federation.MainURL, "http://") {
+			return fmt.Errorf("federation.mainUrl %q: must be an http(s) URL", c.Federation.MainURL)
+		}
+		if c.Federation.Token == "" {
+			return errors.New("federation.mode edge requires federation.token (mint on the main instance, scope sites:connect)")
+		}
+		if c.Federation.Site == "" {
+			return errors.New("federation.mode edge requires federation.site (the site name registered on the main instance)")
+		}
+	}
+
 	return nil
 }
 
@@ -305,6 +405,14 @@ func applyEnv(c *Config) {
 	str("NORTHPLANE_OIDC_ISSUER", &c.OIDC.Issuer)
 	str("NORTHPLANE_OIDC_CLIENT_ID", &c.OIDC.ClientID)
 	str("NORTHPLANE_OIDC_CLIENT_SECRET", &c.OIDC.ClientSecret)
+	str("NORTHPLANE_LDAP_URL", &c.LDAP.URL)
+	str("NORTHPLANE_LDAP_BIND_DN", &c.LDAP.BindDN)
+	str("NORTHPLANE_LDAP_BIND_PASSWORD", &c.LDAP.BindPassword)
+	str("NORTHPLANE_LDAP_BASE_DN", &c.LDAP.BaseDN)
+	str("NORTHPLANE_FEDERATION_MODE", &c.Federation.Mode)
+	str("NORTHPLANE_FEDERATION_MAIN_URL", &c.Federation.MainURL)
+	str("NORTHPLANE_FEDERATION_TOKEN", &c.Federation.Token)
+	str("NORTHPLANE_FEDERATION_SITE", &c.Federation.Site)
 	str("NORTHPLANE_AI_PROVIDER", &c.AI.Provider)
 	str("NORTHPLANE_AI_ENDPOINT", &c.AI.Endpoint)
 	str("NORTHPLANE_AI_MODEL", &c.AI.Model)
@@ -374,6 +482,29 @@ tls:
 #  clientId: "…"
 #  clientSecret: "…"
 #  adminGroup: "<entra-group-object-id>"
+
+# Directory user sync + login (LDAP / Active Directory).
+#ldap:
+#  url: "ldaps://dc1.example.net:636"
+#  bindDn: "cn=svc-northplane,ou=service,dc=example,dc=net"
+#  bindPassword: "…"        # or NORTHPLANE_LDAP_BIND_PASSWORD
+#  baseDn: "dc=example,dc=net"
+#  userFilter: "(&(objectClass=person)(mail=*))"
+#  userAttr: mail            # AD: userPrincipalName
+#  idAttr: ""                # AD: objectGUID, OpenLDAP: entryUUID (stable across DN moves)
+#  groupAttr: memberOf
+#  adminGroup: "cn=northplane-admins,ou=groups,dc=example,dc=net"
+#  syncInterval: 15m
+#  defaultRoles: [viewer]
+#  disableMissing: true
+
+# Connect this instance to a main instance (customer-site edge mode).
+#federation:
+#  mode: edge
+#  mainUrl: "https://main.example.net"
+#  token: "np_…"             # minted on main, scope sites:connect
+#  site: "customer-a"
+#  interval: 60s
 
 ai:
   provider: none     # anthropic | azure-openai | openai-compat | none

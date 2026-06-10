@@ -61,17 +61,25 @@ func SPAHandler() http.Handler {
 
 // Pages renders login/auth/status.
 type Pages struct {
-	store   *storage.Store
-	auth    *auth.Authenticator
-	oidc    *auth.OIDC
-	cfg     config.Config
-	version string
+	store     *storage.Store
+	auth      *auth.Authenticator
+	oidc      *auth.OIDC
+	directory DirectoryVerifier
+	cfg       config.Config
+	version   string
+}
+
+// DirectoryVerifier authenticates a directory (LDAP) user — implemented
+// by *ldap.Syncer; nil when no directory is configured.
+type DirectoryVerifier interface {
+	VerifyLogin(ctx context.Context, email, password string) error
 }
 
 // NewPages builds the server-rendered page handler.
 func NewPages(store *storage.Store, authn *auth.Authenticator, oidc *auth.OIDC,
-	cfg config.Config, version string) *Pages {
-	return &Pages{store: store, auth: authn, oidc: oidc, cfg: cfg, version: version}
+	directory DirectoryVerifier, cfg config.Config, version string) *Pages {
+	return &Pages{store: store, auth: authn, oidc: oidc, directory: directory,
+		cfg: cfg, version: version}
 }
 
 // dummyPassHash is a real argon2id hash verified against unknown/non-local
@@ -214,6 +222,24 @@ func (p *Pages) localLogin(w http.ResponseWriter, r *http.Request) {
 	email := r.FormValue("email")
 	password := r.FormValue("password")
 	user, err := p.store.GetUserByEmail(r.Context(), email)
+
+	// Directory-managed accounts (subject "ldap|…") verify against the
+	// directory itself: search-then-bind, no local hash. Roles come from
+	// the last sync (the directory is the assignment authority).
+	if err == nil && !user.Local && p.directory != nil &&
+		strings.HasPrefix(user.Subject, "ldap|") {
+		if verr := p.directory.VerifyLogin(r.Context(), email, password); verr != nil {
+			p.loginPage(w, r, "Anmeldung fehlgeschlagen.")
+			return
+		}
+		roles := user.Roles
+		if len(roles) == 0 {
+			roles = []string{"viewer"}
+		}
+		p.finishLogin(w, r, user, roles, "login.ldap")
+		return
+	}
+
 	// Always run the (expensive) argon2 verification — against the real
 	// hash when the user exists & is local, otherwise a fixed dummy — so
 	// login timing does not reveal whether an account exists (user
@@ -238,9 +264,15 @@ func (p *Pages) localLogin(w http.ResponseWriter, r *http.Request) {
 	if len(roles) == 0 {
 		roles = []string{"admin"}
 	}
-	// "Remember me" trades a longer-lived, browser-persistent session for
-	// convenience; the default stays short so a shared/forgotten browser
-	// logs out the same day.
+	p.finishLogin(w, r, user, roles, "login.local")
+}
+
+// finishLogin mints the session, audits and redirects — shared by the
+// local-password and directory login paths. "Remember me" trades a
+// longer-lived, browser-persistent session for convenience; the default
+// stays short so a shared/forgotten browser logs out the same day.
+func (p *Pages) finishLogin(w http.ResponseWriter, r *http.Request,
+	user *model.User, roles []string, action string) {
 	ttl := sessionTTL
 	if r.FormValue("remember") != "" {
 		ttl = rememberTTL
@@ -253,7 +285,7 @@ func (p *Pages) localLogin(w http.ResponseWriter, r *http.Request) {
 	p.setSession(w, r, session, ttl)
 	_, _ = p.store.AppendAudit(r.Context(), &model.AuditEntry{
 		TenantID: model.DefaultTenant, ActorType: model.ActorUser, ActorID: user.ID,
-		Action: "login.local", SourceIP: remoteIP(r),
+		Action: action, SourceIP: remoteIP(r),
 	})
 	http.Redirect(w, r, "/", http.StatusFound)
 }

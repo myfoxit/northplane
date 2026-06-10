@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -29,7 +30,7 @@ func testPages(t *testing.T) (*Pages, *storage.Store) {
 	// fresh rate-limit buckets so tests do not throttle each other
 	logins = &loginLimiter{buckets: map[string]*loginBucket{}}
 	authn := &auth.Authenticator{Store: store}
-	return NewPages(store, authn, nil, config.Defaults(), "test"), store
+	return NewPages(store, authn, nil, nil, config.Defaults(), "test"), store
 }
 
 func setupForm(name, email, password, confirm string) *http.Request {
@@ -270,5 +271,71 @@ func TestSetupRateLimited(t *testing.T) {
 	}
 	if last.Header().Get("Retry-After") == "" {
 		t.Fatalf("expected throttling after %v attempts, got %d", loginBurst+1, last.Code)
+	}
+}
+
+// fakeDirectory accepts exactly one e-mail/password pair.
+type fakeDirectory struct{ email, password string }
+
+func (f *fakeDirectory) VerifyLogin(_ context.Context, email, password string) error {
+	if email == f.email && password == f.password {
+		return nil
+	}
+	return fmt.Errorf("invalid credentials")
+}
+
+// TestDirectoryLogin pins the LDAP login path: directory-managed users
+// (subject "ldap|…") verify against the directory and carry their
+// synced roles into the session; local-password users are unaffected.
+func TestDirectoryLogin(t *testing.T) {
+	p, store := testPages(t)
+	p.directory = &fakeDirectory{email: "jane@example.net", password: "dir-secret-99"}
+
+	ctx := context.Background()
+	if _, err := store.CreateUser(ctx, &model.User{
+		Name: "Jane Doe", Email: "jane@example.net",
+		Subject: "ldap|cn=jane doe,ou=people,dc=example,dc=net",
+		Roles:   []string{"operator"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// a local admin closes the first-run gate and pins the local path
+	if _, err := store.CreateLocalUser(ctx, "Admin", "admin@example.net",
+		auth.HashSecret("korrekt-pferd-batterie")); err != nil {
+		t.Fatal(err)
+	}
+
+	// directory user with correct password → session with synced roles
+	rec := httptest.NewRecorder()
+	p.ServeHTTP(rec, loginForm("jane@example.net", "dir-secret-99", false))
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/" {
+		t.Fatalf("ldap login: %d → %q (%s)", rec.Code, rec.Header().Get("Location"), rec.Body.String())
+	}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(sessionCookie(t, rec))
+	principal, err := p.auth.Authenticate(req)
+	if err != nil || principal == nil {
+		t.Fatalf("ldap session: %v", err)
+	}
+	if !principal.Allow("alerts:ack") || principal.Allow("admin:users") {
+		t.Fatal("ldap session must carry the synced operator role, nothing more")
+	}
+	entries, err := store.QueryAudit(ctx, storage.AuditFilter{Action: "login.ldap"})
+	if err != nil || len(entries) == 0 {
+		t.Fatalf("login.ldap audit entry missing (err %v)", err)
+	}
+
+	// wrong directory password → generic failure, no cookie
+	rec = httptest.NewRecorder()
+	p.ServeHTTP(rec, loginForm("jane@example.net", "wrong", false))
+	if rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Body.String(), "fehlgeschlagen") {
+		t.Fatalf("ldap wrong password: %d", rec.Code)
+	}
+
+	// local login still works alongside
+	rec = httptest.NewRecorder()
+	p.ServeHTTP(rec, loginForm("admin@example.net", "korrekt-pferd-batterie", false))
+	if rec.Code != http.StatusFound {
+		t.Fatalf("local login alongside ldap: %d", rec.Code)
 	}
 }

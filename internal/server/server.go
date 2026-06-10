@@ -25,6 +25,8 @@ import (
 	"github.com/northplane/northplane/internal/escalation"
 	"github.com/northplane/northplane/internal/eventbus"
 	"github.com/northplane/northplane/internal/executor"
+	"github.com/northplane/northplane/internal/federation"
+	ldapsync "github.com/northplane/northplane/internal/ldap"
 	"github.com/northplane/northplane/internal/mailin"
 	mcpserver "github.com/northplane/northplane/internal/mcp"
 	"github.com/northplane/northplane/internal/metrics"
@@ -57,6 +59,8 @@ type Server struct {
 	notify  *notify.Manager
 	traps   *traps.Manager
 	mail    *mailin.Manager
+	ldap    *ldapsync.Syncer
+	edge    *federation.Edge
 	hub     *sse.Hub
 	metrics *metrics.Registry
 	httpSrv *http.Server
@@ -132,12 +136,16 @@ func New(ctx context.Context, cfg config.Config, store *storage.Store, ts *tsdb.
 			oidc = o
 		}
 	}
+	s.ldap = ldapsync.New(cfg.LDAP, store, log) // nil when unconfigured
 
 	s.api = &api.API{
 		Cfg: cfg, Store: store, Catalog: s.cat, Bus: s.bus, TSDB: ts,
 		Sched: s.sched, Pipe: s.pipe, Alert: s.alert, Escal: s.escal,
-		Notify: s.notify, Auth: authn, OIDC: oidc, Box: box, Hub: s.hub,
-		Metrics: s.metrics, Log: log, StartedAt: time.Now(), Version: version,
+		Notify: s.notify, Auth: authn, OIDC: oidc, LDAP: s.ldap, Box: box,
+		Hub: s.hub, Metrics: s.metrics, Log: log, StartedAt: time.Now(), Version: version,
+	}
+	if cfg.Federation.EdgeEnabled() {
+		s.edge = federation.NewEdge(cfg.Federation, store, s.api, version, log)
 	}
 	// AI subsystem (graceful when provider=none)
 	s.api.AI = ai.New(ai.Deps{
@@ -166,7 +174,12 @@ func New(ctx context.Context, cfg config.Config, store *storage.Store, ts *tsdb.
 
 // rootHandler routes between API, SSE, server-rendered pages and the SPA.
 func (s *Server) rootHandler(apiHandler http.Handler, authn *auth.Authenticator) http.Handler {
-	pages := web.NewPages(s.Store, authn, s.api.OIDC, s.Cfg, s.version)
+	// typed-nil guard: a nil *ldap.Syncer must stay a nil interface
+	var directory web.DirectoryVerifier
+	if s.ldap != nil {
+		directory = s.ldap
+	}
+	pages := web.NewPages(s.Store, authn, s.api.OIDC, directory, s.Cfg, s.version)
 	spa := web.SPAHandler()
 
 	mux := http.NewServeMux()
@@ -256,6 +269,12 @@ func (s *Server) Run(ctx context.Context) error {
 	spawn(s.api.WebhookDispatcher)
 	spawn(s.api.ReportScheduler)
 	spawn(s.deadManLoop)
+	if s.ldap != nil {
+		spawn(s.ldap.Run)
+	}
+	if s.edge != nil {
+		spawn(s.edge.Run)
+	}
 	if svc, ok := s.api.AI.(interface{ Run(context.Context) }); ok {
 		spawn(svc.Run)
 	}

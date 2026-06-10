@@ -37,6 +37,7 @@ const (
 	KindSavedFilter      = "saved-filter"
 	KindStaticGroup      = "static-group" // Nagios import fidelity (SPEC §6.2)
 	KindPreference       = "preference"   // per-actor UI settings (name = actor ID)
+	KindSite             = "site"         // connected edge instances (SPEC §7.7)
 )
 
 // ResourceEnvelope wraps a stored document.
