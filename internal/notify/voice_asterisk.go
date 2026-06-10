@@ -20,21 +20,22 @@ import (
 // the Twilio gather flow but without any cloud dependency.
 //
 // Channel config:
-//   host       AMI host (required)
-//   port       AMI port, default 5038
-//   username   AMI manager user (required)
-//   secret     AMI manager secret, $SECRET ref supported (required)
-//   channel    originate channel template with {to}, e.g. "PJSIP/{to}@trunk" (required)
-//   context    dialplan context, default "northplane-alert"
-//   exten      dialplan extension, default "s"
-//   priority   dialplan priority, default "1"
-//   application/appData
-//              alternative to context/exten: run one application
-//              (e.g. application=Playback, appData=alert-sound)
-//   callerId   optional caller id, e.g. "Northplane <8000>"
-//   timeoutMs  ring timeout passed to Originate, default 30000
-//   tls        "on" = AMI over TLS (Asterisk tlsenable, port 5039)
-//   insecure   "true" = skip TLS certificate verification
+//
+//	host       AMI host (required)
+//	port       AMI port, default 5038
+//	username   AMI manager user (required)
+//	secret     AMI manager secret, $SECRET ref supported (required)
+//	channel    originate channel template with {to}, e.g. "PJSIP/{to}@trunk" (required)
+//	context    dialplan context, default "northplane-alert"
+//	exten      dialplan extension, default "s"
+//	priority   dialplan priority, default "1"
+//	application/appData
+//	           alternative to context/exten: run one application
+//	           (e.g. application=Playback, appData=alert-sound)
+//	callerId   optional caller id, e.g. "Northplane <8000>"
+//	timeoutMs  ring timeout passed to Originate, default 30000
+//	tls        "on" = AMI over TLS (Asterisk tlsenable, port 5039)
+//	insecure   "true" = skip TLS certificate verification
 //
 // The rendered alert text and ack URL travel as channel variables
 // (NP_TEXT, NP_SEVERITY, NP_ACK_URL) so the dialplan can speak and act

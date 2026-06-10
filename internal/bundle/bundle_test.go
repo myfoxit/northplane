@@ -137,12 +137,12 @@ func TestRenderSortsWithinKind(t *testing.T) {
 func TestValidateFindsProblems(t *testing.T) {
 	docs := []Doc{
 		{Kind: "Host", Metadata: Metadata{Name: "a"}},
-		{Kind: "Host", Metadata: Metadata{Name: "a"}},                  // duplicate
-		{Kind: "Service", Metadata: Metadata{Name: "svc"}},             // missing host
-		{Kind: "Host", Metadata: Metadata{Name: "bad\tname"}},          // invalid name
-		{Kind: "Service", Metadata: Metadata{Name: "ok", Host: "a"}},   // fine
-		{Kind: "Service", Metadata: Metadata{Name: "ok", Host: "a"}},   // duplicate service ident
-		{Kind: "Service", Metadata: Metadata{Name: "ok", Host: "b"}},   // distinct: other host
+		{Kind: "Host", Metadata: Metadata{Name: "a"}},                // duplicate
+		{Kind: "Service", Metadata: Metadata{Name: "svc"}},           // missing host
+		{Kind: "Host", Metadata: Metadata{Name: "bad\tname"}},        // invalid name
+		{Kind: "Service", Metadata: Metadata{Name: "ok", Host: "a"}}, // fine
+		{Kind: "Service", Metadata: Metadata{Name: "ok", Host: "a"}}, // duplicate service ident
+		{Kind: "Service", Metadata: Metadata{Name: "ok", Host: "b"}}, // distinct: other host
 	}
 	errs := Validate(docs)
 	if len(errs) != 4 {
