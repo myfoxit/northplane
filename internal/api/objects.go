@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/northplane/northplane/internal/alerting"
 	"github.com/northplane/northplane/internal/auth"
+	"github.com/northplane/northplane/internal/bundle"
 	"github.com/northplane/northplane/internal/checks"
 	"github.com/northplane/northplane/internal/model"
 	"github.com/northplane/northplane/internal/selector"
@@ -608,6 +610,23 @@ func (a *API) validateResourceDoc(kind string, doc map[string]any) error {
 		for _, l := range s.Layers {
 			if len(l.Participants) == 0 {
 				return fmt.Errorf("rotation without participants")
+			}
+		}
+		return nil
+	case storage.KindSite:
+		var site model.Site
+		if err := json.Unmarshal(raw, &site); err != nil {
+			return err
+		}
+		// A broken bundle must fail here, on the main instance, not at
+		// apply time on the disconnected edge.
+		if site.Bundle != "" {
+			docs, err := bundle.ParseBytes([]byte(site.Bundle))
+			if err != nil {
+				return err
+			}
+			if errs := bundle.Validate(docs); len(errs) > 0 {
+				return fmt.Errorf("bundle invalid: %s", strings.Join(errs, "; "))
 			}
 		}
 		return nil

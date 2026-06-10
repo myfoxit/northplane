@@ -23,6 +23,7 @@ import (
 	"github.com/northplane/northplane/internal/config"
 	"github.com/northplane/northplane/internal/escalation"
 	"github.com/northplane/northplane/internal/eventbus"
+	"github.com/northplane/northplane/internal/ldap"
 	"github.com/northplane/northplane/internal/metrics"
 	"github.com/northplane/northplane/internal/model"
 	"github.com/northplane/northplane/internal/notify"
@@ -47,6 +48,7 @@ type API struct {
 	Notify  *notify.Manager
 	Auth    *auth.Authenticator
 	OIDC    *auth.OIDC
+	LDAP    *ldap.Syncer // nil when directory sync is unconfigured
 	Box     *auth.SecretBox
 	Hub     *sse.Hub
 	Metrics *metrics.Registry
@@ -596,6 +598,9 @@ func (a *API) registerAll() {
 	a.registerOpenAPI()
 	a.registerDiscovery()
 	a.registerWebhookSubs()
+	a.registerDirectory()
+	a.registerSites()
+	a.registerAgentConfig()
 }
 
 // param fetches a path wildcard.

@@ -92,6 +92,9 @@ func bootAPI(t *testing.T) *testAPI {
 	a.registerEvents()
 	a.registerIngress()
 	a.registerSystem()
+	a.registerSites()
+	a.registerAgentConfig()
+	a.registerDirectory()
 	h := a.withMiddleware(a.mux)
 
 	mk := func(name string, perms ...model.Permission) string {

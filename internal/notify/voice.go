@@ -14,20 +14,24 @@ import (
 	"github.com/northplane/northplane/internal/model"
 )
 
-// Voice transport (SPEC §9.6): provider-API calls with TTS announcement
-// and DTMF acknowledgement — no own SIP stack (ADR: voice via provider).
+// Voice transport (SPEC §9.6): on-prem-first (cloud is never the only
+// option for a channel — SPEC §9.6 ordering), no own SIP stack.
 //
-// Providers:
-//   - twilio:        config accountSid, authToken ($SECRET ref), from.
-//     Places a call whose TwiML <Say>s the rendered message and
-//     <Gather>s one digit; pressing 4 hits the signed gather callback
-//     (POST /api/v1/voice/gather/{token}) and acknowledges the alert.
+// Providers, in recommended order:
+//   - asterisk:      AMI Originate into a local Asterisk/FreePBX
+//     dialplan (see voice_asterisk.go) — fully on-prem voice.
 //   - generic-http:  config url with {to}/{text} placeholders (GET) or
 //     jsonBody template (POST) — covers sipgate/46elks-style gateways
 //     and on-prem voice boxes.
+//   - twilio (cloud): config accountSid, authToken ($SECRET ref), from.
+//     Places a call whose TwiML <Say>s the rendered message and
+//     <Gather>s one digit; pressing 4 hits the signed gather callback
+//     (POST /api/v1/voice/gather/{token}) and acknowledges the alert.
 func (m *Manager) sendVoice(ctx context.Context, ch *model.NotificationChannel,
 	to, text string, rc *RenderContext) (string, error) {
 	switch ch.Config["provider"] {
+	case "asterisk":
+		return m.sendAsteriskVoice(ctx, ch, to, text, rc)
 	case "twilio", "":
 		if ch.Config["accountSid"] == "" && ch.Config["provider"] == "" {
 			return m.sendGenericVoice(ctx, ch, to, text)
@@ -36,7 +40,7 @@ func (m *Manager) sendVoice(ctx context.Context, ch *model.NotificationChannel,
 	case "generic-http":
 		return m.sendGenericVoice(ctx, ch, to, text)
 	default:
-		return "", fmt.Errorf("voice provider %q not supported (twilio | generic-http)", ch.Config["provider"])
+		return "", fmt.Errorf("voice provider %q not supported (asterisk | generic-http | twilio)", ch.Config["provider"])
 	}
 }
 

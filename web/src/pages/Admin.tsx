@@ -26,6 +26,7 @@ import { ChannelsTab } from '../components/admin/Channels'
 import { SourcesTab } from '../components/admin/Sources'
 import { WebhooksTab, HeartbeatsTab } from '../components/admin/Integrations'
 import { TenantsTab } from '../components/admin/Tenants'
+import { SitesTab } from '../components/admin/Sites'
 import { SecretsTab } from '../components/admin/Secrets'
 import { MCPTab } from '../components/admin/MCP'
 import { AgentsTab } from '../components/admin/Agents'
@@ -34,7 +35,7 @@ import { BundlesTab } from '../components/admin/Bundles'
 
 const tabs = [
   'users', 'roles', 'contacts', 'contactGroups', 'channels', 'eventSources',
-  'webhooks', 'heartbeats', 'tenants', 'secrets', 'tokens', 'mcp', 'agents',
+  'webhooks', 'heartbeats', 'tenants', 'sites', 'secrets', 'tokens', 'mcp', 'agents',
   'deadLetters', 'bundles', 'audit', 'aiQueue', 'health',
 ] as const
 type Tab = typeof tabs[number]
@@ -58,6 +59,7 @@ export function AdminPage() {
       {tab === 'webhooks' && <WebhooksTab />}
       {tab === 'heartbeats' && <HeartbeatsTab />}
       {tab === 'tenants' && <TenantsTab />}
+      {tab === 'sites' && <SitesTab />}
       {tab === 'secrets' && <SecretsTab />}
       {tab === 'tokens' && <TokensTab />}
       {tab === 'mcp' && <MCPTab />}

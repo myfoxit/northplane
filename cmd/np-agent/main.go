@@ -58,6 +58,12 @@ type agentConfig struct {
 
 	// Checks: local plugin executions submitted as passive services.
 	Checks []agentCheck `yaml:"checks"`
+	// Pull: additionally fetch agent-class checks (checkCommand
+	// "agent:exec:…") from the server, so the daemon is configured
+	// centrally (SPEC §8.4). Pulled checks override same-named local
+	// ones; the token then needs objects:read besides objects:write.
+	Pull         bool          `yaml:"pull"`
+	PullInterval time.Duration `yaml:"pullInterval"` // default 5m
 	// Builtin metric collection toggles.
 	Disk []string `yaml:"disk"` // mount points, default ["/"]
 	// Net filters the network interfaces reported (empty = all non-
@@ -126,7 +132,7 @@ func main() {
 	defer stop()
 
 	log.Info("np-agent: started", "host", cfg.Hostname, "server", cfg.Server,
-		"interval", cfg.Interval, "checks", len(cfg.Checks))
+		"interval", cfg.Interval, "checks", len(cfg.Checks), "pull", cfg.Pull)
 
 	// active listener (optional): serve metrics/checks to the server
 	if cfg.Listen != "" {
@@ -142,6 +148,12 @@ func main() {
 		}()
 	}
 
+	// central check config (optional)
+	var pull *puller
+	if cfg.Pull {
+		pull = newPuller(cfg, client, log)
+	}
+
 	// store-and-forward buffer: results survive server outages in memory
 	// (bounded; oldest dropped beyond 10k)
 	var buffer []passiveResult
@@ -149,7 +161,22 @@ func main() {
 	ticker := time.NewTicker(cfg.Interval)
 	defer ticker.Stop()
 	run := func() {
-		results := collect(ctx, cfg)
+		now := time.Now()
+		local := cfg
+		var results []passiveResult
+		if pull != nil {
+			pull.fetch(ctx, now)
+			// central definitions win over same-named local checks
+			overridden := pull.overridden()
+			local.Checks = nil
+			for _, c := range cfg.Checks {
+				if !overridden[c.Service] {
+					local.Checks = append(local.Checks, c)
+				}
+			}
+			results = append(results, pull.run(ctx, now, cfg.Interval)...)
+		}
+		results = append(results, collect(ctx, local)...)
 		buffer = append(buffer, results...)
 		if len(buffer) > 10000 {
 			buffer = buffer[len(buffer)-10000:]
