@@ -11,6 +11,7 @@ import { syncPreferencesFromServer } from '../settings'
 import { CommandPalette } from './CommandPalette'
 import { AISidebar } from './AISidebar'
 import { RefreshControl } from './RefreshControl'
+import { TenantSwitcher } from './TenantSwitcher'
 
 type IconType = ComponentType<{ size?: number; className?: string }>
 
@@ -80,6 +81,7 @@ export function Layout({ children }: { children: ReactNode }) {
           <Radar className="text-primary" size={20} />
           <span className="font-bold tracking-tight">Northplane</span>
         </div>
+        <TenantSwitcher />
         <nav className="flex-1 py-3">
           {nav.map((item) => {
             const active = item.to === '/'

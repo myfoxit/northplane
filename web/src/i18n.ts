@@ -179,6 +179,11 @@ const de = {
   acceptSelected: 'Ausgewählte übernehmen',
   status: 'Status',
   target: 'Ziel',
+  // — cmp / multi-customer console —
+  customer: 'Kunde',
+  customers: 'Kunden',
+  yourTenant: 'Eigener Mandant',
+  activeCustomer: 'Aktiver Kunde',
 } as const
 
 const en: Record<keyof typeof de, string> = {
@@ -359,6 +364,10 @@ const en: Record<keyof typeof de, string> = {
   acceptSelected: 'Accept selected',
   status: 'Status',
   target: 'Target',
+  customer: 'Customer',
+  customers: 'Customers',
+  yourTenant: 'Your tenant',
+  activeCustomer: 'Active customer',
 }
 
 const lang = (typeof navigator !== 'undefined' && navigator.language.startsWith('de')) ? de : en

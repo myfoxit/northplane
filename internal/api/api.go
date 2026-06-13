@@ -503,9 +503,15 @@ func (a *API) idempotent(w http.ResponseWriter, r *http.Request, p *auth.Princip
 }
 
 // audit writes the hash-chained audit entry for a mutation (SPEC §13.5).
+// The entry is attributed to the *acted-on* tenant (tenantOf), not the
+// operator's home tenant: when an admin:tenants operator manages a customer
+// via X-Northplane-Tenant, the action must land in that customer's audit log
+// (ActorID still identifies the operator). For single-tenant installs and any
+// request without the header, tenantOf returns p.TenantID — behaviour is
+// unchanged.
 func (a *API) audit(r *http.Request, p *auth.Principal, action, resource string, before, after any) {
 	e := &model.AuditEntry{
-		TenantID: p.TenantID, ActorType: p.ActorType, ActorID: p.ActorID,
+		TenantID: a.tenantOf(r, p), ActorType: p.ActorType, ActorID: p.ActorID,
 		Action: action, Resource: resource,
 		SourceIP: remoteHost(r), RequestID: requestID(r),
 	}

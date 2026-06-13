@@ -336,6 +336,29 @@ export interface Role {
   version?: number
 }
 
+// Tenant = one isolated customer. The CMP console lets an admin:tenants
+// operator switch the active customer; every module request is then scoped
+// to it via the X-Northplane-Tenant header (see tenant.ts / api.ts).
+export interface Tenant {
+  id: string
+  name: string
+  slug: string
+  disabled?: boolean
+  version?: number
+  createdAt?: string
+  updatedAt?: string
+}
+
+// Whoami = the effective identity+permissions of the current operator
+// (GET /api/v1/whoami). Used to gate the customer switcher on admin:tenants.
+export interface Whoami {
+  actorType: string
+  actorId: string
+  name: string
+  tenantId: string
+  permissions: string[]
+}
+
 export interface EventSourceDef {
   id?: string
   name: string

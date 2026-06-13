@@ -5,6 +5,7 @@
 
 import { QueryClient } from '@tanstack/react-query'
 import type { ZodType } from 'zod'
+import { activeTenantId } from './tenant'
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -60,6 +61,11 @@ export async function api<T>(
   const headers: Record<string, string> = { ...(init?.headers as Record<string, string>) }
   if (init?.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json'
   if (init?.etag) headers['If-Match'] = `"${init.etag}"`
+  // CMP multi-customer console: scope the request to the active customer.
+  // The backend only honours this header for admin:tenants operators
+  // (api.tenantOf); for everyone else it is harmless and ignored.
+  const tenant = activeTenantId()
+  if (tenant && !headers['X-Northplane-Tenant']) headers['X-Northplane-Tenant'] = tenant
   const res = await fetch(`/api/v1${path}`, { ...init, headers, credentials: 'same-origin' })
   if (res.status === 401) {
     window.location.href = '/login'
@@ -102,7 +108,11 @@ export function parseEtag(header: string | null): number {
 }
 
 export async function getWithEtag<T>(path: string, schema?: ZodType<T>): Promise<Versioned<T>> {
-  const res = await fetch(`/api/v1${path}`, { credentials: 'same-origin' })
+  const tenant = activeTenantId()
+  const res = await fetch(`/api/v1${path}`, {
+    credentials: 'same-origin',
+    headers: tenant ? { 'X-Northplane-Tenant': tenant } : undefined,
+  })
   if (res.status === 401) {
     window.location.href = '/login'
     throw new APIError(401, 'auth', 'login required', '')
