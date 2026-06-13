@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"runtime/debug"
 	"sort"
 	"sync"
 	"time"
@@ -86,7 +87,7 @@ func (a *API) registerDiscovery() {
 			a.audit(r, p, "discovery.scan", scan.ID, nil, req)
 			go a.runScan(scan, ipnet)
 			a.writeJSON(w, http.StatusAccepted, scan)
-		})
+		}).Status(http.StatusAccepted)
 
 	a.handle("GET /api/v1/discovery/scans", "List scans", "objects:read", nil, listResponse{},
 		func(w http.ResponseWriter, r *http.Request, p *auth.Principal) {
@@ -117,6 +118,19 @@ func (a *API) registerDiscovery() {
 }
 
 func (a *API) runScan(scan *discoveryScan, ipnet *net.IPNet) {
+	// This runs in a detached goroutine (not under HTTP middleware recovery),
+	// so a panic here would crash the whole process. Recover, mark the scan
+	// failed, and let the server keep running.
+	defer func() {
+		if r := recover(); r != nil {
+			a.Log.Error("discovery: scan panic recovered",
+				"scan", scan.ID, "panic", r, "stack", string(debug.Stack()))
+			scansMu.Lock()
+			now := time.Now().UTC()
+			scan.Status, scan.DoneAt = "failed", &now
+			scansMu.Unlock()
+		}
+	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	sem := make(chan struct{}, 64)

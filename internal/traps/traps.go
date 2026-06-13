@@ -153,12 +153,22 @@ func (m *Manager) reconcile(ctx context.Context) {
 
 	// Start/refresh listeners for every desired address.
 	for addr, sources := range desired {
+		sig := v3Signature(sources)
 		if l, ok := m.listeners[addr]; ok {
-			l.setSources(sources) // hot-swap the source set, same socket
-			continue
+			if l.v3sig == sig {
+				l.setSources(sources) // hot-swap the source set, same socket
+				continue
+			}
+			// The v3 USM table is built once at start(); a changed v3 user
+			// set needs a fresh socket. v2c-only changes don't move the
+			// signature and stay hot-swapped above (no dropped traps).
+			l.stop()
+			delete(m.listeners, addr)
+			m.Log.Info("traps: rebuilding listener for v3 credential change", "listen", addr)
 		}
 		l := newListener(m, addr)
 		l.setSources(sources)
+		l.v3sig = sig
 		if err := l.start(); err != nil {
 			m.Log.Error("traps: listener start failed", "listen", addr, "err", err)
 			continue

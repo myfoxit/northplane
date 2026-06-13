@@ -82,6 +82,44 @@ func sendV2cTrap(t *testing.T, port int, community, trapOID string, extra ...gos
 	}
 }
 
+// sendV3Trap sends an SNMPv3 authPriv trap with the given USM credentials.
+// The sender is authoritative for traps, so it supplies its own engine ID;
+// the receiver localises keys per packet from the configured user table.
+func sendV3Trap(t *testing.T, port int, user, authPass, privPass, trapOID string, extra ...gosnmp.SnmpPDU) {
+	t.Helper()
+	g := &gosnmp.GoSNMP{
+		Target:        "127.0.0.1",
+		Port:          uint16(port),
+		Version:       gosnmp.Version3,
+		Timeout:       2 * time.Second,
+		Retries:       1,
+		MaxOids:       gosnmp.MaxOids,
+		SecurityModel: gosnmp.UserSecurityModel,
+		MsgFlags:      gosnmp.AuthPriv,
+		SecurityParameters: &gosnmp.UsmSecurityParameters{
+			UserName:                 user,
+			AuthoritativeEngineID:    "np-test-sender-engine",
+			AuthenticationProtocol:   gosnmp.SHA,
+			AuthenticationPassphrase: authPass,
+			PrivacyProtocol:          gosnmp.AES,
+			PrivacyPassphrase:        privPass,
+		},
+		Logger: gosnmp.NewLogger(log.New(io.Discard, "", 0)),
+	}
+	if err := g.Connect(); err != nil {
+		t.Fatalf("v3 connect: %v", err)
+	}
+	defer g.Conn.Close()
+
+	vars := []gosnmp.SnmpPDU{
+		{Name: oidSnmpTrapOID, Type: gosnmp.ObjectIdentifier, Value: trapOID},
+	}
+	vars = append(vars, extra...)
+	if _, err := g.SendTrap(gosnmp.SnmpTrap{Variables: vars}); err != nil {
+		t.Fatalf("send v3 trap: %v", err)
+	}
+}
+
 // waitEvent blocks for an event on the subscriber or fails after timeout.
 func waitEvent(t *testing.T, sub *eventbus.Subscriber, timeout time.Duration) *model.Event {
 	t.Helper()
@@ -181,6 +219,87 @@ func TestLinkDownTrapNormalises(t *testing.T) {
 	if norm.Severity != model.SevCritical {
 		t.Errorf("normevent severity = %s, want critical", norm.Severity)
 	}
+}
+
+// TestV3AuthPrivTrapNormalises is the SNMPv3 happy path: an authPriv trap
+// is authenticated and decrypted against the source's USM credentials, then
+// normalised exactly like a v2c trap. It proves v3 traps are no longer
+// dropped before the handler (the listener switches to a v3-capable socket
+// when a source configures a v3User).
+func TestV3AuthPrivTrapNormalises(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	store := newStore(t, ctx)
+	bus := eventbus.New()
+	port := freeUDPPort(t)
+	listen := "udp://127.0.0.1:" + strconv.Itoa(port)
+
+	const user, authPass, privPass = "v3user", "authpass-123456", "privpass-123456"
+	putSource(t, ctx, store, model.EventSource{
+		Name: "edge-v3", Type: "snmp-trap", Enabled: true,
+		Config: map[string]string{
+			"listen": listen, "v3User": user, "v3SecLevel": "authPriv",
+			"v3AuthProto": "SHA", "v3AuthPass": authPass,
+			"v3PrivProto": "AES", "v3PrivPass": privPass,
+		},
+	})
+
+	sub := bus.Subscribe(16)
+	defer sub.Close()
+
+	m := New(store, bus, nil, nil)
+	m.Interval = 50 * time.Millisecond
+	go m.Run(ctx)
+	waitListeners(t, m, 1, 3*time.Second)
+
+	sendV3Trap(t, port, user, authPass, privPass, oidLinkDown,
+		gosnmp.SnmpPDU{Name: oidIfIndex, Type: gosnmp.Integer, Value: 9})
+
+	ev := waitEvent(t, sub, 3*time.Second)
+	if ev.Severity != model.SevCritical {
+		t.Errorf("severity = %s, want critical", ev.Severity)
+	}
+	norm := decodeNorm(t, ev)
+	if norm.Labels["source"] != "edge-v3" {
+		t.Errorf("label source = %q, want edge-v3", norm.Labels["source"])
+	}
+	if norm.Labels[oidIfIndex] != "9" {
+		t.Errorf("varbind label %s = %q, want 9", oidIfIndex, norm.Labels[oidIfIndex])
+	}
+}
+
+// TestV3WrongCredentialsDropped: a v3 trap whose USM passphrase does not
+// match the configured user fails authentication in gosnmp and never reaches
+// the handler — no event is produced.
+func TestV3WrongCredentialsDropped(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	store := newStore(t, ctx)
+	bus := eventbus.New()
+	port := freeUDPPort(t)
+	listen := "udp://127.0.0.1:" + strconv.Itoa(port)
+
+	putSource(t, ctx, store, model.EventSource{
+		Name: "edge-v3", Type: "snmp-trap", Enabled: true,
+		Config: map[string]string{
+			"listen": listen, "v3User": "v3user", "v3SecLevel": "authPriv",
+			"v3AuthProto": "SHA", "v3AuthPass": "the-real-authpass",
+			"v3PrivProto": "AES", "v3PrivPass": "the-real-privpass",
+		},
+	})
+
+	sub := bus.Subscribe(16)
+	defer sub.Close()
+
+	m := New(store, bus, nil, nil)
+	m.Interval = 50 * time.Millisecond
+	go m.Run(ctx)
+	waitListeners(t, m, 1, 3*time.Second)
+
+	sendV3Trap(t, port, "v3user", "wrong-authpass-xx", "wrong-privpass-xx", oidLinkDown)
+	expectNoEvent(t, sub, 700*time.Millisecond)
 }
 
 // TestWrongCommunityDropped: a trap whose community does not match any

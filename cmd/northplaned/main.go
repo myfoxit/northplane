@@ -215,22 +215,28 @@ func seedDemo(ctx context.Context, store *storage.Store, log *slog.Logger, snmpT
 // It seeds only when no enabled local admin is present and the chosen email
 // is free — so an admin you create later is never duplicated, and changing
 // this account's password (or deleting it once another admin exists) sticks
-// across restarts. Credentials are env-overridable; the built-in default is
-// intentionally weak and MUST be rotated in production. Opt out entirely
-// with NP_DEFAULT_ADMIN_DISABLED (or an empty NP_DEFAULT_ADMIN_PASSWORD) —
-// e.g. installs that provision the admin via /setup or OIDC.
+// across restarts. There is NO hardcoded default password: when one is not
+// supplied via NP_DEFAULT_ADMIN_PASSWORD a strong random password is
+// generated and printed to the log exactly once (it is hashed, never
+// recoverable), so a network-exposed fresh install is never reachable with
+// known credentials. Opt out entirely with NP_DEFAULT_ADMIN_DISABLED (or an
+// empty NP_DEFAULT_ADMIN_PASSWORD) — e.g. installs that provision the admin
+// via /setup or OIDC.
 func seedDefaultAdmin(ctx context.Context, store *storage.Store, log *slog.Logger) {
 	if os.Getenv("NP_DEFAULT_ADMIN_DISABLED") != "" {
 		return
 	}
-	email := envOr("NP_DEFAULT_ADMIN_EMAIL", "info@myfoxit.com")
+	email := envOr("NP_DEFAULT_ADMIN_EMAIL", "admin@localhost")
 	name := envOr("NP_DEFAULT_ADMIN_NAME", "Administrator")
 	password, custom := os.LookupEnv("NP_DEFAULT_ADMIN_PASSWORD")
-	if !custom {
-		password = "net7toor"
-	}
-	if password == "" {
+	if custom && password == "" {
 		return // explicit opt-out via empty password
+	}
+	generated := !custom
+	if generated {
+		// 32 hex chars (128 bits) of crypto-random entropy. Printed once
+		// below; we keep only the argon2id hash.
+		password = model.NewSecret(16)
 	}
 
 	users, err := store.ListUsers(ctx)
@@ -250,9 +256,15 @@ func seedDefaultAdmin(ctx context.Context, store *storage.Store, log *slog.Logge
 		log.Error("default admin: create failed", "email", email, "err", err)
 		return
 	}
-	log.Warn("seeded default admin — CHANGE THE PASSWORD",
-		"email", email, "using_builtin_default_password", !custom,
-		"override_env", "NP_DEFAULT_ADMIN_EMAIL / NP_DEFAULT_ADMIN_PASSWORD / NP_DEFAULT_ADMIN_NAME")
+	if generated {
+		log.Warn("seeded default admin with a GENERATED password — save it now, it is not recoverable",
+			"email", email, "password", password,
+			"note", "set NP_DEFAULT_ADMIN_PASSWORD to choose your own, or NP_DEFAULT_ADMIN_DISABLED to skip seeding")
+	} else {
+		log.Warn("seeded default admin — CHANGE THE PASSWORD",
+			"email", email,
+			"override_env", "NP_DEFAULT_ADMIN_EMAIL / NP_DEFAULT_ADMIN_PASSWORD / NP_DEFAULT_ADMIN_NAME")
+	}
 }
 
 // envOr returns the environment variable for key, or def when it is unset or

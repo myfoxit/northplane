@@ -47,7 +47,14 @@ func (a *API) registerAlerts() {
 				next = alerts[len(alerts)-1].ID
 			}
 			a.writeList(w, alerts, next)
-		})
+		}).Query(
+		oaParam{Name: "objectId", Desc: "Filter by monitored object id"},
+		oaParam{Name: "ruleId", Desc: "Filter by alert rule id"},
+		oaParam{Name: "incidentId", Desc: "Filter by incident id"},
+		oaParam{Name: "status", Desc: "Comma-separated alert statuses (e.g. firing,resolved)"},
+		oaParam{Name: "severity", Desc: "Comma-separated severities (e.g. critical,warning)"},
+		oaParam{Name: "since", Desc: "RFC 3339 lower bound on alert time"},
+	)
 
 	a.handle("GET /api/v1/alerts/{id}", "Get alert", "alerts:read", nil, model.Alert{},
 		func(w http.ResponseWriter, r *http.Request, p *auth.Principal) {
@@ -216,7 +223,7 @@ func (a *API) registerAlerts() {
 				next = incidents[len(incidents)-1].ID
 			}
 			a.writeList(w, incidents, next)
-		})
+		}).Query(oaParam{Name: "open", Desc: "Only currently-open incidents when true", Type: "boolean"})
 
 	type incidentBody struct {
 		Title     string         `json:"title"`

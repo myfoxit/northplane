@@ -57,6 +57,14 @@ func buildEmailMessage(from, to, subject, body, idDomain string) []byte {
 	if isHTMLBody(body) {
 		contentType = "text/html; charset=utf-8"
 	}
+	// Subject/recipient/sender are derived from check output and templates
+	// (untrusted): strip CR/LF so an attacker cannot inject extra headers or
+	// a forged body via the Subject line (CWE-93 header injection). mimeHeader
+	// then RFC 2047-encodes any non-ASCII subject.
+	from = sanitizeHeader(from)
+	to = sanitizeHeader(to)
+	subject = sanitizeHeader(subject)
+	idDomain = sanitizeHeader(idDomain)
 	msg := &bytes.Buffer{}
 	fmt.Fprintf(msg, "From: %s\r\n", from)
 	fmt.Fprintf(msg, "To: %s\r\n", to)
@@ -66,6 +74,22 @@ func buildEmailMessage(from, to, subject, body, idDomain string) []byte {
 	fmt.Fprintf(msg, "MIME-Version: 1.0\r\nContent-Type: %s\r\n\r\n", contentType)
 	msg.WriteString(body)
 	return msg.Bytes()
+}
+
+// sanitizeHeader removes CR, LF and other C0 control bytes (except TAB) from
+// an e-mail header value so untrusted input cannot smuggle additional headers
+// or split the message (CWE-93). Folding of legitimately long values and
+// non-ASCII encoding are handled by mimeHeader.
+func sanitizeHeader(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\r' || r == '\n' {
+			return -1
+		}
+		if r < 0x20 && r != '\t' {
+			return -1
+		}
+		return r
+	}, s)
 }
 
 // --- smtp: native SMTP client (STARTTLS/implicit, SPEC §9.6) ---

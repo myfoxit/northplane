@@ -14,6 +14,14 @@ import (
 )
 
 func (a *API) registerEvents() {
+	eventFilters := []oaParam{
+		{Name: "objectId", Desc: "Filter by monitored object id"},
+		{Name: "sourceId", Desc: "Filter by ingress event-source id"},
+		{Name: "severity", Desc: "Filter by severity (e.g. critical)"},
+		{Name: "types", Desc: "Comma-separated event types"},
+		{Name: "from", Desc: "RFC 3339 lower time bound"},
+		{Name: "to", Desc: "RFC 3339 upper time bound"},
+	}
 	a.handle("GET /api/v1/events", "Search events", "events:read", nil, listResponse{},
 		func(w http.ResponseWriter, r *http.Request, p *auth.Principal) {
 			f := a.eventFilter(r, p)
@@ -27,7 +35,7 @@ func (a *API) registerEvents() {
 				next = events[len(events)-1].ID
 			}
 			a.writeList(w, events, next)
-		})
+		}).Query(eventFilters...)
 
 	// NDJSON export with cursor (SPEC §11.5: high-volume consumers).
 	a.handle("GET /api/v1/events:export", "NDJSON event export", "events:read", nil, nil,
@@ -54,7 +62,7 @@ func (a *API) registerEvents() {
 					return
 				}
 			}
-		})
+		}).Query(eventFilters...)
 
 	// SSE stream (SPEC §7.6)
 	a.handle("GET /api/v1/stream", "Server-Sent Events stream", "events:read", nil, nil,

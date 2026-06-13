@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -113,6 +114,20 @@ func (a *API) buildOpenAPI() map[string]any {
 				})
 			}
 		}
+		for _, q := range queryParams(rt) {
+			typ := q.Type
+			if typ == "" {
+				typ = "string"
+			}
+			p := map[string]any{
+				"name": q.Name, "in": "query", "required": false,
+				"schema": map[string]any{"type": typ},
+			}
+			if q.Desc != "" {
+				p["description"] = q.Desc
+			}
+			params = append(params, p)
+		}
 		if len(params) > 0 {
 			op["parameters"] = params
 		}
@@ -129,19 +144,15 @@ func (a *API) buildOpenAPI() map[string]any {
 					"schema": schemaRef(reflect.TypeOf(problemDoc{}), schemas)}},
 			},
 		}
-		okCode := "200"
-		if rt.Method == "POST" && strings.HasSuffix(rt.Pattern, "s") &&
-			!strings.Contains(rt.Pattern, ":") {
-			okCode = "201"
-		}
-		if rt.Resp != nil {
+		okCode := successStatus(rt)
+		if rt.Resp != nil && okCode != "204" {
 			responses[okCode] = map[string]any{
-				"description": "OK",
+				"description": statusText(okCode),
 				"content": map[string]any{"application/json": map[string]any{
 					"schema": schemaRef(rt.Resp, schemas)}},
 			}
 		} else {
-			responses[okCode] = map[string]any{"description": "OK"}
+			responses[okCode] = map[string]any{"description": statusText(okCode)}
 		}
 		op["responses"] = responses
 		paths[oaPath][strings.ToLower(rt.Method)] = op
@@ -169,6 +180,72 @@ func (a *API) buildOpenAPI() map[string]any {
 			},
 		},
 		"paths": paths,
+	}
+}
+
+// queryParams returns the documented query parameters for a route: the
+// explicitly-declared ones, plus cursor-pagination params auto-added for
+// list endpoints (those returning the listResponse envelope), de-duplicated
+// so an explicit declaration wins.
+func queryParams(rt routeMeta) []oaParam {
+	out := append([]oaParam{}, rt.Query...)
+	seen := map[string]bool{}
+	for _, q := range out {
+		seen[q.Name] = true
+	}
+	if rt.Resp == reflect.TypeOf(listResponse{}) {
+		for _, q := range []oaParam{
+			{Name: "cursor", Desc: "Opaque pagination cursor from a prior response's nextCursor", Type: "string"},
+			{Name: "limit", Desc: "Maximum items to return in this page", Type: "integer"},
+		} {
+			if !seen[q.Name] {
+				out = append(out, q)
+			}
+		}
+	}
+	return out
+}
+
+// successStatus picks the documented success status code. An explicit
+// override (Status(...)) wins; otherwise a method/shape heuristic far more
+// accurate than the old "POST + path ends in s → 201":
+//   - DELETE → 204 (the codebase's no-content delete convention)
+//   - POST that creates a top-level collection member (no path variable
+//     anywhere, no :action) → 201
+//   - any other POST (sub-action on a resource, {id}:action) → 200
+//   - everything else → 200
+//
+// Async POSTs that return 202 declare it explicitly via Status(202).
+func successStatus(rt routeMeta) string {
+	if rt.SuccessStatus != 0 {
+		return strconv.Itoa(rt.SuccessStatus)
+	}
+	switch rt.Method {
+	case http.MethodDelete:
+		return "204"
+	case http.MethodPost:
+		// Only a POST to a pure collection (no {param} in the whole path and
+		// no :action) creates a resource → 201. POSTs under a specific
+		// resource (e.g. /objects/{id}/check-now) are actions → 200.
+		if !strings.Contains(rt.Pattern, "{") && !strings.Contains(rt.Pattern, ":") {
+			return "201"
+		}
+		return "200"
+	default:
+		return "200"
+	}
+}
+
+func statusText(code string) string {
+	switch code {
+	case "201":
+		return "Created"
+	case "202":
+		return "Accepted"
+	case "204":
+		return "No Content"
+	default:
+		return "OK"
 	}
 }
 

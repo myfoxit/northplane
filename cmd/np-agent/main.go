@@ -64,6 +64,14 @@ type agentConfig struct {
 	// ones; the token then needs objects:read besides objects:write.
 	Pull         bool          `yaml:"pull"`
 	PullInterval time.Duration `yaml:"pullInterval"` // default 5m
+	// PullAllow is the LOCAL allowlist of plugin command basenames that
+	// server-pulled checks may execute (e.g. ["check_disk","check_http"]).
+	// It is configured on the agent, never sent by the server, so a
+	// compromised or hostile server cannot run arbitrary commands across the
+	// fleet (RCE). Pulled commands must be bare plugin names (no path
+	// separators) resolved within pluginPATH. When empty, pulled checks are
+	// refused (default-deny) — set pullAllow to use central config pull.
+	PullAllow []string `yaml:"pullAllow"`
 	// Builtin metric collection toggles.
 	Disk []string `yaml:"disk"` // mount points, default ["/"]
 	// Net filters the network interfaces reported (empty = all non-

@@ -2,9 +2,12 @@ package traps
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -21,12 +24,18 @@ type listener struct {
 	mgr  *Manager
 	addr string
 
-	tl   *gosnmp.TrapListener
-	done chan struct{} // closed when the Listen goroutine returns
+	tl    *gosnmp.TrapListener
+	done  chan struct{} // closed when the Listen goroutine returns
+	v3sig string        // fingerprint of bound v3 USM creds (reconcile restart key)
 
 	mu      sync.RWMutex
 	sources []boundSource // candidate sources sharing this address
 }
+
+// trapEngineID is the receiver's own SNMP engine ID for v3. The sender's
+// engine ID is authoritative for traps (gosnmp localises keys per packet),
+// so this only needs to be a valid SnmpEngineID (RFC 3411: 5–32 octets).
+const trapEngineID = "northplane-trap-receiver"
 
 func newListener(mgr *Manager, addr string) *listener {
 	return &listener{mgr: mgr, addr: addr, done: make(chan struct{})}
@@ -52,16 +61,27 @@ func (l *listener) snapshot() []boundSource {
 // a usable socket (and a bind error surfaces synchronously).
 func (l *listener) start() error {
 	tl := gosnmp.NewTrapListener()
-	// A v3-capable Params with USM enabled: per-trap unmarshalling needs
-	// matching SecurityParameters, which the OnNewTrap layer can't supply
-	// after the fact for authPriv. We keep v2c the default and let the
-	// handler reject mismatched community/user. Logger is the zero value
-	// so gosnmp stays silent (its Print/Printf no-op on a nil logger).
-	tl.Params = &gosnmp.GoSNMP{
+	// Logger is the zero value so gosnmp stays silent (its Print/Printf
+	// no-op on a nil logger). Community is validated per-source in the
+	// handler, so we leave it empty here.
+	params := &gosnmp.GoSNMP{
 		Version:   gosnmp.Version2c,
-		Community: "", // community is validated per-source in the handler
+		Community: "",
 		Logger:    gosnmp.Logger{},
 	}
+	// If any bound source configures a v3 USM user, switch the socket into
+	// v3 mode with a per-user security table. Decrypting/authenticating an
+	// authPriv trap needs the matching USM credentials available before the
+	// OnNewTrap callback, which only a TrapSecurityParametersTable can
+	// supply. A Version3 listener still receives v1/v2c traps — gosnmp reads
+	// the version per packet — so existing community sources keep working.
+	if table := l.buildUSMTable(); table != nil {
+		params.Version = gosnmp.Version3
+		params.SecurityModel = gosnmp.UserSecurityModel
+		params.SecurityParameters = &gosnmp.UsmSecurityParameters{AuthoritativeEngineID: trapEngineID}
+		params.TrapSecurityParametersTable = table
+	}
+	tl.Params = params
 	tl.OnNewTrap = l.handle
 
 	errCh := make(chan error, 1)
@@ -84,6 +104,112 @@ func (l *listener) start() error {
 		tl.Close()
 		return fmt.Errorf("listen %s: timed out waiting for socket", l.addr)
 	}
+}
+
+// buildUSMTable assembles the gosnmp v3 security table from every bound
+// source that configures a v3User. Returns nil when there are no v3 sources
+// so the listener stays in plain v2c mode. A source with an unusable USM
+// config (e.g. an auth/priv passphrase that fails key derivation) is logged
+// and skipped rather than failing the whole listener.
+func (l *listener) buildUSMTable() *gosnmp.SnmpV3SecurityParametersTable {
+	var table *gosnmp.SnmpV3SecurityParametersTable
+	for _, bs := range l.snapshot() {
+		user := strings.TrimSpace(bs.src.Config["v3User"])
+		if user == "" {
+			continue
+		}
+		if table == nil {
+			table = gosnmp.NewSnmpV3SecurityParametersTable(gosnmp.Logger{})
+		}
+		if err := table.Add(user, usmFromConfig(bs.src.Config)); err != nil {
+			l.mgr.Log.Error("traps: invalid v3 USM config; source disabled",
+				"source", bs.src.Name, "user", user, "err", err)
+		}
+	}
+	return table
+}
+
+// usmFromConfig maps an snmp-trap source's v3* config to gosnmp USM params.
+// Security level is taken from v3SecLevel (noAuthNoPriv|authNoPriv|authPriv),
+// defaulting to the strongest level the supplied passphrases support.
+func usmFromConfig(c map[string]string) *gosnmp.UsmSecurityParameters {
+	usm := &gosnmp.UsmSecurityParameters{UserName: strings.TrimSpace(c["v3User"])}
+	authPass := c["v3AuthPass"]
+	privPass := c["v3PrivPass"]
+	level := strings.TrimSpace(c["v3SecLevel"])
+	if level == "" { // infer from what was provided
+		switch {
+		case authPass != "" && privPass != "":
+			level = "authPriv"
+		case authPass != "":
+			level = "authNoPriv"
+		default:
+			level = "noAuthNoPriv"
+		}
+	}
+	switch level {
+	case "authPriv":
+		usm.AuthenticationProtocol = trapAuthProto(c["v3AuthProto"])
+		usm.AuthenticationPassphrase = authPass
+		usm.PrivacyProtocol = trapPrivProto(c["v3PrivProto"])
+		usm.PrivacyPassphrase = privPass
+	case "authNoPriv":
+		usm.AuthenticationProtocol = trapAuthProto(c["v3AuthProto"])
+		usm.AuthenticationPassphrase = authPass
+	}
+	return usm
+}
+
+func trapAuthProto(s string) gosnmp.SnmpV3AuthProtocol {
+	switch strings.ToUpper(strings.TrimSpace(s)) {
+	case "MD5":
+		return gosnmp.MD5
+	case "SHA224":
+		return gosnmp.SHA224
+	case "SHA256":
+		return gosnmp.SHA256
+	case "SHA384":
+		return gosnmp.SHA384
+	case "SHA512":
+		return gosnmp.SHA512
+	default:
+		return gosnmp.SHA
+	}
+}
+
+func trapPrivProto(s string) gosnmp.SnmpV3PrivProtocol {
+	switch strings.ToUpper(strings.TrimSpace(s)) {
+	case "DES":
+		return gosnmp.DES
+	case "AES192":
+		return gosnmp.AES192
+	case "AES256":
+		return gosnmp.AES256
+	default:
+		return gosnmp.AES
+	}
+}
+
+// v3Signature fingerprints the v3 USM credentials of a source set. The USM
+// table is built once at start(), so reconcile uses this to decide when a
+// listener must be rebuilt (v3 user added/changed) versus hot-swapped
+// (v2c-only change). Passphrases are hashed so the signature is never
+// sensitive if logged.
+func v3Signature(sources []boundSource) string {
+	var users []string
+	for _, bs := range sources {
+		c := bs.src.Config
+		if strings.TrimSpace(c["v3User"]) == "" {
+			continue
+		}
+		users = append(users, strings.Join([]string{
+			c["v3User"], c["v3SecLevel"], c["v3AuthProto"], c["v3AuthPass"],
+			c["v3PrivProto"], c["v3PrivPass"],
+		}, "\x00"))
+	}
+	sort.Strings(users)
+	sum := sha256.Sum256([]byte(strings.Join(users, "\x1e")))
+	return hex.EncodeToString(sum[:])
 }
 
 // stop closes the socket and waits for the Listen goroutine to exit.
@@ -148,10 +274,10 @@ func (l *listener) handle(pkt *gosnmp.SnmpPacket, u *net.UDPAddr) {
 
 // match selects the source on this listener whose auth matches the trap.
 // v1/v2c: community equals Config["community"] (default "public").
-// v3: USM user equals Config["v3User"]. (gosnmp validates the v3 auth/priv
-// cryptography during UnmarshalTrap before this point when Params carry the
-// USM credentials; without a per-source USM table we match on user name and
-// treat a successfully-unmarshalled v3 packet as authenticated.)
+// v3: USM user equals Config["v3User"]. gosnmp has already authenticated and
+// (for authPriv) decrypted the packet against the per-user USM table built in
+// buildUSMTable — a trap that fails USM never reaches this point — so a
+// matching user name here means the trap was cryptographically authentic.
 func (l *listener) match(pkt *gosnmp.SnmpPacket) (boundSource, bool) {
 	sources := l.snapshot()
 	switch pkt.Version {

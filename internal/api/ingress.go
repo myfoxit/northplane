@@ -126,7 +126,7 @@ func (a *API) registerIngress() {
 				}
 			}
 			a.writeJSON(w, http.StatusAccepted, resp)
-		})
+		}).Status(http.StatusAccepted)
 
 	// Heartbeats (SPEC §7.5: dead-man inputs; GET allows curl-in-cron).
 	a.handle("GET /api/v1/heartbeats", "List heartbeats", "objects:read", nil, listResponse{},

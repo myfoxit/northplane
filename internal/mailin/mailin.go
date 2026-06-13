@@ -24,6 +24,7 @@ import (
 	"mime/quotedprintable"
 	"net"
 	"net/mail"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -311,7 +312,7 @@ func (p *poller) run(ctx context.Context) {
 	defer log.Info("mailin: poller stopped")
 
 	// Poll once immediately, then on each tick.
-	p.pollOnce(ctx, log)
+	p.safePoll(ctx, log)
 	ticker := time.NewTicker(p.cfg.pollInterval)
 	defer ticker.Stop()
 	for {
@@ -319,9 +320,24 @@ func (p *poller) run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			p.pollOnce(ctx, log)
+			p.safePoll(ctx, log)
 		}
 	}
+}
+
+// safePoll runs one poll cycle, recovering from any panic. pollOnce parses
+// untrusted MIME from arbitrary senders; without this an unrecovered panic
+// in the parser would crash the entire process (Go propagates a goroutine
+// panic to the runtime). A bad message is logged and the poller survives to
+// the next tick.
+func (p *poller) safePoll(ctx context.Context, log *slog.Logger) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error("mailin: poll panic recovered",
+				"panic", r, "stack", string(debug.Stack()))
+		}
+	}()
+	p.pollOnce(ctx, log)
 }
 
 // pollOnce runs a full IMAP cycle: connect, login, select, search unseen,

@@ -316,7 +316,7 @@ func (a *API) registerAdmin() {
 			}
 			a.audit(r, p, "dlq.replay", param(r, "id"), nil, nil)
 			w.WriteHeader(http.StatusAccepted)
-		})
+		}).Status(http.StatusAccepted)
 
 	// Web Push subscription registration (ADR-12)
 	type pushSub struct {
