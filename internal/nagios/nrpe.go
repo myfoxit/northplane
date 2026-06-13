@@ -21,7 +21,14 @@ const (
 	nrpeResponse = 2
 
 	nrpeV2BufLen = 1024
-	nrpeV2Size   = 2 + 2 + 4 + 2 + nrpeV2BufLen // 1034
+	// On the wire a v2 packet is sizeof(struct packet), which every real
+	// daemon emits with the C compiler's 4-byte struct alignment: the
+	// 2+2+4+2+1024 = 1034 logical bytes are padded up to 1036 with two
+	// trailing alignment bytes. Sending/reading 1034 makes genuine nrpe
+	// daemons block waiting for the missing two bytes or fail the CRC, so
+	// the default (v2) NRPE check is broken without this padding.
+	nrpeV2Pad  = 2
+	nrpeV2Size = 2 + 2 + 4 + 2 + nrpeV2BufLen + nrpeV2Pad // 1036
 )
 
 // NRPEOptions configure a query.

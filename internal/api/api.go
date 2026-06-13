@@ -112,6 +112,46 @@ type routeMeta struct {
 	Tag     string
 	Req     reflect.Type
 	Resp    reflect.Type
+	// Query are the documented query parameters (OpenAPI omitted these
+	// entirely before; clients relied on undocumented filtering). Cursor
+	// pagination params are added automatically for list endpoints.
+	Query []oaParam
+	// SuccessStatus overrides the heuristic success status code (e.g. 202
+	// for async :action POSTs, 204 for no-content). 0 = use the heuristic.
+	SuccessStatus int
+}
+
+// oaParam is one documented query parameter.
+type oaParam struct {
+	Name string
+	Desc string
+	Type string // "string" | "integer" | "boolean"; "" → "string"
+}
+
+// routeBuilder allows a registration to declare query params / status code
+// fluently: a.handle(...).Query(...).Status(202). Returned by handle; older
+// call sites simply ignore it.
+type routeBuilder struct {
+	a   *API
+	idx int
+}
+
+// Query documents additional query parameters on the just-registered route.
+func (rb *routeBuilder) Query(params ...oaParam) *routeBuilder {
+	if rb == nil || rb.idx < 0 {
+		return rb
+	}
+	rb.a.routes[rb.idx].Query = append(rb.a.routes[rb.idx].Query, params...)
+	return rb
+}
+
+// Status sets the documented success status code (e.g. 202, 204).
+func (rb *routeBuilder) Status(code int) *routeBuilder {
+	if rb == nil || rb.idx < 0 {
+		return rb
+	}
+	rb.a.routes[rb.idx].SuccessStatus = code
+	return rb
 }
 
 // New assembles the router.
@@ -125,7 +165,7 @@ func New(a *API) http.Handler {
 // Pattern uses ServeMux syntax plus the `:action` extension:
 // "POST /api/v1/alerts/{id}:ack" routes through an actionRouter.
 func (a *API) handle(pattern, summary string, perm model.Permission, req, resp any,
-	h func(w http.ResponseWriter, r *http.Request, p *auth.Principal)) {
+	h func(w http.ResponseWriter, r *http.Request, p *auth.Principal)) *routeBuilder {
 	method, path, _ := strings.Cut(pattern, " ")
 	meta := routeMeta{Method: method, Pattern: path, Summary: summary,
 		Perm: perm, Tag: tagOf(path)}
@@ -186,9 +226,10 @@ func (a *API) handle(pattern, summary string, perm model.Permission, req, resp a
 		} else {
 			ar.bySuffix[suffix] = actionEntry{paramName: paramName, handler: wrapped}
 		}
-		return
+		return &routeBuilder{a: a, idx: len(a.routes) - 1}
 	}
 	a.mux.HandleFunc(pattern, wrapped)
+	return &routeBuilder{a: a, idx: len(a.routes) - 1}
 }
 
 func splitLastSegment(path string) (parent, last string) {

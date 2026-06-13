@@ -42,6 +42,12 @@ func (d *Downtime) ActiveAt(t time.Time) bool {
 		}
 		return !t.Before(*d.StartedAt) && t.Before(d.StartedAt.Add(d.FlexDuration.D()))
 	default:
+		// A recurring downtime repeats its [Start,End] window on the RRULE
+		// cadence; without this it would suppress only its first window and
+		// then page through every later occurrence (SPEC §6.3).
+		if d.RRule != "" {
+			return d.recurringActiveAt(t)
+		}
 		return !t.Before(d.Start) && t.Before(d.End)
 	}
 }

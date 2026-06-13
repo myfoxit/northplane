@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -34,10 +35,10 @@ func pullServer(t *testing.T, checks []remoteCheck, fail *atomic.Bool) *httptest
 	return srv
 }
 
-func testPuller(t *testing.T, srv *httptest.Server) *puller {
+func testPuller(t *testing.T, srv *httptest.Server, allow ...string) *puller {
 	t.Helper()
 	cfg := agentConfig{Server: srv.URL, Token: "np_test", Hostname: "db-01",
-		Interval: time.Minute}
+		Interval: time.Minute, PullAllow: allow}
 	return newPuller(cfg, srv.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
@@ -109,12 +110,13 @@ func TestPullerKeepsSetOnServerOutage(t *testing.T) {
 }
 
 func TestPullerRunExecutesPlugin(t *testing.T) {
-	// /bin/sh is universally present; "exit 1" yields WARNING
+	// "sh" is a bare name resolvable via pluginPATH (/bin) and must be in the
+	// LOCAL allowlist for a pulled check to run; "exit 1" yields WARNING.
 	srv := pullServer(t, []remoteCheck{{
-		Service: "always-warn", Command: "/bin/sh",
+		Service: "always-warn", Command: "sh",
 		Args: []string{"-c", "echo WARN - synthetic; exit 1"}, TimeoutSeconds: 5,
 	}}, nil)
-	p := testPuller(t, srv)
+	p := testPuller(t, srv, "sh")
 	p.fetch(context.Background(), time.Now())
 	results := p.run(context.Background(), time.Now(), time.Minute)
 	if len(results) != 1 {
@@ -124,5 +126,40 @@ func TestPullerRunExecutesPlugin(t *testing.T) {
 	if r.Host != "db-01" || r.Service != "always-warn" || r.State != 1 ||
 		r.Output != "WARN - synthetic" {
 		t.Fatalf("plugin result: %+v", r)
+	}
+}
+
+// TestPullerRefusesUnsafeCommands is the fleet-RCE guard: a hostile or
+// compromised server cannot make agents execute arbitrary commands. Pulled
+// commands must be bare plugin names present in the local pullAllow list.
+func TestPullerRefusesUnsafeCommands(t *testing.T) {
+	cases := []struct {
+		name    string
+		command string
+		allow   []string
+	}{
+		{"absolute path", "/bin/sh", []string{"sh", "rm"}},
+		{"relative path", "./evil.sh", []string{"evil.sh"}},
+		{"traversal", "..\\..\\evil", []string{"evil"}},
+		{"not in allowlist", "rm", []string{"check_disk"}},
+		{"empty allowlist default-deny", "check_disk", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := pullServer(t, []remoteCheck{{
+				Service: "x", Command: tc.command,
+				Args: []string{"-rf", "/"}, TimeoutSeconds: 5,
+			}}, nil)
+			p := testPuller(t, srv, tc.allow...)
+			p.fetch(context.Background(), time.Now())
+			results := p.run(context.Background(), time.Now(), time.Minute)
+			if len(results) != 1 {
+				t.Fatalf("results: %+v", results)
+			}
+			r := results[0]
+			if r.State != 3 || !strings.HasPrefix(r.Output, "UNKNOWN - command refused by agent allowlist") {
+				t.Fatalf("expected refusal, got %+v", r)
+			}
+		})
 	}
 }

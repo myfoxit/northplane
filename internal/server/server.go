@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -237,6 +238,27 @@ func isStreamingPath(path string) bool {
 	}
 }
 
+// workerRestartBackoff delays restarting a background worker after it
+// panics, so a deterministically-panicking worker degrades to a slow
+// log loop rather than a hot CPU spin.
+const workerRestartBackoff = time.Second
+
+// superviseWorker runs fn, recovering from any panic so a single
+// background worker cannot crash the whole process. It returns true if fn
+// panicked (the caller may restart it) and false if fn returned normally
+// — e.g. because ctx was cancelled.
+func superviseWorker(ctx context.Context, log *slog.Logger, name string, fn func(context.Context)) (panicked bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			panicked = true
+			log.Error("server: background worker panicked; restarting",
+				"worker", name, "panic", r, "stack", string(debug.Stack()))
+		}
+	}()
+	fn(ctx)
+	return false
+}
+
 // Run starts all subsystems and serves until ctx is cancelled.
 func (s *Server) Run(ctx context.Context) error {
 	for _, e := range s.cat.All() {
@@ -246,37 +268,47 @@ func (s *Server) Run(ctx context.Context) error {
 	// Track every background worker so graceful shutdown can wait for them
 	// to drain in-flight work (pipeline writes, notify/escalation delivery)
 	// after the HTTP server stops accepting requests. Each Run honours ctx
-	// cancellation; we only add the WaitGroup bookkeeping. spawn wraps the
-	// launch so a worker that doesn't return cleanly still releases the wg.
+	// cancellation; we only add the WaitGroup bookkeeping. spawn supervises
+	// the worker: a panic is recovered (in Go an unrecovered goroutine panic
+	// kills the whole process) and the worker is restarted with a short
+	// backoff so one bad iteration can't take a subsystem permanently dark.
 	var wg sync.WaitGroup
-	spawn := func(run func(context.Context)) {
+	spawn := func(name string, run func(context.Context)) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			run(ctx)
+			for superviseWorker(ctx, s.Log, name, run) {
+				// superviseWorker returned true → it panicked. Back off,
+				// then restart unless we're shutting down.
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(workerRestartBackoff):
+				}
+			}
 		}()
 	}
-	spawn(s.sched.Run)
-	spawn(func(ctx context.Context) { s.exec.Run(ctx, s.sched) })
-	spawn(s.pipe.Run)
-	spawn(s.alert.Run)
-	spawn(s.correl.Run)
-	spawn(s.escal.Run)
-	spawn(s.notify.Run)
-	spawn(s.traps.Run)
-	spawn(s.mail.Run)
-	spawn(s.api.Janitor)
-	spawn(s.api.WebhookDispatcher)
-	spawn(s.api.ReportScheduler)
-	spawn(s.deadManLoop)
+	spawn("scheduler", s.sched.Run)
+	spawn("executor", func(ctx context.Context) { s.exec.Run(ctx, s.sched) })
+	spawn("pipeline", s.pipe.Run)
+	spawn("alerting", s.alert.Run)
+	spawn("correlator", s.correl.Run)
+	spawn("escalation", s.escal.Run)
+	spawn("notify", s.notify.Run)
+	spawn("traps", s.traps.Run)
+	spawn("mailin", s.mail.Run)
+	spawn("api-janitor", s.api.Janitor)
+	spawn("webhook-dispatcher", s.api.WebhookDispatcher)
+	spawn("report-scheduler", s.api.ReportScheduler)
+	spawn("dead-man", s.deadManLoop)
 	if s.ldap != nil {
-		spawn(s.ldap.Run)
+		spawn("ldap-sync", s.ldap.Run)
 	}
 	if s.edge != nil {
-		spawn(s.edge.Run)
+		spawn("federation-edge", s.edge.Run)
 	}
 	if svc, ok := s.api.AI.(interface{ Run(context.Context) }); ok {
-		spawn(svc.Run)
+		spawn("ai", svc.Run)
 	}
 
 	ln, err := net.Listen("tcp", s.Cfg.Listen)

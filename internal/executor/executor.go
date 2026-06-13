@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -105,6 +106,7 @@ func (ex *Executor) Run(ctx context.Context, sched *scheduler.Scheduler) {
 			builtinSem <- struct{}{}
 			go func(j scheduler.Job, e *catalog.Entry) {
 				defer func() { <-builtinSem; wg.Done() }()
+				defer ex.recoverCheck(j, e)
 				ex.runBuiltin(ctx, j, e)
 			}(job, entry)
 		case model.CommandExec:
@@ -112,6 +114,7 @@ func (ex *Executor) Run(ctx context.Context, sched *scheduler.Scheduler) {
 			ex.sem <- struct{}{}
 			go func(j scheduler.Job, e *catalog.Entry) {
 				defer func() { <-ex.sem; wg.Done() }()
+				defer ex.recoverCheck(j, e)
 				ex.runExec(ctx, j, e)
 			}(job, entry)
 		case model.CommandPassive, model.CommandAgent:
@@ -119,6 +122,22 @@ func (ex *Executor) Run(ctx context.Context, sched *scheduler.Scheduler) {
 			ex.checkFreshness(job, entry)
 		}
 	}
+}
+
+// recoverCheck is deferred inside every per-check goroutine. A check runs
+// untrusted external-plugin output and builtin probes against untrusted
+// network peers; without this an unrecovered panic in any one of them would
+// take down the entire process (SPEC robustness). The failing check is
+// surfaced as UNKNOWN so the failure is visible rather than silently missed.
+func (ex *Executor) recoverCheck(job scheduler.Job, e *catalog.Entry) {
+	r := recover()
+	if r == nil {
+		return
+	}
+	ex.log.Error("executor: check goroutine panic recovered",
+		"object", e.Object.ID, "panic", r, "stack", string(debug.Stack()))
+	ex.emit(e.Object.ID, job.Planned, job.Planned, model.StateUnknown,
+		nagios.Output{Text: "UNKNOWN - internal error executing check (panic recovered)"}, false)
 }
 
 func (ex *Executor) emit(objectID string, planned time.Time, started time.Time,

@@ -127,10 +127,20 @@ func (p *puller) due(now time.Time, tick time.Duration) []remoteCheck {
 	return out
 }
 
-// run executes the due pulled checks as passive results.
+// run executes the due pulled checks as passive results. Every pulled
+// command is validated against the LOCAL allowlist first (see allowPulled):
+// the server supplies the command string, so without this a compromised
+// server is fleet-wide RCE.
 func (p *puller) run(ctx context.Context, now time.Time, tick time.Duration) []passiveResult {
 	var out []passiveResult
 	for _, c := range p.due(now, tick) {
+		if reason, ok := p.allowPulled(c.Command); !ok {
+			p.log.Warn("pull: refusing server-supplied check command",
+				"service", c.Service, "command", c.Command, "reason", reason)
+			out = append(out, passiveResult{Host: p.cfg.Hostname, Service: c.Service,
+				State: 3, Output: "UNKNOWN - command refused by agent allowlist: " + reason})
+			continue
+		}
 		chk := agentCheck{Service: c.Service, Command: c.Command, Args: c.Args,
 			Timeout: time.Duration(c.TimeoutSeconds) * time.Second}
 		state, output := runPluginCheck(ctx, chk)
@@ -138,4 +148,27 @@ func (p *puller) run(ctx context.Context, now time.Time, tick time.Duration) []p
 			State: state, Output: output})
 	}
 	return out
+}
+
+// allowPulled decides whether a server-supplied command may run. Pulled
+// commands must be bare plugin names (no path separator, no "..") resolved
+// against the trusted pluginPATH, and the basename must appear in the
+// locally-configured pullAllow list. An empty list is default-deny.
+func (p *puller) allowPulled(command string) (reason string, ok bool) {
+	cmd := strings.TrimSpace(command)
+	if cmd == "" {
+		return "empty command", false
+	}
+	if strings.ContainsAny(cmd, `/\`) || strings.Contains(cmd, "..") {
+		return "command must be a bare plugin name, not a path", false
+	}
+	if len(p.cfg.PullAllow) == 0 {
+		return "no pullAllow configured (set pullAllow to enable pulled checks)", false
+	}
+	for _, allowed := range p.cfg.PullAllow {
+		if cmd == strings.TrimSpace(allowed) {
+			return "", true
+		}
+	}
+	return "command not in pullAllow", false
 }

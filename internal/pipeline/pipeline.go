@@ -316,9 +316,11 @@ func (p *Pipeline) emitEvent(e *model.Event) {
 func (p *Pipeline) flush(ctx context.Context) {
 	p.mu.Lock()
 	var states []*model.CheckState
+	var dirtyIDs []string
 	for id := range p.dirty {
 		if cs := p.states[id]; cs != nil {
 			states = append(states, cs)
+			dirtyIDs = append(dirtyIDs, id)
 		}
 	}
 	p.dirty = map[string]bool{}
@@ -326,14 +328,30 @@ func (p *Pipeline) flush(ctx context.Context) {
 	p.eventsPending = nil
 	p.mu.Unlock()
 
+	// On a DB error we must NOT lose the markers: re-queue so the next
+	// flush retries. Clearing dirty/eventsPending before a successful write
+	// would permanently drop check-state transitions and events (the core
+	// monitoring-state path) on a transient error. States re-mark dirty and
+	// the next flush re-reads the latest working-set value; events are
+	// re-prepended ahead of any newly-accumulated ones.
 	if len(states) > 0 {
 		if err := p.store.SaveCheckStates(ctx, states); err != nil {
-			p.log.Error("pipeline: state flush failed", "err", err, "n", len(states))
+			p.log.Error("pipeline: state flush failed; re-queueing for retry",
+				"err", err, "n", len(states))
+			p.mu.Lock()
+			for _, id := range dirtyIDs {
+				p.dirty[id] = true
+			}
+			p.mu.Unlock()
 		}
 	}
 	if len(events) > 0 {
 		if err := p.store.InsertEvents(ctx, events); err != nil {
-			p.log.Error("pipeline: event flush failed", "err", err, "n", len(events))
+			p.log.Error("pipeline: event flush failed; re-queueing for retry",
+				"err", err, "n", len(events))
+			p.mu.Lock()
+			p.eventsPending = append(events, p.eventsPending...)
+			p.mu.Unlock()
 		}
 	}
 }

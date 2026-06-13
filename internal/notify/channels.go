@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -90,7 +91,55 @@ func (m *Manager) send(ctx context.Context, ch *model.NotificationChannel,
 
 // --- webhook: templated payload + HMAC + retry (handled by outbox) ---
 
-var hookClient = &http.Client{Timeout: 20 * time.Second}
+// hookClient is the shared client for all outbound HTTP delivery: webhooks,
+// Slack/Teams chat hooks, web-push, voice (Twilio/Asterisk REST) and the
+// e-mail provider APIs (Resend/SES). Its dialer refuses link-local and
+// cloud-metadata addresses (169.254.0.0/16 incl. 169.254.169.254, and IPv6
+// link-local) so a hook target — which can be influenced by lower-privileged
+// channel config or message templates — cannot be turned into an SSRF probe
+// against the instance metadata service or other link-local endpoints
+// (SPEC §13.1). Private RFC1918 ranges stay reachable on purpose: on-prem
+// webhooks to internal services are a legitimate, common deployment.
+var hookClient = &http.Client{
+	Timeout:   20 * time.Second,
+	Transport: ssrfGuardedTransport(),
+}
+
+func ssrfGuardedTransport() *http.Transport {
+	dialer := &net.Dialer{Timeout: 15 * time.Second}
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		if host, _, err := net.SplitHostPort(addr); err == nil {
+			if ip := net.ParseIP(host); ip != nil && blockedHookIP(ip) {
+				return nil, fmt.Errorf("destination %s blocked (link-local/metadata)", ip)
+			}
+		}
+		conn, err := dialer.DialContext(ctx, network, addr)
+		if err != nil {
+			return nil, err
+		}
+		// DNS-rebinding guard: re-check the resolved peer.
+		if ra, ok := conn.RemoteAddr().(*net.TCPAddr); ok && blockedHookIP(ra.IP) {
+			_ = conn.Close()
+			return nil, fmt.Errorf("resolved destination %s blocked (link-local/metadata)", ra.IP)
+		}
+		return conn, nil
+	}
+	return tr
+}
+
+// blockedHookIP rejects link-local and cloud-metadata ranges (mirrors the
+// HTTP-check SSRF guard in internal/checks; private/internal ranges are
+// intentionally still allowed).
+func blockedHookIP(ip net.IP) bool {
+	if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+		return true
+	}
+	if v4 := ip.To4(); v4 != nil && v4[0] == 169 && v4[1] == 254 {
+		return true // includes 169.254.169.254 metadata
+	}
+	return false
+}
 
 func (m *Manager) sendWebhook(ctx context.Context, ch *model.NotificationChannel, body string) (string, error) {
 	u := ch.Config["url"]

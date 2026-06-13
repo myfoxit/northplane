@@ -63,9 +63,16 @@ func (a *API) registerObjects() {
 			a.writeList(w, views, next)
 		}
 	}
-	a.handle("GET /api/v1/objects", "List hosts and services", "objects:read", nil, listResponse{}, list(""))
-	a.handle("GET /api/v1/hosts", "List hosts", "objects:read", nil, listResponse{}, list(model.KindHost))
-	a.handle("GET /api/v1/services", "List services", "objects:read", nil, listResponse{}, list(model.KindService))
+	objectFilters := []oaParam{
+		{Name: "selector", Desc: "Label selector, e.g. env=prod,team!=db"},
+		{Name: "hostId", Desc: "Restrict services to this host id"},
+		{Name: "folder", Desc: "Restrict to a folder path"},
+		{Name: "q", Desc: "Free-text name match"},
+		{Name: "withState", Desc: "Include live check-state in each item (default true)", Type: "boolean"},
+	}
+	a.handle("GET /api/v1/objects", "List hosts and services", "objects:read", nil, listResponse{}, list("")).Query(objectFilters...)
+	a.handle("GET /api/v1/hosts", "List hosts", "objects:read", nil, listResponse{}, list(model.KindHost)).Query(objectFilters...)
+	a.handle("GET /api/v1/services", "List services", "objects:read", nil, listResponse{}, list(model.KindService)).Query(objectFilters...)
 
 	create := func(kind model.Kind) func(http.ResponseWriter, *http.Request, *auth.Principal) {
 		return func(w http.ResponseWriter, r *http.Request, p *auth.Principal) {
@@ -211,7 +218,7 @@ func (a *API) registerObjects() {
 			a.Sched.CheckNow(obj.ID)
 			a.audit(r, p, "check.now", obj.ID, nil, nil)
 			w.WriteHeader(http.StatusAccepted)
-		})
+		}).Status(http.StatusAccepted)
 
 	// Problems view (SPEC §12.3) — priority-sorted hard non-OK states.
 	a.handle("GET /api/v1/problems", "Current problems", "objects:read", nil, listResponse{},
@@ -223,7 +230,7 @@ func (a *API) registerObjects() {
 				return
 			}
 			a.writeList(w, rows, "")
-		})
+		}).Query(oaParam{Name: "includeHandled", Desc: "Include acknowledged / in-downtime problems", Type: "boolean"})
 
 	// Batch create (SPEC §11.1: atomic or partial mode — Wizard/Massenanlage).
 	type batchRequest struct {
