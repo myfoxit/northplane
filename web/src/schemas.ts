@@ -44,6 +44,8 @@ export const dashboardWidgetSchema = z.object({
   object: z.string().optional(),
   metric: z.string().optional(),
   range: z.string().optional(),
+  warn: z.number().optional(),
+  crit: z.number().optional(),
   max: z.number().optional(),
   scope: z.enum(['services', 'hosts']).optional(),
   limit: z.number().optional(),

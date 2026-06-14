@@ -1,27 +1,19 @@
 // uPlot wrapper (SPEC §12.1: vendored thin wrapper, ~45 KB lib). Renders one OR
-// many overlaid time-series with a colour legend and threshold bands from the
-// first series' Nagios warn/crit ranges (SPEC §8.3). Pass a single `result` or
-// an array of `results` to overlay (e.g. one metric across many hosts).
+// many overlaid time-series with a colour legend and threshold bands. Bands use
+// an explicit warn/crit override when given (user-/API-/AI-set), else the first
+// series' Nagios perfdata range (SPEC §8.3). Pass a single `result` or an array
+// of `results` to overlay (e.g. one metric across many hosts).
 import { useEffect, useRef } from 'react'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import type { SeriesResult } from '../types'
-import { alignSeries } from './dash/series'
+import { alignSeries, effectiveBand } from './dash/series'
 
-// rangeStart extracts the numeric start of a Nagios range spec for the threshold
-// band ("80", "80:", "@10:20" → 80/80/10).
-function rangeStart(spec?: string): number | null {
-  if (!spec) return null
-  const body = spec.startsWith('@') ? spec.slice(1) : spec
-  const parts = body.split(':')
-  const start = (body.includes(':') ? parts[1] : parts[0]) ?? parts[0] ?? ''
-  const v = parseFloat(start)
-  return Number.isFinite(v) ? v : null
-}
-
-export function Chart({ result, results, height = 180 }: {
+export function Chart({ result, results, warn, crit, height = 180 }: {
   result?: SeriesResult
   results?: SeriesResult[]
+  warn?: number
+  crit?: number
   height?: number
 }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -33,11 +25,9 @@ export function Chart({ result, results, height = 180 }: {
     const { x, series } = alignSeries(all)
     if (x.length === 0 || series.length === 0) return
 
-    // threshold bands come from the first series that declares warn/crit;
-    // overlaid same-unit series typically share thresholds.
+    // threshold bands: explicit override wins, else the first series' perfdata.
     const banded = series.find((s) => s.warn || s.crit)
-    const warn = rangeStart(banded?.warn)
-    const crit = rangeStart(banded?.crit)
+    const { warn: warnAt, crit: critAt } = effectiveBand(warn, crit, banded?.warn, banded?.crit)
     const single = series.length === 1
 
     const opts: uPlot.Options = {
@@ -72,8 +62,8 @@ export function Chart({ result, results, height = 180 }: {
               ctx.fillStyle = color
               ctx.fillRect(u.bbox.left, top, u.bbox.width, Math.max(0, y - top))
             }
-            if (crit !== null) drawBand(crit, 'rgba(248,113,113,0.07)')
-            else if (warn !== null) drawBand(warn, 'rgba(251,191,36,0.06)')
+            if (critAt !== null) drawBand(critAt, 'rgba(248,113,113,0.07)')
+            else if (warnAt !== null) drawBand(warnAt, 'rgba(251,191,36,0.06)')
           },
         ],
       },
@@ -92,7 +82,7 @@ export function Chart({ result, results, height = 180 }: {
       plotRef.current?.destroy()
       plotRef.current = null
     }
-  }, [result, results, height])
+  }, [result, results, warn, crit, height])
 
   const all = results ?? (result ? [result] : [])
   const { x, series } = alignSeries(all)
@@ -100,6 +90,7 @@ export function Chart({ result, results, height = 180 }: {
     return <div className="text-muted-foreground text-xs p-4">no data</div>
   }
   const banded = series.find((s) => s.warn || s.crit)
+  const { warn: warnAt, crit: critAt } = effectiveBand(warn, crit, banded?.warn, banded?.crit)
   return (
     <div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground mb-1 font-mono">
@@ -109,8 +100,8 @@ export function Chart({ result, results, height = 180 }: {
             {s.label}{s.unit ? ` (${s.unit})` : ''}
           </span>
         ))}
-        {banded?.warn ? <span className="text-amber-400/70">· warn {banded.warn}</span> : null}
-        {banded?.crit ? <span className="text-red-400/70">· crit {banded.crit}</span> : null}
+        {warnAt !== null ? <span className="text-amber-400/70">· warn {warnAt}</span> : null}
+        {critAt !== null ? <span className="text-red-400/70">· crit {critAt}</span> : null}
       </div>
       <div ref={ref} />
     </div>

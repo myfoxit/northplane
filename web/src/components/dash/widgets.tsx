@@ -17,7 +17,7 @@ import { Badge } from '@/components/ui/badge'
 import { Chart } from '../Chart'
 import { t } from '../../i18n'
 import { type BSNode, bsStateMeta, rangeFrom } from './util'
-import { groupByUnit } from './series'
+import { groupByUnit, nagiosRangeStart, thresholdTone } from './series'
 
 const REFRESH = 30_000
 
@@ -173,7 +173,7 @@ function MetricWidget({ widget }: { widget: DashboardWidget }) {
   if (series.length === 0) return <Empty text="keine Daten" />
   return (
     <div className="space-y-4">
-      {groups.map((g, i) => <Chart key={i} results={g} height={140} />)}
+      {groups.map((g, i) => <Chart key={i} results={g} warn={widget.warn} crit={widget.crit} height={140} />)}
     </div>
   )
 }
@@ -211,23 +211,6 @@ function MarkdownWidget({ widget }: { widget: DashboardWidget }) {
   )
 }
 
-// rangeStartNum extracts the numeric start of a Nagios range spec
-// ("80", "80:", "@10:20" → 80/80/10) for gauge/bar threshold colouring.
-function rangeStartNum(spec?: string): number | null {
-  if (!spec) return null
-  const body = spec.startsWith('@') ? spec.slice(1) : spec
-  const parts = body.split(':')
-  const start = (body.includes(':') ? parts[1] : parts[0]) ?? parts[0] ?? ''
-  const v = parseFloat(start)
-  return Number.isFinite(v) ? v : null
-}
-
-function thresholdTone(v: number, warn: number | null, crit: number | null): string {
-  if (crit !== null && v >= crit) return '#f87171' // red-400
-  if (warn !== null && v >= warn) return '#fbbf24' // amber-400
-  return '#34d399' // emerald-400
-}
-
 // GaugeWidget: SVG arc gauge of a metric's latest value with warn/crit
 // zones from perfdata thresholds (or the metric's own ranges).
 function GaugeWidget({ widget }: { widget: DashboardWidget }) {
@@ -249,8 +232,8 @@ function GaugeWidget({ widget }: { widget: DashboardWidget }) {
   const last = s?.points[s.points.length - 1]
   if (!s || !last) return <Empty text="keine Daten" />
   const value = last.v
-  const warn = rangeStartNum(s.series.warn)
-  const crit = rangeStartNum(s.series.crit)
+  const warn = widget.warn ?? nagiosRangeStart(s.series.warn)
+  const crit = widget.crit ?? nagiosRangeStart(s.series.crit)
   const max = widget.max || crit || Math.max(100, Math.ceil(value * 1.25))
   const frac = Math.min(1, Math.max(0, value / max))
   // 240°-arc geometry: angles measured clockwise from 12 o'clock,
@@ -441,7 +424,7 @@ function BarWidget({ widget }: { widget: DashboardWidget }) {
       metric: r.series.metric, unit: r.series.unit ?? '',
       // points is non-empty (filtered above); default guards the index lookup.
       value: r.points[r.points.length - 1]?.v ?? 0,
-      warn: rangeStartNum(r.series.warn), crit: rangeStartNum(r.series.crit),
+      warn: widget.warn ?? nagiosRangeStart(r.series.warn), crit: widget.crit ?? nagiosRangeStart(r.series.crit),
     }))
     .sort((a, b) => b.value - a.value)
     .slice(0, limit)

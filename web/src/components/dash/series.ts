@@ -96,3 +96,37 @@ export function groupByUnit(results: SeriesResult[]): SeriesResult[][] {
   }
   return order.map((u) => groups.get(u)!)
 }
+
+// nagiosRangeStart returns the numeric threshold for a chart's warn/crit band:
+// the upper bound when the spec is a range (after stripping a leading "@"), e.g.
+// "10:20" or "@10:20" → 20; otherwise the bare number, e.g. "80" → 80. Returns
+// null when the spec is absent or has no parsable value (e.g. "80:" → null).
+// (Behaviour preserved verbatim from the original chart/widget helpers.)
+export function nagiosRangeStart(spec?: string): number | null {
+  if (!spec) return null
+  const body = spec.startsWith('@') ? spec.slice(1) : spec
+  const parts = body.split(':')
+  const start = (body.includes(':') ? parts[1] : parts[0]) ?? parts[0] ?? ''
+  const v = parseFloat(start)
+  return Number.isFinite(v) ? v : null
+}
+
+// effectiveBand resolves the warn/crit thresholds for a panel: an explicit,
+// user-/API-/AI-set numeric override wins; otherwise fall back to the metric's
+// own Nagios perfdata range. Either side may be null (no threshold).
+export function effectiveBand(
+  widgetWarn: number | undefined, widgetCrit: number | undefined,
+  seriesWarn?: string, seriesCrit?: string,
+): { warn: number | null; crit: number | null } {
+  return {
+    warn: widgetWarn ?? nagiosRangeStart(seriesWarn),
+    crit: widgetCrit ?? nagiosRangeStart(seriesCrit),
+  }
+}
+
+// thresholdTone colours a value green/amber/red against warn/crit (crit wins).
+export function thresholdTone(v: number, warn: number | null, crit: number | null): string {
+  if (crit !== null && v >= crit) return '#f87171' // red-400
+  if (warn !== null && v >= warn) return '#fbbf24' // amber-400
+  return '#34d399' // emerald-400
+}

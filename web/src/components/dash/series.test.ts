@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { alignSeries, groupByUnit, seriesColor, shortId, SERIES_PALETTE } from './series'
+import {
+  alignSeries, groupByUnit, seriesColor, shortId, SERIES_PALETTE,
+  nagiosRangeStart, effectiveBand, thresholdTone,
+} from './series'
 import type { SeriesResult } from '../../types'
 
 function s(
@@ -99,5 +102,51 @@ describe('groupByUnit', () => {
     const groups = groupByUnit([a, b])
     expect(groups).toHaveLength(1)
     expect(groups[0]).toHaveLength(2)
+  })
+})
+
+describe('nagiosRangeStart', () => {
+  it.each([
+    ['80', 80],     // bare number
+    ['10:20', 20],  // range → upper bound
+    ['@10:20', 20], // @-prefixed range → upper bound (prefix stripped)
+  ])('parses %s → %d', (spec, want) => {
+    expect(nagiosRangeStart(spec)).toBe(want)
+  })
+  it('returns null for absent, empty-upper, or unparsable specs', () => {
+    expect(nagiosRangeStart(undefined)).toBeNull()
+    expect(nagiosRangeStart('')).toBeNull()
+    expect(nagiosRangeStart('80:')).toBeNull() // colon present but no upper value
+    expect(nagiosRangeStart('abc')).toBeNull()
+  })
+})
+
+describe('effectiveBand', () => {
+  it('prefers an explicit override over the perfdata range', () => {
+    expect(effectiveBand(70, 95, '80', '90')).toEqual({ warn: 70, crit: 95 })
+  })
+  it('falls back to the parsed perfdata range when no override', () => {
+    expect(effectiveBand(undefined, undefined, '80', '90')).toEqual({ warn: 80, crit: 90 })
+  })
+  it('allows overriding only one side', () => {
+    expect(effectiveBand(70, undefined, '80', '90')).toEqual({ warn: 70, crit: 90 })
+  })
+  it('is null where neither override nor perfdata is present', () => {
+    expect(effectiveBand(undefined, undefined)).toEqual({ warn: null, crit: null })
+  })
+})
+
+describe('thresholdTone', () => {
+  it('returns red at/above crit, amber at/above warn, else green', () => {
+    expect(thresholdTone(95, 80, 90)).toBe('#f87171') // crit
+    expect(thresholdTone(85, 80, 90)).toBe('#fbbf24') // warn
+    expect(thresholdTone(50, 80, 90)).toBe('#34d399') // ok
+  })
+  it('crit takes precedence over warn', () => {
+    expect(thresholdTone(100, 80, 90)).toBe('#f87171')
+  })
+  it('ignores null thresholds', () => {
+    expect(thresholdTone(100, null, null)).toBe('#34d399')
+    expect(thresholdTone(100, 80, null)).toBe('#fbbf24')
   })
 })

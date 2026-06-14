@@ -411,6 +411,8 @@ export interface DashboardWidget {
   object?: string
   metric?: string
   range?: string // "3h", "24h", "7d"
+  warn?: number  // explicit warn threshold; overrides the metric's perfdata range
+  crit?: number  // explicit crit threshold; overrides the metric's perfdata range
   // metric widget: a selector overlays one metric across MANY objects (instead
   // of a single `object`); see also the shared `selector` field below.
   // gauge widget:
