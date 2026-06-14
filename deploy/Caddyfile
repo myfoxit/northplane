@@ -8,10 +8,17 @@
 #                      reachable at https://<ip> immediately, before DNS, and
 #                      as a stable internal endpoint. Browsers show a one-time
 #                      warning; that's expected for an IP cert.
+#
+# default_sni is essential: clients hitting the bare IP send NO TLS SNI (an
+# IP literal is not allowed as a server name), so without this Caddy can't
+# pick a certificate and aborts the handshake. Pinning the default SNI to the
+# IP makes SNI-less connections serve the internal IP cert. Real visitors to
+# {$DOMAIN} always send SNI, so they're unaffected.
 
 {
 	# ACME account email for Let's Encrypt expiry/issue notifications.
 	email {$ACME_EMAIL}
+	default_sni {$SERVER_IP}
 }
 
 {$DOMAIN} {
