@@ -3154,7 +3154,12 @@ export interface operations {
     };
     get_ai_actions: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3237,7 +3242,12 @@ export interface operations {
     };
     get_ai_conversations: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3277,7 +3287,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -3326,7 +3336,12 @@ export interface operations {
     };
     get_alert_groups: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3366,7 +3381,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -3463,8 +3478,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
-            200: {
+            /** @description No Content */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3483,7 +3498,12 @@ export interface operations {
     };
     get_alert_rules: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3523,7 +3543,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -3620,8 +3640,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
-            200: {
+            /** @description No Content */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3698,7 +3718,24 @@ export interface operations {
     };
     get_alerts: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Filter by monitored object id */
+                objectId?: string;
+                /** @description Filter by alert rule id */
+                ruleId?: string;
+                /** @description Filter by incident id */
+                incidentId?: string;
+                /** @description Comma-separated alert statuses (e.g. firing,resolved) */
+                status?: string;
+                /** @description Comma-separated severities (e.g. critical,warning) */
+                severity?: string;
+                /** @description RFC 3339 lower bound on alert time */
+                since?: string;
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3853,7 +3890,12 @@ export interface operations {
     };
     get_api_tokens: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3893,7 +3935,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -3924,8 +3966,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
-            200: {
+            /** @description No Content */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3973,7 +4015,12 @@ export interface operations {
     };
     get_audit: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4056,7 +4103,12 @@ export interface operations {
     };
     get_business_services: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4096,7 +4148,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -4193,8 +4245,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
-            200: {
+            /** @description No Content */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4273,7 +4325,12 @@ export interface operations {
     };
     get_channels: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4313,7 +4370,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -4410,8 +4467,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
-            200: {
+            /** @description No Content */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4461,7 +4518,12 @@ export interface operations {
     };
     get_check_commands: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4501,7 +4563,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -4598,8 +4660,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
-            200: {
+            /** @description No Content */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4765,7 +4827,12 @@ export interface operations {
     };
     get_contact_groups: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4805,7 +4872,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -4902,8 +4969,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
-            200: {
+            /** @description No Content */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4922,7 +4989,12 @@ export interface operations {
     };
     get_contacts: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4962,7 +5034,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -5059,8 +5131,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
-            200: {
+            /** @description No Content */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5106,7 +5178,12 @@ export interface operations {
     };
     get_dashboards: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5146,7 +5223,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -5243,8 +5320,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
-            200: {
+            /** @description No Content */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5321,7 +5398,12 @@ export interface operations {
     };
     get_discovery_scans: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5361,8 +5443,8 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
-            201: {
+            /** @description Accepted */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5414,7 +5496,12 @@ export interface operations {
     };
     get_downtimes: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5454,7 +5541,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -5485,8 +5572,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
-            200: {
+            /** @description No Content */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5505,7 +5592,12 @@ export interface operations {
     };
     get_escalation_policies: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5545,7 +5637,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -5642,8 +5734,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
-            200: {
+            /** @description No Content */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5691,7 +5783,12 @@ export interface operations {
     };
     get_event_sources: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5731,7 +5828,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -5828,8 +5925,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
-            200: {
+            /** @description No Content */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5848,7 +5945,24 @@ export interface operations {
     };
     get_events: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Filter by monitored object id */
+                objectId?: string;
+                /** @description Filter by ingress event-source id */
+                sourceId?: string;
+                /** @description Filter by severity (e.g. critical) */
+                severity?: string;
+                /** @description Comma-separated event types */
+                types?: string;
+                /** @description RFC 3339 lower time bound */
+                from?: string;
+                /** @description RFC 3339 upper time bound */
+                to?: string;
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5877,7 +5991,20 @@ export interface operations {
     };
     get_events_export: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Filter by monitored object id */
+                objectId?: string;
+                /** @description Filter by ingress event-source id */
+                sourceId?: string;
+                /** @description Filter by severity (e.g. critical) */
+                severity?: string;
+                /** @description Comma-separated event types */
+                types?: string;
+                /** @description RFC 3339 lower time bound */
+                from?: string;
+                /** @description RFC 3339 upper time bound */
+                to?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5904,7 +6031,12 @@ export interface operations {
     };
     get_heartbeats: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5944,7 +6076,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -5975,8 +6107,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
-            200: {
+            /** @description No Content */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6053,7 +6185,22 @@ export interface operations {
     };
     get_hosts: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Label selector, e.g. env=prod,team!=db */
+                selector?: string;
+                /** @description Restrict services to this host id */
+                hostId?: string;
+                /** @description Restrict to a folder path */
+                folder?: string;
+                /** @description Free-text name match */
+                q?: string;
+                /** @description Include live check-state in each item (default true) */
+                withState?: boolean;
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -6093,7 +6240,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -6115,7 +6262,14 @@ export interface operations {
     };
     get_incidents: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Only currently-open incidents when true */
+                open?: boolean;
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -6155,7 +6309,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -6341,8 +6495,8 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
-            200: {
+            /** @description Created */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6363,7 +6517,12 @@ export interface operations {
     };
     get_notifications_dead_letters: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -6399,8 +6558,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
-            200: {
+            /** @description Accepted */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6419,7 +6578,22 @@ export interface operations {
     };
     get_objects: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Label selector, e.g. env=prod,team!=db */
+                selector?: string;
+                /** @description Restrict services to this host id */
+                hostId?: string;
+                /** @description Restrict to a folder path */
+                folder?: string;
+                /** @description Free-text name match */
+                q?: string;
+                /** @description Include live check-state in each item (default true) */
+                withState?: boolean;
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -6523,8 +6697,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
-            200: {
+            /** @description No Content */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6552,8 +6726,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
-            200: {
+            /** @description Accepted */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6754,7 +6928,14 @@ export interface operations {
     };
     get_problems: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Include acknowledged / in-downtime problems */
+                includeHandled?: boolean;
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -6794,7 +6975,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -6814,7 +6995,12 @@ export interface operations {
     };
     get_reports: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -6854,7 +7040,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -6951,8 +7137,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
-            200: {
+            /** @description No Content */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6971,7 +7157,12 @@ export interface operations {
     };
     get_reports_name_archive: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path: {
                 name: string;
@@ -7097,8 +7288,8 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
-            201: {
+            /** @description Accepted */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7119,7 +7310,12 @@ export interface operations {
     };
     get_roles: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -7159,7 +7355,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -7256,8 +7452,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
-            200: {
+            /** @description No Content */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7276,7 +7472,12 @@ export interface operations {
     };
     get_saved_filters: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -7318,7 +7519,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -7423,8 +7624,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
-            200: {
+            /** @description No Content */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7443,7 +7644,12 @@ export interface operations {
     };
     get_schedules: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -7483,7 +7689,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -7580,8 +7786,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
-            200: {
+            /** @description No Content */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7629,7 +7835,12 @@ export interface operations {
     };
     get_schedules_name_overrides: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path: {
                 name: string;
@@ -7674,7 +7885,7 @@ export interface operations {
         };
         responses: {
             /** @description OK */
-            201: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7705,8 +7916,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
-            200: {
+            /** @description No Content */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7858,8 +8069,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
-            200: {
+            /** @description No Content */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7878,7 +8089,22 @@ export interface operations {
     };
     get_services: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Label selector, e.g. env=prod,team!=db */
+                selector?: string;
+                /** @description Restrict services to this host id */
+                hostId?: string;
+                /** @description Restrict to a folder path */
+                folder?: string;
+                /** @description Free-text name match */
+                q?: string;
+                /** @description Include live check-state in each item (default true) */
+                withState?: boolean;
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -7918,7 +8144,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -7940,7 +8166,12 @@ export interface operations {
     };
     get_silences: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -7980,7 +8211,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -8011,8 +8242,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
-            200: {
+            /** @description No Content */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8031,7 +8262,12 @@ export interface operations {
     };
     get_sites: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -8071,7 +8307,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -8168,8 +8404,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
-            200: {
+            /** @description No Content */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8246,7 +8482,12 @@ export interface operations {
     };
     get_sites_overview: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -8356,7 +8597,12 @@ export interface operations {
     };
     get_templates: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -8396,7 +8642,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -8493,8 +8739,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
-            200: {
+            /** @description No Content */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8513,7 +8759,12 @@ export interface operations {
     };
     get_tenants: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -8553,7 +8804,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -8573,7 +8824,12 @@ export interface operations {
     };
     get_time_periods: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -8613,7 +8869,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -8710,8 +8966,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
-            200: {
+            /** @description No Content */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8730,7 +8986,12 @@ export interface operations {
     };
     get_users: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -8770,7 +9031,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -8898,8 +9159,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
-            200: {
+            /** @description No Content */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9015,7 +9276,12 @@ export interface operations {
     };
     get_webhooks: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -9055,7 +9321,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -9152,8 +9418,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
-            200: {
+            /** @description No Content */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
