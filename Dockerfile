@@ -4,7 +4,12 @@
 FROM node:22-alpine AS ui
 WORKDIR /ui
 COPY web/package.json web/package-lock.json ./
-RUN npm ci
+# --legacy-peer-deps: the lockfile pins typescript@6 while openapi-typescript
+# still declares a peer range of ^5.x. npm 11 (CI/local) tolerates this; the
+# older npm bundled in node:22-alpine hard-fails `npm ci` on the peer
+# conflict. `npm ci` installs the exact lockfile tree either way — this flag
+# only skips the cosmetic peer-conflict abort so the image build matches CI.
+RUN npm ci --legacy-peer-deps
 COPY web/ ./
 RUN npm run build
 
