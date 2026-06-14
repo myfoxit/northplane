@@ -3,7 +3,7 @@
 // independently (wallboard-friendly: refetchInterval 30s). The grid
 // placement + edit chrome live in Dashboards.tsx; this file is the
 // read-only "what a widget shows" layer.
-import type { ReactNode } from 'react'
+import { type ReactNode, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { Check } from 'lucide-react'
@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge'
 import { Chart } from '../Chart'
 import { t } from '../../i18n'
 import { type BSNode, bsStateMeta, rangeFrom } from './util'
+import { groupByUnit, nagiosRangeStart, thresholdTone } from './series'
 
 const REFRESH = 30_000
 
@@ -143,13 +144,16 @@ function AlertsWidget({ widget }: { widget: DashboardWidget }) {
   )
 }
 
-// MetricWidget: a Chart from metrics/query for one object+metric over a range.
+// MetricWidget: an overlaid time-series Chart from metrics/query. Targets either
+// a single object or — via a selector — one metric across MANY objects, drawn as
+// overlaid lines (grouped by unit so unlike units never share a y-axis).
 function MetricWidget({ widget }: { widget: DashboardWidget }) {
   const { data, isLoading } = useQuery({
-    queryKey: ['metrics', 'widget', widget.object, widget.metric, widget.range],
-    enabled: !!widget.object,
+    queryKey: ['metrics', 'widget', widget.object, widget.selector, widget.metric, widget.range],
+    enabled: !!(widget.object || widget.selector),
     queryFn: () => post<SeriesResult[]>('/metrics/query', {
-      objectId: widget.object,
+      objectId: widget.selector ? undefined : widget.object,
+      selector: widget.selector || undefined,
       metric: widget.metric || undefined,
       from: rangeFrom(widget.range),
       to: new Date().toISOString(),
@@ -157,13 +161,19 @@ function MetricWidget({ widget }: { widget: DashboardWidget }) {
     }),
     refetchInterval: REFRESH,
   })
-  if (!widget.object) return <Empty text={t('empty')} />
+  // memoised so each unit-group keeps a stable identity between refetches and
+  // the Chart effect doesn't tear down/rebuild uPlot on unrelated re-renders.
+  const series = useMemo(
+    () => (data ?? []).filter((s) => !s.series.metric.startsWith('np_')),
+    [data],
+  )
+  const groups = useMemo(() => groupByUnit(series), [series])
+  if (!widget.object && !widget.selector) return <Empty text={t('empty')} />
   if (isLoading) return <Spinner />
-  const series = (data ?? []).filter((s) => !s.series.metric.startsWith('np_'))
   if (series.length === 0) return <Empty text="keine Daten" />
   return (
     <div className="space-y-4">
-      {series.map((s) => <Chart key={`${s.series.objectId}:${s.series.id}`} result={s} height={140} />)}
+      {groups.map((g, i) => <Chart key={i} results={g} warn={widget.warn} crit={widget.crit} height={140} />)}
     </div>
   )
 }
@@ -201,23 +211,6 @@ function MarkdownWidget({ widget }: { widget: DashboardWidget }) {
   )
 }
 
-// rangeStartNum extracts the numeric start of a Nagios range spec
-// ("80", "80:", "@10:20" → 80/80/10) for gauge/bar threshold colouring.
-function rangeStartNum(spec?: string): number | null {
-  if (!spec) return null
-  const body = spec.startsWith('@') ? spec.slice(1) : spec
-  const parts = body.split(':')
-  const start = (body.includes(':') ? parts[1] : parts[0]) ?? parts[0] ?? ''
-  const v = parseFloat(start)
-  return Number.isFinite(v) ? v : null
-}
-
-function thresholdTone(v: number, warn: number | null, crit: number | null): string {
-  if (crit !== null && v >= crit) return '#f87171' // red-400
-  if (warn !== null && v >= warn) return '#fbbf24' // amber-400
-  return '#34d399' // emerald-400
-}
-
 // GaugeWidget: SVG arc gauge of a metric's latest value with warn/crit
 // zones from perfdata thresholds (or the metric's own ranges).
 function GaugeWidget({ widget }: { widget: DashboardWidget }) {
@@ -239,8 +232,8 @@ function GaugeWidget({ widget }: { widget: DashboardWidget }) {
   const last = s?.points[s.points.length - 1]
   if (!s || !last) return <Empty text="keine Daten" />
   const value = last.v
-  const warn = rangeStartNum(s.series.warn)
-  const crit = rangeStartNum(s.series.crit)
+  const warn = widget.warn ?? nagiosRangeStart(s.series.warn)
+  const crit = widget.crit ?? nagiosRangeStart(s.series.crit)
   const max = widget.max || crit || Math.max(100, Math.ceil(value * 1.25))
   const frac = Math.min(1, Math.max(0, value / max))
   // 240°-arc geometry: angles measured clockwise from 12 o'clock,
@@ -431,7 +424,7 @@ function BarWidget({ widget }: { widget: DashboardWidget }) {
       metric: r.series.metric, unit: r.series.unit ?? '',
       // points is non-empty (filtered above); default guards the index lookup.
       value: r.points[r.points.length - 1]?.v ?? 0,
-      warn: rangeStartNum(r.series.warn), crit: rangeStartNum(r.series.crit),
+      warn: widget.warn ?? nagiosRangeStart(r.series.warn), crit: widget.crit ?? nagiosRangeStart(r.series.crit),
     }))
     .sort((a, b) => b.value - a.value)
     .slice(0, limit)

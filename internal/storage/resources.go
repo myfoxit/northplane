@@ -315,7 +315,12 @@ type TenantRow struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
-// CreateTenant inserts a tenant.
+// CreateTenant inserts a tenant and seeds the built-in roles so the tenant is
+// immediately usable: tokens and sessions bound to it resolve real permissions
+// via rolePerms. Without this, a freshly created tenant has zero roles and every
+// principal in it is denied everything (self-service tenancy is broken at
+// creation). Mirrors seed() for the default tenant; both inserts share one
+// transaction so a role-seed failure rolls the tenant back.
 func (s *Store) CreateTenant(ctx context.Context, id, name, slug string) error {
 	now := time.Now().UTC()
 	return s.Write(ctx, func(tx *sql.Tx) error {
@@ -325,6 +330,31 @@ func (s *Store) CreateTenant(ctx context.Context, id, name, slug string) error {
 		if s.dialect.IsDuplicate(err) {
 			return fmt.Errorf("%w: tenant %q", ErrDuplicate, slug)
 		}
-		return err
+		if err != nil {
+			return err
+		}
+		return s.seedTenantRoles(ctx, tx, id, now)
 	})
+}
+
+// seedTenantRoles writes the built-in roles (admin/operator/viewer/ai-agent)
+// into tenant tenantID within the given transaction. Idempotent via ON CONFLICT
+// so it is safe to call on a tenant that already has some roles.
+func (s *Store) seedTenantRoles(ctx context.Context, tx *sql.Tx, tenantID string, now time.Time) error {
+	for _, r := range model.BuiltinRoles {
+		doc, err := jsonMarshal(model.Role{
+			ID: model.NewID(), TenantID: tenantID, Name: r.Name,
+			Permissions: r.Permissions, System: true, Version: 1,
+		})
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, s.Q(
+			`INSERT INTO resources (id, tenant_id, kind, name, doc, version, created_at, updated_at)
+				VALUES (?,?,?,?,?,1,?,?) ON CONFLICT (tenant_id, kind, name) DO NOTHING`),
+			model.NewID(), tenantID, KindRole, r.Name, doc, s.T(now), s.T(now)); err != nil {
+			return err
+		}
+	}
+	return nil
 }

@@ -335,6 +335,25 @@ function WidgetEditFields({ widget, onChange }: {
   )
 }
 
+// ThresholdFields: optional warn/crit overrides for chart-like widgets. Empty
+// inputs clear the override so the metric's own perfdata thresholds apply.
+function ThresholdFields({ widget, onChange }: {
+  widget: DashboardWidget; onChange: (patch: Partial<DashboardWidget>) => void
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      <Field label="Warn (optional)">
+        <Input type="number" value={widget.warn ?? ''} placeholder="z.B. 80"
+          onChange={(e) => onChange({ warn: e.target.value ? Number(e.target.value) : undefined })} />
+      </Field>
+      <Field label="Crit (optional)">
+        <Input type="number" value={widget.crit ?? ''} placeholder="z.B. 90"
+          onChange={(e) => onChange({ crit: e.target.value ? Number(e.target.value) : undefined })} />
+      </Field>
+    </div>
+  )
+}
+
 // Type-specific configuration, reused by the add-widget dialog.
 function WidgetConfigFields({ widget, onChange }: {
   widget: DashboardWidget; onChange: (patch: Partial<DashboardWidget>) => void
@@ -345,6 +364,10 @@ function WidgetConfigFields({ widget, onChange }: {
         <div className="space-y-2">
           <Field label="Objekt">
             <ObjectPicker value={widget.object} onChange={(object) => onChange({ object, metric: '' })} />
+          </Field>
+          <Field label="Selektor (überlagert mehrere Objekte)">
+            <Input value={widget.selector ?? ''} placeholder="env=prod"
+              onChange={(e) => onChange({ selector: e.target.value })} />
           </Field>
           <Field label="Metrik">
             <MetricPicker objectId={widget.object} value={widget.metric} onChange={(metric) => onChange({ metric })} />
@@ -357,6 +380,7 @@ function WidgetConfigFields({ widget, onChange }: {
               </SelectContent>
             </Select>
           </Field>
+          <ThresholdFields widget={widget} onChange={onChange} />
         </div>
       )
     case 'gauge':
@@ -372,6 +396,7 @@ function WidgetConfigFields({ widget, onChange }: {
             <Input type="number" min={1} value={widget.max ?? ''}
               onChange={(e) => onChange({ max: e.target.value ? Number(e.target.value) : undefined })} />
           </Field>
+          <ThresholdFields widget={widget} onChange={onChange} />
         </div>
       )
     case 'donut':
@@ -428,6 +453,7 @@ function WidgetConfigFields({ widget, onChange }: {
             <Input type="number" min={1} max={20} value={widget.limit ?? 8}
               onChange={(e) => onChange({ limit: Number(e.target.value) })} />
           </Field>
+          <ThresholdFields widget={widget} onChange={onChange} />
         </div>
       )
     case 'problems':
