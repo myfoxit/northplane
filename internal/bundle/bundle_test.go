@@ -86,8 +86,8 @@ func TestRenderCanonicalOrderAndRoundTrip(t *testing.T) {
 	}
 	// canonical order: Channel < Host < Service < Dashboard (KindOrder)
 	idx := func(sub string) int { return bytes.Index(out, []byte(sub)) }
-	if !(idx("ops-mail") < idx("db-01") && idx("db-01") < idx("postgres") &&
-		idx("postgres") < idx("wallboard")) {
+	if idx("ops-mail") >= idx("db-01") || idx("db-01") >= idx("postgres") ||
+		idx("postgres") >= idx("wallboard") {
 		t.Fatalf("apply order violated:\n%s", out)
 	}
 

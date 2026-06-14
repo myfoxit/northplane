@@ -6,6 +6,7 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -30,6 +31,7 @@ func testStores(t *testing.T) map[string]*Store {
 	stores["sqlite"] = sq
 
 	if dsn := os.Getenv("NORTHPLANE_TEST_PG_DSN"); dsn != "" {
+		resetPostgres(t, dsn)
 		pg, err := Open(ctx, Options{DSN: dsn, RetentionMonths: 12})
 		if err != nil {
 			t.Fatalf("postgres open: %v", err)
@@ -38,6 +40,25 @@ func testStores(t *testing.T) map[string]*Store {
 		stores["postgres"] = pg
 	}
 	return stores
+}
+
+// resetPostgres drops and recreates the public schema so every test starts
+// against a pristine PostgreSQL database, mirroring the fresh t.TempDir() the
+// SQLite store gets. The PG DSN points at one shared database; without this
+// reset its tables accumulate rows across tests (audit chains keep growing,
+// object identities collide on objects_ident), which is why the matrix flaked
+// only on PostgreSQL. Open() re-runs migrations on the clean schema.
+func resetPostgres(t *testing.T, dsn string) {
+	t.Helper()
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("postgres reset: open: %v", err)
+	}
+	defer db.Close()
+	if _, err := db.ExecContext(context.Background(),
+		`DROP SCHEMA public CASCADE; CREATE SCHEMA public;`); err != nil {
+		t.Fatalf("postgres reset: %v", err)
+	}
 }
 
 func matrix(t *testing.T, fn func(t *testing.T, s *Store)) {
