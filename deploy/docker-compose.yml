@@ -1,0 +1,60 @@
+# Northplane — production stack (Docker Compose + Caddy TLS).
+#
+# This file and .env are MANAGED BY THE DEPLOY PIPELINE
+# (.github/workflows/deploy.yml). Do not hand-edit on the server: every
+# deploy overwrites this file and re-renders .env from GitHub repo
+# Variables/Secrets. Change configuration there (see deploy/README.md).
+#
+# Caddy terminates TLS on :80/:443 — Let's Encrypt for $DOMAIN once its DNS
+# A-record points here, plus an internal self-signed cert on the bare IP so
+# the box is reachable before DNS is live — and reverse-proxies to
+# northplaned on :8443 inside the compose network.
+
+name: northplane
+
+services:
+  northplane:
+    image: ${NORTHPLANE_IMAGE:-ghcr.io/myfoxit/northplane:latest}
+    restart: unless-stopped
+    # .env carries the runtime config (base URL, the demo/real switch, the
+    # per-mode data dir, the break-glass admin). Rendered by the pipeline.
+    env_file: [.env]
+    environment:
+      NORTHPLANE_LISTEN: ":8443"
+      NORTHPLANE_TRUST_PROXY: "true" # Caddy terminates TLS + sets X-Forwarded-*
+      NORTHPLANE_SECRET_KEY_FILE: "/etc/northplane/secret.key"
+    volumes:
+      - northplane-data:/var/lib/northplane
+      # Persistent AES-256 master key (secrets-at-rest). Provisioned once by
+      # deploy/provision-server.sh; survives image swaps and mode flips.
+      - ./secret.key:/etc/northplane/secret.key:ro
+    expose:
+      - "8443" # compose network only; Caddy publishes 80/443
+    # distroless image has no shell — Caddy health-probes it instead.
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - northplane
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: "${DOMAIN:-localhost}"
+      SERVER_IP: "${SERVER_IP:-127.0.0.1}"
+      ACME_EMAIL: "${ACME_EMAIL:-}"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data # ACME account + issued certificates (persist!)
+      - caddy-config:/config
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://northplane:8443/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  northplane-data: # app data: SQLite + TSDB, isolated per mode by NORTHPLANE_DATA_DIR
+  caddy-data:
+  caddy-config:

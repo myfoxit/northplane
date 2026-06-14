@@ -1,0 +1,24 @@
+# Northplane reverse proxy / TLS termination (managed by the deploy pipeline).
+#
+# Two independent site blocks share :443 by SNI:
+#   • {$DOMAIN}      → automatic Let's Encrypt, the moment a DNS A-record for
+#                      the domain resolves to this host. Until then Caddy just
+#                      retries issuance in the background — harmless.
+#   • https://{$SERVER_IP} → internal (self-signed) cert, so the stack is
+#                      reachable at https://<ip> immediately, before DNS, and
+#                      as a stable internal endpoint. Browsers show a one-time
+#                      warning; that's expected for an IP cert.
+
+{
+	# ACME account email for Let's Encrypt expiry/issue notifications.
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	reverse_proxy northplane:8443
+}
+
+https://{$SERVER_IP} {
+	tls internal
+	reverse_proxy northplane:8443
+}
