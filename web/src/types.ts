@@ -411,6 +411,8 @@ export interface DashboardWidget {
   object?: string
   metric?: string
   range?: string // "3h", "24h", "7d"
+  // metric widget: a selector overlays one metric across MANY objects (instead
+  // of a single `object`); see also the shared `selector` field below.
   // gauge widget:
   max?: number   // scale end, default 100 (or auto from data)
   // donut/table widget:

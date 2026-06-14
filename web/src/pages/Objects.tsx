@@ -19,6 +19,7 @@ import { Badge } from '@/components/ui/badge'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { Empty, LabelChips, ErrorState } from '@/components/kit'
 import { Chart } from '../components/Chart'
+import { groupByUnit } from '../components/dash/series'
 import { DowntimeDialog } from '../components/AckDialog'
 import { ObjectFormDialog, BatchAddDialog } from '../components/objects/ObjectForm'
 import { t } from '../i18n'
@@ -225,6 +226,12 @@ export function ObjectDetailPage() {
     }),
     refetchInterval: 60_000,
   })
+  // Overlay same-unit metrics in one chart (grouped so unlike units don't share
+  // a y-axis); memoised so the Chart effect stays stable across refetches.
+  const metricGroups = useMemo(
+    () => groupByUnit((series ?? []).filter((s) => !s.series.metric.startsWith('np_'))),
+    [series],
+  )
   const recheck = useMutation({
     mutationFn: () => post(`/objects/${id}/check-now`),
     onSuccess: () => setTimeout(() => queryClient.invalidateQueries({ queryKey: ['objects', id] }), 2500),
@@ -315,13 +322,13 @@ export function ObjectDetailPage() {
         </Card>
       </div>
 
-      {(series?.length ?? 0) > 0 && (
+      {metricGroups.length > 0 && (
         <Card>
           <CardHeader><CardTitle>{t('metrics')}</CardTitle></CardHeader>
           <CardContent>
             <div className="grid lg:grid-cols-2 gap-6">
-              {series!.filter((s) => !s.series.metric.startsWith('np_')).map((s) => (
-                <Chart key={s.series.id} result={s} />
+              {metricGroups.map((g, i) => (
+                <Chart key={i} results={g} />
               ))}
             </div>
           </CardContent>

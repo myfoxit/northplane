@@ -1,12 +1,15 @@
-// uPlot wrapper (SPEC §12.1: vendored thin wrapper, ~45 KB lib) with
-// threshold bands from perfdata warn/crit ranges (SPEC §8.3).
+// uPlot wrapper (SPEC §12.1: vendored thin wrapper, ~45 KB lib). Renders one OR
+// many overlaid time-series with a colour legend and threshold bands from the
+// first series' Nagios warn/crit ranges (SPEC §8.3). Pass a single `result` or
+// an array of `results` to overlay (e.g. one metric across many hosts).
 import { useEffect, useRef } from 'react'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import type { SeriesResult } from '../types'
+import { alignSeries } from './dash/series'
 
-// parseRangeStart extracts the numeric start of a Nagios range spec for
-// the threshold band ("80", "80:", "@10:20" → 80/80/10).
+// rangeStart extracts the numeric start of a Nagios range spec for the threshold
+// band ("80", "80:", "@10:20" → 80/80/10).
 function rangeStart(spec?: string): number | null {
   if (!spec) return null
   const body = spec.startsWith('@') ? spec.slice(1) : spec
@@ -16,34 +19,44 @@ function rangeStart(spec?: string): number | null {
   return Number.isFinite(v) ? v : null
 }
 
-export function Chart({ result, height = 180 }: { result: SeriesResult; height?: number }) {
+export function Chart({ result, results, height = 180 }: {
+  result?: SeriesResult
+  results?: SeriesResult[]
+  height?: number
+}) {
   const ref = useRef<HTMLDivElement>(null)
   const plotRef = useRef<uPlot | null>(null)
 
   useEffect(() => {
-    if (!ref.current || !result.points?.length) return
-    const xs = result.points.map((p) => p.t / 1000)
-    const ys = result.points.map((p) => p.v)
-    const warn = rangeStart(result.series.warn)
-    const crit = rangeStart(result.series.crit)
+    if (!ref.current) return
+    const all = results ?? (result ? [result] : [])
+    const { x, series } = alignSeries(all)
+    if (x.length === 0 || series.length === 0) return
+
+    // threshold bands come from the first series that declares warn/crit;
+    // overlaid same-unit series typically share thresholds.
+    const banded = series.find((s) => s.warn || s.crit)
+    const warn = rangeStart(banded?.warn)
+    const crit = rangeStart(banded?.crit)
+    const single = series.length === 1
 
     const opts: uPlot.Options = {
       width: ref.current.clientWidth,
       height,
       series: [
         {},
-        {
-          label: result.series.metric,
-          stroke: '#60a5fa',
+        ...series.map((s) => ({
+          label: s.label,
+          stroke: s.color,
           width: 1.5,
-          fill: 'rgba(96,165,250,0.08)',
+          fill: single ? 'rgba(96,165,250,0.08)' : undefined,
           points: { show: false },
-        },
+          spanGaps: false,
+        })),
       ],
       axes: [
         { stroke: '#475569', grid: { stroke: '#1e293b' }, ticks: { stroke: '#1e293b' } },
-        { stroke: '#475569', grid: { stroke: '#1e293b' }, ticks: { stroke: '#1e293b' },
-          size: 60 },
+        { stroke: '#475569', grid: { stroke: '#1e293b' }, ticks: { stroke: '#1e293b' }, size: 60 },
       ],
       legend: { show: false },
       cursor: { y: false },
@@ -65,8 +78,9 @@ export function Chart({ result, height = 180 }: { result: SeriesResult; height?:
         ],
       },
     }
+    const data = [x, ...series.map((s) => s.values)] as unknown as uPlot.AlignedData
     plotRef.current?.destroy()
-    plotRef.current = new uPlot(opts, [xs, ys], ref.current)
+    plotRef.current = new uPlot(opts, data, ref.current)
     const onResize = () => {
       if (ref.current && plotRef.current) {
         plotRef.current.setSize({ width: ref.current.clientWidth, height })
@@ -78,18 +92,25 @@ export function Chart({ result, height = 180 }: { result: SeriesResult; height?:
       plotRef.current?.destroy()
       plotRef.current = null
     }
-  }, [result, height])
+  }, [result, results, height])
 
-  if (!result.points?.length) {
+  const all = results ?? (result ? [result] : [])
+  const { x, series } = alignSeries(all)
+  if (x.length === 0 || series.length === 0) {
     return <div className="text-muted-foreground text-xs p-4">no data</div>
   }
+  const banded = series.find((s) => s.warn || s.crit)
   return (
     <div>
-      <div className="text-xs text-muted-foreground mb-1 font-mono">
-        {result.series.metric}
-        {result.series.unit ? ` (${result.series.unit})` : ''}
-        {result.series.warn ? ` · warn ${result.series.warn}` : ''}
-        {result.series.crit ? ` · crit ${result.series.crit}` : ''}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground mb-1 font-mono">
+        {series.map((s) => (
+          <span key={s.label} className="inline-flex items-center gap-1">
+            <span className="inline-block w-2.5 h-0.5 rounded-sm" style={{ background: s.color }} />
+            {s.label}{s.unit ? ` (${s.unit})` : ''}
+          </span>
+        ))}
+        {banded?.warn ? <span className="text-amber-400/70">· warn {banded.warn}</span> : null}
+        {banded?.crit ? <span className="text-red-400/70">· crit {banded.crit}</span> : null}
       </div>
       <div ref={ref} />
     </div>

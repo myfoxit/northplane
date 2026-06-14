@@ -3,7 +3,7 @@
 // independently (wallboard-friendly: refetchInterval 30s). The grid
 // placement + edit chrome live in Dashboards.tsx; this file is the
 // read-only "what a widget shows" layer.
-import type { ReactNode } from 'react'
+import { type ReactNode, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { Check } from 'lucide-react'
@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge'
 import { Chart } from '../Chart'
 import { t } from '../../i18n'
 import { type BSNode, bsStateMeta, rangeFrom } from './util'
+import { groupByUnit } from './series'
 
 const REFRESH = 30_000
 
@@ -143,13 +144,16 @@ function AlertsWidget({ widget }: { widget: DashboardWidget }) {
   )
 }
 
-// MetricWidget: a Chart from metrics/query for one object+metric over a range.
+// MetricWidget: an overlaid time-series Chart from metrics/query. Targets either
+// a single object or — via a selector — one metric across MANY objects, drawn as
+// overlaid lines (grouped by unit so unlike units never share a y-axis).
 function MetricWidget({ widget }: { widget: DashboardWidget }) {
   const { data, isLoading } = useQuery({
-    queryKey: ['metrics', 'widget', widget.object, widget.metric, widget.range],
-    enabled: !!widget.object,
+    queryKey: ['metrics', 'widget', widget.object, widget.selector, widget.metric, widget.range],
+    enabled: !!(widget.object || widget.selector),
     queryFn: () => post<SeriesResult[]>('/metrics/query', {
-      objectId: widget.object,
+      objectId: widget.selector ? undefined : widget.object,
+      selector: widget.selector || undefined,
       metric: widget.metric || undefined,
       from: rangeFrom(widget.range),
       to: new Date().toISOString(),
@@ -157,13 +161,19 @@ function MetricWidget({ widget }: { widget: DashboardWidget }) {
     }),
     refetchInterval: REFRESH,
   })
-  if (!widget.object) return <Empty text={t('empty')} />
+  // memoised so each unit-group keeps a stable identity between refetches and
+  // the Chart effect doesn't tear down/rebuild uPlot on unrelated re-renders.
+  const series = useMemo(
+    () => (data ?? []).filter((s) => !s.series.metric.startsWith('np_')),
+    [data],
+  )
+  const groups = useMemo(() => groupByUnit(series), [series])
+  if (!widget.object && !widget.selector) return <Empty text={t('empty')} />
   if (isLoading) return <Spinner />
-  const series = (data ?? []).filter((s) => !s.series.metric.startsWith('np_'))
   if (series.length === 0) return <Empty text="keine Daten" />
   return (
     <div className="space-y-4">
-      {series.map((s) => <Chart key={`${s.series.objectId}:${s.series.id}`} result={s} height={140} />)}
+      {groups.map((g, i) => <Chart key={i} results={g} height={140} />)}
     </div>
   )
 }

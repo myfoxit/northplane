@@ -346,6 +346,10 @@ function WidgetConfigFields({ widget, onChange }: {
           <Field label="Objekt">
             <ObjectPicker value={widget.object} onChange={(object) => onChange({ object, metric: '' })} />
           </Field>
+          <Field label="Selektor (überlagert mehrere Objekte)">
+            <Input value={widget.selector ?? ''} placeholder="env=prod"
+              onChange={(e) => onChange({ selector: e.target.value })} />
+          </Field>
           <Field label="Metrik">
             <MetricPicker objectId={widget.object} value={widget.metric} onChange={(metric) => onChange({ metric })} />
           </Field>
