@@ -167,7 +167,16 @@ func serve(args []string) {
 	}
 	defer closeLogged("tsdb", ts, log)
 
-	if *demoSeed {
+	// Demo seeding runs for the explicit --demo flag (dev/E2E) or when
+	// NORTHPLANE_DEMO=true (config/env-driven deployments — the demo/real
+	// switch). The env path is guarded so flipping the switch can never
+	// seed the showcase environment on top of a real install.
+	switch {
+	case *demoSeed:
+		seedDemo(ctx, store, log, *demoSNMP, *demoTraps)
+	case cfg.Demo && hasRealData(ctx, store):
+		log.Warn("NORTHPLANE_DEMO is set but this database already holds real (non-demo) hosts — skipping demo seeding to protect production data; use a dedicated data dir/volume for the demo, or unset NORTHPLANE_DEMO")
+	case cfg.Demo:
 		seedDemo(ctx, store, log, *demoSNMP, *demoTraps)
 	}
 	seedDefaultAdmin(ctx, store, log)
@@ -208,6 +217,27 @@ func seedDemo(ctx context.Context, store *storage.Store, log *slog.Logger, snmpT
 		log.Info("demo: hint", "msg", h)
 	}
 	log.Info("demo: environment seeded", "counts", fmt.Sprintf("%v", sum.Counts))
+}
+
+// hasRealData reports whether the default tenant already contains host
+// objects the demo seeder did not create — i.e. real production data. It
+// gates the NORTHPLANE_DEMO switch so flipping demo mode on can never seed
+// the showcase environment on top of a real install. Conservative: any
+// query error returns true (refuse to seed) so an unknown state never
+// risks polluting real data.
+func hasRealData(ctx context.Context, store *storage.Store) bool {
+	hosts, err := store.ListObjects(ctx, storage.ObjectFilter{
+		TenantID: model.DefaultTenant, Kind: model.KindHost, Limit: 5000,
+	})
+	if err != nil {
+		return true
+	}
+	for _, h := range hosts {
+		if h.Labels["demo"] != "true" {
+			return true
+		}
+	}
+	return false
 }
 
 // seedDefaultAdmin guarantees a break-glass local admin exists so a fresh
