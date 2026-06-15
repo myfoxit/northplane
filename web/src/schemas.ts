@@ -55,6 +55,8 @@ export const dashboardWidgetSchema = z.object({
   text: z.string().optional(),
   w: z.number().optional(),
   h: z.number().optional(),
+  x: z.number().optional(),
+  y: z.number().optional(),
 })
 
 export const dashboardDocSchema = z.object({
@@ -63,6 +65,8 @@ export const dashboardDocSchema = z.object({
   shared: z.boolean().optional(),
   spec: z.object({
     widgets: z.array(dashboardWidgetSchema),
+    time: z.string().optional(),
+    refresh: z.string().optional(),
   }),
   shareToken: z.string().optional(),
   version: z.number().optional(),

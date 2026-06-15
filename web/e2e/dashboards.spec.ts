@@ -151,11 +151,16 @@ test.describe('dashboard lifecycle (admin)', () => {
     // The new widget appears in the (still-editing) draft grid.
     await expect(page.getByText(widgetTitle)).toBeVisible()
 
-    // EDIT — change the COUNTERS widget's title via its inline edit field, so
-    // we exercise both an added widget and a renamed existing one in one save.
+    // EDIT — rename the COUNTERS widget via its panel config dialog (opened
+    // from the panel's hover toolbar), so we exercise both an added widget and
+    // a renamed existing one in one save. The counters panel is the first one
+    // (layout is index-sorted), so its "Konfigurieren" button is .first().
     const renamed = `Übersicht-${Date.now()}`
-    const counterTitleField = page.locator('input[placeholder="Zähler (KPIs)"]').first()
-    await counterTitleField.fill(renamed)
+    await page.getByRole('button', { name: 'Konfigurieren' }).first().click()
+    const editDialog = page.getByRole('dialog')
+    await expect(editDialog.getByRole('heading', { name: /Panel bearbeiten/ })).toBeVisible()
+    await editDialog.getByPlaceholder('Zähler (KPIs)').fill(renamed)
+    await editDialog.getByRole('button', { name: 'Fertig' }).click()
 
     // SAVE — goes through the ETag/If-Match PUT (409 → re-fetch + retry).
     await page.getByRole('button', { name: 'Speichern' }).click()
@@ -175,6 +180,68 @@ test.describe('dashboard lifecycle (admin)', () => {
     await expect(card.getByText('2 Widget')).toBeVisible()
 
     // DELETE — remove it and confirm it's gone from the list.
+    await deleteDashboard(page, name)
+  })
+
+  test('free layout: resize a panel + persist positions and time/refresh', async ({ page }) => {
+    const name = `e2e-grid-${Date.now()}`
+    await createDashboard(page, name) // one counters widget (w:12)
+
+    // Add a gauge (w:3) so we have a non-full-width panel to resize.
+    await page.getByRole('button', { name: 'Bearbeiten' }).click()
+    await page.getByRole('button', { name: 'Widget hinzufügen' }).click()
+    const addDialog = page.getByRole('dialog')
+    await addDialog.getByRole('combobox').click()
+    await page.getByRole('option', { name: 'Gauge (Tacho)' }).click()
+    await addDialog.getByRole('button', { name: 'Hinzufügen' }).click()
+
+    // Set a non-default dashboard time range + refresh (DashControls).
+    await page.getByRole('combobox', { name: 'Zeitraum' }).click()
+    await page.getByRole('option', { name: '24h' }).click()
+    await page.getByRole('combobox', { name: 'Aktualisierungsintervall' }).click()
+    await page.getByRole('option', { name: '10 s' }).click()
+
+    // RESIZE the gauge (2nd panel → 2nd resize grip) wider via a pointer drag.
+    // Let the layout settle (add-dialog close + panel reflow transitions) so
+    // the grip's measured position is stable before we grab it.
+    await page.waitForTimeout(400)
+    const gaugePanel = page.locator('[class*="group/panel"]').filter({ hasText: 'Gauge (Tacho)' })
+    const wBefore = (await gaugePanel.boundingBox())!.width
+    const grip = page.getByTitle('Größe ändern').nth(1)
+    const box = await grip.boundingBox()
+    if (!box) throw new Error('resize grip not found')
+    const cx = box.x + box.width / 2, cy = box.y + box.height / 2
+    await page.mouse.move(cx, cy)
+    await page.mouse.down()
+    await page.mouse.move(cx + 60, cy + 30, { steps: 4 })
+    await page.mouse.move(cx + 260, cy + 140, { steps: 12 })
+    await page.mouse.up()
+    const wAfter = (await gaugePanel.boundingBox())!.width
+    expect(wAfter, `gauge resized wider ${wBefore}→${wAfter}`).toBeGreaterThan(wBefore + 20)
+
+    // SAVE → reload → assert from the persisted server doc via the API.
+    await page.getByRole('button', { name: 'Speichern' }).click()
+    await expect(page.getByRole('button', { name: 'Bearbeiten' })).toBeVisible()
+
+    const res = await page.request.get(`/api/v1/dashboards/${encodeURIComponent(name)}`)
+    expect(res.ok()).toBeTruthy()
+    const doc = await res.json()
+    expect(doc.spec.time).toBe('24h')
+    expect(doc.spec.refresh).toBe('10s')
+    expect(doc.spec.widgets).toHaveLength(2)
+    // Every widget carries explicit grid coordinates now.
+    for (const w of doc.spec.widgets) {
+      expect(typeof w.x).toBe('number')
+      expect(typeof w.y).toBe('number')
+      expect(typeof w.w).toBe('number')
+      expect(typeof w.h).toBe('number')
+    }
+    // The gauge was dragged wider (started at w:3).
+    const gauge = doc.spec.widgets.find((w: { type: string }) => w.type === 'gauge')
+    expect(gauge.w).toBeGreaterThan(3)
+    // The gauge sits below the full-width counters row (gravity-packed).
+    expect(gauge.y).toBeGreaterThan(0)
+
     await deleteDashboard(page, name)
   })
 

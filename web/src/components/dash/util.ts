@@ -22,13 +22,15 @@ export function bsStateMeta(state: number): { icon: string; color: string; label
   return { icon, color, label }
 }
 
-// rangeFrom converts a "1h"/"3h"/"24h"/"7d" token to an ISO start.
+// rangeFrom converts a range token ("1h".."30d") to an ISO start.
 export function rangeFrom(range?: string): string {
   const now = Date.now()
+  const H = 3600_000
   const map: Record<string, number> = {
-    '1h': 3600_000, '3h': 3 * 3600_000, '24h': 24 * 3600_000, '7d': 7 * 24 * 3600_000,
+    '1h': H, '3h': 3 * H, '6h': 6 * H, '12h': 12 * H,
+    '24h': 24 * H, '7d': 7 * 24 * H, '30d': 30 * 24 * H,
   }
-  const ms = map[range ?? '3h'] ?? 3 * 3600_000
+  const ms = map[range ?? '3h'] ?? 3 * H
   return new Date(now - ms).toISOString()
 }
 

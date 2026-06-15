@@ -1,8 +1,9 @@
 // Dashboard widget renderers (CMP Visualization-Dashboard parity, SPEC §12.3).
-// Each renderer is a self-contained query so it can auto-refresh
-// independently (wallboard-friendly: refetchInterval 30s). The grid
-// placement + edit chrome live in Dashboards.tsx; this file is the
-// read-only "what a widget shows" layer.
+// Each renderer is a self-contained query so it can auto-refresh independently.
+// The dashboard-level time range + refresh interval come from DashViewCtx
+// (Grafana's top-right time picker / refresh); a widget's own range is the
+// fallback. The grid placement + edit chrome live in Dashboards.tsx; this file
+// is the read-only "what a widget shows" layer.
 import { type ReactNode, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
@@ -18,8 +19,7 @@ import { Chart } from '../Chart'
 import { t } from '../../i18n'
 import { type BSNode, bsStateMeta, rangeFrom } from './util'
 import { groupByUnit, nagiosRangeStart, thresholdTone } from './series'
-
-const REFRESH = 30_000
+import { useDashView } from './ctx'
 
 // TileLink: a KPI tile that drills down into the matching filtered list
 // — every dashboard number is clickable (SPEC §12.3 drill-down).
@@ -64,10 +64,11 @@ export function BpiTreeLines({ nodes, depth = 0 }: { nodes: BSNode[]; depth?: nu
 // CountersWidget: KPI tiles from /overview — each tile links to the
 // filtered objects/alerts list.
 function CountersWidget() {
+  const { refreshMs } = useDashView()
   const { data } = useQuery({
     queryKey: ['overview'],
     queryFn: () => get<Overview>('/overview'),
-    refetchInterval: REFRESH,
+    refetchInterval: refreshMs || false,
   })
   const s = data?.summary
   const critAlerts = data?.openAlerts?.critical ?? 0
@@ -86,12 +87,13 @@ function CountersWidget() {
 
 // ProblemsWidget: compact problem list (state icon, name, output, ago).
 function ProblemsWidget({ widget }: { widget: DashboardWidget }) {
+  const { refreshMs } = useDashView()
   const limit = widget.limit ?? 10
   const sel = widget.selector ? `&selector=${encodeURIComponent(widget.selector)}` : ''
   const { data, isLoading } = useQuery({
     queryKey: ['problems', 'widget', limit, widget.selector],
     queryFn: () => get<ListResponse<ProblemRow>>(`/problems?limit=${limit}${sel}`),
-    refetchInterval: REFRESH,
+    refetchInterval: refreshMs || false,
   })
   const rows = data?.items ?? []
   if (isLoading) return <Spinner />
@@ -119,11 +121,12 @@ function ProblemsWidget({ widget }: { widget: DashboardWidget }) {
 
 // AlertsWidget: open alerts with severity badges.
 function AlertsWidget({ widget }: { widget: DashboardWidget }) {
+  const { refreshMs } = useDashView()
   const limit = widget.limit ?? 10
   const { data, isLoading } = useQuery({
     queryKey: ['alerts', 'widget', limit],
     queryFn: () => get<ListResponse<Alert>>(`/alerts?status=open&limit=${limit}`),
-    refetchInterval: REFRESH,
+    refetchInterval: refreshMs || false,
   })
   const rows = data?.items ?? []
   if (isLoading) return <Spinner />
@@ -146,20 +149,23 @@ function AlertsWidget({ widget }: { widget: DashboardWidget }) {
 
 // MetricWidget: an overlaid time-series Chart from metrics/query. Targets either
 // a single object or — via a selector — one metric across MANY objects, drawn as
-// overlaid lines (grouped by unit so unlike units never share a y-axis).
+// overlaid lines (grouped by unit so unlike units never share a y-axis). The
+// dashboard-level range overrides the widget's own when set.
 function MetricWidget({ widget }: { widget: DashboardWidget }) {
+  const { refreshMs, range: rangeOverride } = useDashView()
+  const range = rangeOverride ?? widget.range
   const { data, isLoading } = useQuery({
-    queryKey: ['metrics', 'widget', widget.object, widget.selector, widget.metric, widget.range],
+    queryKey: ['metrics', 'widget', widget.object, widget.selector, widget.metric, range],
     enabled: !!(widget.object || widget.selector),
     queryFn: () => post<SeriesResult[]>('/metrics/query', {
       objectId: widget.selector ? undefined : widget.object,
       selector: widget.selector || undefined,
       metric: widget.metric || undefined,
-      from: rangeFrom(widget.range),
+      from: rangeFrom(range),
       to: new Date().toISOString(),
       maxPoints: 300,
     }),
-    refetchInterval: REFRESH,
+    refetchInterval: refreshMs || false,
   })
   // memoised so each unit-group keeps a stable identity between refetches and
   // the Chart effect doesn't tear down/rebuild uPlot on unrelated re-renders.
@@ -180,10 +186,11 @@ function MetricWidget({ widget }: { widget: DashboardWidget }) {
 
 // BpiWidget: a single business service subtree (by name) with live status.
 function BpiWidget({ widget }: { widget: DashboardWidget }) {
+  const { refreshMs } = useDashView()
   const { data, isLoading } = useQuery({
     queryKey: ['business-tree', 'widget'],
     queryFn: () => get<BSNode[]>('/business-services:tree'),
-    refetchInterval: REFRESH,
+    refetchInterval: refreshMs || false,
   })
   if (isLoading) return <Spinner />
   const tree = data ?? []
@@ -214,6 +221,7 @@ function MarkdownWidget({ widget }: { widget: DashboardWidget }) {
 // GaugeWidget: SVG arc gauge of a metric's latest value with warn/crit
 // zones from perfdata thresholds (or the metric's own ranges).
 function GaugeWidget({ widget }: { widget: DashboardWidget }) {
+  const { refreshMs } = useDashView()
   const { data, isLoading } = useQuery({
     queryKey: ['metrics', 'gauge', widget.object, widget.metric],
     enabled: !!widget.object,
@@ -224,7 +232,7 @@ function GaugeWidget({ widget }: { widget: DashboardWidget }) {
       to: new Date().toISOString(),
       maxPoints: 20,
     }),
-    refetchInterval: REFRESH,
+    refetchInterval: refreshMs || false,
   })
   if (!widget.object) return <Empty text={t('empty')} />
   if (isLoading) return <Spinner />
@@ -286,10 +294,11 @@ function GaugeWidget({ widget }: { widget: DashboardWidget }) {
 // DonutWidget: state distribution (services or hosts) as an SVG donut.
 // Legend rows (and slices) drill down into the filtered objects list.
 function DonutWidget({ widget }: { widget: DashboardWidget }) {
+  const { refreshMs } = useDashView()
   const { data, isLoading } = useQuery({
     queryKey: ['overview'],
     queryFn: () => get<Overview>('/overview'),
-    refetchInterval: REFRESH,
+    refetchInterval: refreshMs || false,
   })
   if (isLoading) return <Spinner />
   const s = data?.summary
@@ -349,6 +358,7 @@ function DonutWidget({ widget }: { widget: DashboardWidget }) {
 // TableWidget: a live host/service table on the dashboard — state,
 // name, output, last check; rows drill down to the object detail.
 function TableWidget({ widget }: { widget: DashboardWidget }) {
+  const { refreshMs } = useDashView()
   const limit = widget.limit ?? 15
   const path = widget.scope === 'hosts' ? '/hosts' : widget.scope === 'services' ? '/services' : '/objects'
   const params = new URLSearchParams({ limit: String(limit) })
@@ -357,7 +367,7 @@ function TableWidget({ widget }: { widget: DashboardWidget }) {
   const { data, isLoading } = useQuery({
     queryKey: ['objects', 'table-widget', widget.scope, widget.selector, widget.query, limit],
     queryFn: () => get<ListResponse<NPObject>>(`${path}?${params.toString()}`),
-    refetchInterval: REFRESH,
+    refetchInterval: refreshMs || false,
   })
   const rows = data?.items ?? []
   if (isLoading) return <Spinner />
@@ -403,6 +413,7 @@ function TableWidget({ widget }: { widget: DashboardWidget }) {
 // BarWidget: horizontal bars of an object's current metric values,
 // threshold-coloured — e.g. disk usage per mount at a glance.
 function BarWidget({ widget }: { widget: DashboardWidget }) {
+  const { refreshMs } = useDashView()
   const limit = widget.limit ?? 8
   const { data, isLoading } = useQuery({
     queryKey: ['metrics', 'bar', widget.object, widget.metric],
@@ -414,7 +425,7 @@ function BarWidget({ widget }: { widget: DashboardWidget }) {
       to: new Date().toISOString(),
       maxPoints: 20,
     }),
-    refetchInterval: REFRESH,
+    refetchInterval: refreshMs || false,
   })
   if (!widget.object) return <Empty text={t('empty')} />
   if (isLoading) return <Spinner />

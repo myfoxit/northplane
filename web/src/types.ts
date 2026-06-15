@@ -428,16 +428,23 @@ export interface DashboardWidget {
   service?: string
   // markdown widget:
   text?: string
-  // grid placement (12-col grid):
+  // grid placement (12-col grid). w/h are the span in columns/row-units; x/y
+  // the top-left cell. x/y are optional for back-compat: a doc saved before
+  // free positioning has only w/h and is auto-flowed on load (see grid.ts).
   w?: number
   h?: number
+  x?: number
+  y?: number
 }
 
 export interface DashboardDoc {
   id?: string
   name: string
   shared?: boolean
-  spec: { widgets: DashboardWidget[] }
+  // `time` is the default range token (e.g. "3h") applied to time-series
+  // widgets; `refresh` the auto-refresh interval token (e.g. "30s", "off").
+  // Both optional — a doc without them falls back to the per-widget/default.
+  spec: { widgets: DashboardWidget[]; time?: string; refresh?: string }
   shareToken?: string
   version?: number
 }
