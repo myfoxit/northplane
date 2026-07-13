@@ -15,7 +15,7 @@ import (
 
 // --- users ---
 
-const userCols = `id, name, email, subject, local, pass_hash, disabled, last_seen_at,
+const userCols = `id, name, email, subject, tenant_id, local, pass_hash, disabled, last_seen_at,
 	version, created_at, updated_at, roles`
 
 func scanUser(sc interface{ Scan(...any) error }) (*model.User, error) {
@@ -23,7 +23,7 @@ func scanUser(sc interface{ Scan(...any) error }) (*model.User, error) {
 	var subject NullStr
 	var roles string
 	var lastSeen, created, updated ScanTime
-	if err := sc.Scan(&u.ID, &u.Name, &u.Email, &subject, &u.Local, &u.PassHash,
+	if err := sc.Scan(&u.ID, &u.Name, &u.Email, &subject, &u.TenantID, &u.Local, &u.PassHash,
 		&u.Disabled, &lastSeen, &u.Version, &created, &updated, &roles); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrNotFound
@@ -69,7 +69,7 @@ func (s *Store) UpsertUserBySubject(ctx context.Context, subject, name, email st
 		return existing, nil
 	}
 	u := &model.User{ID: model.NewID(), Name: name, Email: email, Subject: subject,
-		Version: 1, CreatedAt: now, UpdatedAt: now}
+		TenantID: model.DefaultTenant, Version: 1, CreatedAt: now, UpdatedAt: now}
 	err = s.Write(ctx, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, s.Q(
 			`INSERT INTO users (id, name, email, subject, local, version, created_at, updated_at)
@@ -104,6 +104,9 @@ func (s *Store) CreateUser(ctx context.Context, u *model.User) (*model.User, err
 		u.ID = model.NewID()
 	}
 	u.Version, u.CreatedAt, u.UpdatedAt = 1, now, now
+	if u.TenantID == "" {
+		u.TenantID = model.DefaultTenant
+	}
 	roles, _ := jsonMarshal(orSlice(u.Roles))
 	err := s.Write(ctx, func(tx *sql.Tx) error {
 		var n int
@@ -115,10 +118,10 @@ func (s *Store) CreateUser(ctx context.Context, u *model.User) (*model.User, err
 			return ErrDuplicate
 		}
 		_, err := tx.ExecContext(ctx, s.Q(
-			`INSERT INTO users (id, name, email, subject, local, pass_hash, disabled, roles,
+			`INSERT INTO users (id, name, email, subject, tenant_id, local, pass_hash, disabled, roles,
 			 version, created_at, updated_at)
-			 VALUES (?,?,?,?,?,?,?,?,1,?,?)`),
-			u.ID, u.Name, u.Email, S(u.Subject), u.Local, u.PassHash, u.Disabled, roles,
+			 VALUES (?,?,?,?,?,?,?,?,?,1,?,?)`),
+			u.ID, u.Name, u.Email, S(u.Subject), u.TenantID, u.Local, u.PassHash, u.Disabled, roles,
 			s.T(now), s.T(now))
 		return err
 	})

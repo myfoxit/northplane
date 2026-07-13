@@ -423,6 +423,11 @@ func (a *API) registerUsers() {
 			}
 			user, err := a.Store.CreateUser(r.Context(), &model.User{
 				Name: req.Name, Email: req.Email, Local: true,
+				// Scope the new account to the operator's active tenant: a
+				// central admin (admin:tenants) creating a user under
+				// X-Northplane-Tenant provisions a customer login for THAT
+				// tenant; otherwise it lands in the operator's own tenant.
+				TenantID: a.tenantOf(r, p),
 				PassHash: hash, Roles: req.Roles, Disabled: req.Disabled,
 			})
 			if err != nil {

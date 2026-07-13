@@ -154,3 +154,33 @@ func TestUpsertUserBySubjectDisabledGuard(t *testing.T) {
 		}
 	})
 }
+
+// TestUserTenant covers the per-tenant home tenant (migration 7): an explicit
+// tenant round-trips through every read path, and an unset tenant defaults to
+// the Default tenant so pre-existing single-tenant behaviour is preserved.
+func TestUserTenant(t *testing.T) {
+	matrix(t, func(t *testing.T, s *Store) {
+		ctx := context.Background()
+		const acme = "019f5a58-7345-7000-b78a-9a3c43ce7f52"
+
+		// explicit tenant persists (create → get-by-id → get-by-email)
+		u, err := s.CreateUser(ctx, &model.User{
+			Name: "Acme Op", Email: "op@acme.example", Local: true,
+			TenantID: acme, Roles: []string{"operator"},
+		})
+		if err != nil || u.TenantID != acme {
+			t.Fatalf("create tenant: %v %+v", err, u)
+		}
+		byID, _ := s.GetUser(ctx, u.ID)
+		byEmail, _ := s.GetUserByEmail(ctx, "op@acme.example")
+		if byID.TenantID != acme || byEmail.TenantID != acme {
+			t.Fatalf("tenant not persisted: id=%q email=%q", byID.TenantID, byEmail.TenantID)
+		}
+
+		// unset tenant defaults to Default (single-tenant installs unaffected)
+		d, err := s.CreateUser(ctx, &model.User{Name: "Def", Email: "def@example.net", Local: true})
+		if err != nil || d.TenantID != model.DefaultTenant {
+			t.Fatalf("default tenant: %v %+v", err, d)
+		}
+	})
+}

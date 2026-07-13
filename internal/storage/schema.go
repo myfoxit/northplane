@@ -385,6 +385,12 @@ var migrations = []migration{
 		`CREATE INDEX IF NOT EXISTS alerts_object ON alerts (tenant_id, object_id)`,
 		`CREATE INDEX IF NOT EXISTS alerts_rule ON alerts (tenant_id, rule_id, status, opened_at)`,
 	}},
+	{7, "user_tenant", []string{
+		// Per-tenant local login: a user's home tenant. Existing rows default
+		// to the Default tenant (behaviour unchanged); a customer user created
+		// in a specific tenant logs into that tenant and sees only its data.
+		`ALTER TABLE users ADD COLUMN tenant_id TEXT NOT NULL DEFAULT '00000000-0000-7000-8000-000000000001'`,
+	}},
 }
 
 func (s *Store) migrate(ctx context.Context) error {

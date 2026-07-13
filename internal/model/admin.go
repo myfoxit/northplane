@@ -32,7 +32,8 @@ type User struct {
 	ID         string     `json:"id"`
 	Name       string     `json:"name"`
 	Email      string     `json:"email"`
-	Subject    string     `json:"subject,omitempty"` // OIDC iss+sub
+	Subject    string     `json:"subject,omitempty"`  // OIDC iss+sub
+	TenantID   string     `json:"tenantId,omitempty"` // home tenant; local login lands here (empty = Default)
 	Local      bool       `json:"local,omitempty"`
 	PassHash   string     `json:"-"` // argon2id, local users only — never serialised
 	Roles      []string   `json:"roles,omitempty"`

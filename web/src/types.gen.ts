@@ -2852,6 +2852,7 @@ export interface components {
             name: string;
             roles?: string[];
             subject?: string;
+            tenantId?: string;
             /** Format: date-time */
             updatedAt: string;
             version: number;

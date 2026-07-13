@@ -277,14 +277,22 @@ func (p *Pages) finishLogin(w http.ResponseWriter, r *http.Request,
 	if r.FormValue("remember") != "" {
 		ttl = rememberTTL
 	}
-	session, err := p.auth.NewSession(r.Context(), user.ID, model.DefaultTenant, roles, nil, ttl)
+	// A user logs into their HOME tenant. Central operators (admin:tenants)
+	// still start in Default and pivot per-customer via the X-Northplane-Tenant
+	// header; a customer account provisioned in tenant T lands in T and, with a
+	// non-cross-tenant role, sees only T's data. Legacy rows (empty) → Default.
+	tenant := user.TenantID
+	if tenant == "" {
+		tenant = model.DefaultTenant
+	}
+	session, err := p.auth.NewSession(r.Context(), user.ID, tenant, roles, nil, ttl)
 	if err != nil {
 		p.loginPage(w, r, "Interner Fehler.")
 		return
 	}
 	p.setSession(w, r, session, ttl)
 	_, _ = p.store.AppendAudit(r.Context(), &model.AuditEntry{
-		TenantID: model.DefaultTenant, ActorType: model.ActorUser, ActorID: user.ID,
+		TenantID: tenant, ActorType: model.ActorUser, ActorID: user.ID,
 		Action: action, SourceIP: remoteIP(r),
 	})
 	http.Redirect(w, r, "/", http.StatusFound)
