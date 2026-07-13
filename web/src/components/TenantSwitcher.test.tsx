@@ -46,6 +46,19 @@ describe('<TenantSwitcher />', () => {
     expect(await screen.findByLabelText(/customer|kunde/i)).toBeInTheDocument()
   })
 
+  it('shows the switcher for a super-admin holding the "*:*" grant', async () => {
+    // Regression: the built-in admin role holds "*:*", which the old literal
+    // check (p === 'admin:tenants' || p === '*') missed — hiding the console
+    // from the very operator allowed to use it. Wildcard matching (see
+    // permissions.ts) now mirrors the backend.
+    server.use(
+      whoami(['*:*']),
+      tenantsList([{ id: 't-acme', name: 'Acme GmbH', slug: 'acme' }]),
+    )
+    renderWithProviders(<TenantSwitcher />)
+    expect(await screen.findByLabelText(/customer|kunde/i)).toBeInTheDocument()
+  })
+
   it('flags the active customer with a clear indicator', async () => {
     setActiveTenantId('t-acme')
     server.use(

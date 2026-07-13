@@ -13,6 +13,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { Building2 } from 'lucide-react'
 import { get, queryClient, type ListResponse } from '../api'
 import { setActiveTenantId, useActiveTenant } from '../tenant'
+import { hasPermission } from '../permissions'
 import type { Tenant, Whoami } from '../types'
 import { t } from '../i18n'
 import {
@@ -32,7 +33,10 @@ export function TenantSwitcher() {
     queryFn: () => get<Whoami>('/whoami'),
     staleTime: 5 * 60_000,
   })
-  const canSwitch = !!me?.permissions?.some((p) => p === 'admin:tenants' || p === '*')
+  // Wildcard-aware (see permissions.ts): the built-in admin role holds "*:*",
+  // which a literal string compare would miss — hiding the switcher from the
+  // very operator who is allowed to use it.
+  const canSwitch = hasPermission(me?.permissions, 'admin:tenants')
 
   const { data: tenants } = useQuery({
     queryKey: ['tenants'],
