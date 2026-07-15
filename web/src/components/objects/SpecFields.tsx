@@ -2,12 +2,20 @@
 // declarative check configuration including the interval/retry/attempts
 // block. Shared by the host/service ObjectForm and the template editor so
 // both surfaces stay in lock-step (SPEC §6.2 — same fields everywhere).
+//
+// The fields are grouped into exported sections (AddressField, CheckSection,
+// IntervalSection, NotifySection, AdvancedSection). The flat SpecFields stacks
+// them for the wide template editor; ObjectForm distributes them across tabs
+// (FORM-1/3/5). Reference pickers switch between the compact chip combobox
+// (in a form) and the full two-pane DualListPicker (on wide surfaces) via
+// `compact` (FORM-2).
 import { useQuery } from '@tanstack/react-query'
 import { get } from '../../api'
 import type { ObjectSpec } from '../../types'
 import { useBuiltins, useResourceNames } from './specUtil'
 import { Field, DurationInput, KVEditor, ListEditor } from '@/components/kit'
 import { DualListPicker } from '@/components/DualListPicker'
+import { MultiSelect } from '@/components/MultiSelect'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -18,6 +26,32 @@ import { t } from '../../i18n'
 // Radix SelectItem value cannot be "" — sentinel stands in for the
 // "inherit/all" empty option and maps back to '' on change.
 const NONE = '__none__'
+
+type Kind = 'host' | 'service' | ''
+
+// Props shared by every section: the current spec + a shallow patcher, the
+// object kind (toggles host-only parents / service-only staleness), and whether
+// to render compact form pickers instead of the wide dual-list.
+type SectionProps = {
+  spec: ObjectSpec
+  patch: (p: Partial<ObjectSpec>) => void
+  kind: Kind
+  compact?: boolean
+}
+
+// RefPicker: compact chip combobox in a form, full two-pane transfer list on a
+// wide surface (FORM-2). Same {value,onChange,options} contract either way.
+function RefPicker({ compact, value, onChange, options, placeholder }: {
+  compact?: boolean
+  value: string[]
+  onChange: (v: string[]) => void
+  options: string[]
+  placeholder?: string
+}) {
+  return compact
+    ? <MultiSelect value={value} onChange={onChange} options={options} placeholder={placeholder} />
+    : <DualListPicker value={value} onChange={onChange} options={options} />
+}
 
 // ——— tri-state inheritance toggles ————————————————————————————————
 // EnableChecks/Notifications/FlapDetection are *bool in the Go model:
@@ -154,42 +188,23 @@ function NotifyOnChips({ kind, value, onChange }: {
   )
 }
 
-// ——— the spec editor ————————————————————————————————————————————
-// `kind` toggles the host-only (parents) / service-only (staleness) blocks.
-// Pass kind='' from the template editor to show everything.
-export function SpecFields({ spec, onChange, kind, hideCommand }: {
-  spec: ObjectSpec
-  onChange: (s: ObjectSpec) => void
-  kind: 'host' | 'service' | ''
-  hideCommand?: boolean
-}) {
-  const patch = (p: Partial<ObjectSpec>) => onChange({ ...spec, ...p })
+// ——— sections ————————————————————————————————————————————————————
+
+// AddressField — the object's monitored address (Basis tab).
+export function AddressField({ spec, patch }: SectionProps) {
+  return (
+    <Field label={t('address')}>
+      <Input value={spec.address ?? ''} placeholder="10.0.0.1 / host.example.com"
+        onChange={(e) => patch({ address: e.target.value })} />
+    </Field>
+  )
+}
+
+// CheckSection — check command + arguments + template inheritance (Prüfung).
+export function CheckSection({ spec, patch, compact, hideCommand }: SectionProps & { hideCommand?: boolean }) {
   const templates = useResourceNames('templates', ['resources', 'templates', 'names'])
-  const periods = useResourceNames('time-periods', ['resources', 'time-periods', 'names'])
-  const contactGroups = useResourceNames('contact-groups', ['resources', 'contact-groups', 'names'])
-  const contacts = useResourceNames('contacts', ['resources', 'contacts', 'names'])
-  // Distinct query key from ObjectForm's useHostPicker (['objects','host-names']):
-  // that one caches {id,name} objects for the host <Select>, this one caches
-  // plain name strings for the parents picker. Sharing the key let whichever
-  // ran first decide the shape — and object-shaped data crashed the string-only
-  // DualListPicker (localeCompare/toLowerCase on an object).
-  const hosts = useQuery({
-    queryKey: ['objects', 'host-names', 'namesOnly'],
-    queryFn: () => get<{ items: { name: string }[] | null }>('/hosts?limit=2000&withState=false')
-      .then((r) => (r.items ?? []).map((x) => x.name)),
-    staleTime: 30_000,
-    enabled: kind !== 'service', // parents apply to hosts (and the catch-all template view)
-  })
-
-  const passive = splitRef(spec.checkCommand).kind === 'passive'
-
   return (
     <div className="space-y-4">
-      <Field label={t('address')}>
-        <Input value={spec.address ?? ''} placeholder="10.0.0.1 / host.example.com"
-          onChange={(e) => patch({ address: e.target.value })} />
-      </Field>
-
       {!hideCommand && <CheckCommandField spec={spec} patch={patch} />}
 
       <Field label={t('args')} hint="Ein Argument pro Eintrag ($ARG1$, $ARG2$ …)">
@@ -197,72 +212,102 @@ export function SpecFields({ spec, onChange, kind, hideCommand }: {
       </Field>
 
       <Field label={t('templates')} hint="Vererbung in deklarierter Reihenfolge (später gewinnt)">
-        <DualListPicker value={spec.templates ?? []} onChange={(v) => patch({ templates: v })}
-          options={templates.data ?? []} />
+        <RefPicker compact={compact} value={spec.templates ?? []} onChange={(v) => patch({ templates: v })}
+          options={templates.data ?? []} placeholder="Template hinzufügen…" />
       </Field>
+    </div>
+  )
+}
 
+// IntervalSection — the heart of CMP check-interval management (Prüfung).
+export function IntervalSection({ spec, patch }: SectionProps) {
+  const periods = useResourceNames('time-periods', ['resources', 'time-periods', 'names'])
+  return (
+    <div className="border border-border rounded-lg p-3 space-y-3">
+      <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('interval')} &amp; Scheduling</div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <Field label={t('interval')} hint="z.B. 60s, 5m">
+          <DurationInput value={spec.interval ?? ''} onChange={(v) => patch({ interval: v })} placeholder="60s" />
+        </Field>
+        <Field label={t('retryInterval')}>
+          <DurationInput value={spec.retryInterval ?? ''} onChange={(v) => patch({ retryInterval: v })} placeholder="15s" />
+        </Field>
+        <Field label={t('maxAttempts')}>
+          <Input type="number" min={1} value={spec.maxCheckAttempts ?? ''}
+            onChange={(e) => patch({ maxCheckAttempts: e.target.value === '' ? undefined : Number(e.target.value) })} />
+        </Field>
+        <Field label={t('timeout')}>
+          <DurationInput value={spec.timeout ?? ''} onChange={(v) => patch({ timeout: v })} placeholder="30s" />
+        </Field>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <Field label={t('checkPeriod')}>
+          <Input value={spec.checkPeriod ?? ''} list="sugg-check-periods" placeholder="24x7"
+            onChange={(e) => patch({ checkPeriod: e.target.value })} />
+          <datalist id="sugg-check-periods">
+            {(periods.data ?? []).map((p) => <option key={p} value={p} />)}
+          </datalist>
+        </Field>
+      </div>
+    </div>
+  )
+}
+
+// NotifySection — Nagios contact_groups parity: referenced groups/contacts are
+// notified on hard state changes; notifyOn filters transitions, the period
+// gates the window (Benachrichtigungen).
+export function NotifySection({ spec, patch, kind, compact }: SectionProps) {
+  const contactGroups = useResourceNames('contact-groups', ['resources', 'contact-groups', 'names'])
+  const contacts = useResourceNames('contacts', ['resources', 'contacts', 'names'])
+  const periods = useResourceNames('time-periods', ['resources', 'time-periods', 'names'])
+  return (
+    <div className="border border-border rounded-lg p-3 space-y-3">
+      <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('notifications')}</div>
+      <div className={compact ? 'grid grid-cols-1 gap-3' : 'grid grid-cols-1 sm:grid-cols-2 gap-2'}>
+        <Field label="Kontaktgruppen" hint="Direkt benachrichtigt bei harten Statuswechseln">
+          <RefPicker compact={compact} value={spec.contactGroups ?? []} onChange={(v) => patch({ contactGroups: v })}
+            options={contactGroups.data ?? []} placeholder="Gruppe hinzufügen…" />
+        </Field>
+        <Field label="Kontakte" hint="Zusätzliche Einzelkontakte">
+          <RefPicker compact={compact} value={spec.contacts ?? []} onChange={(v) => patch({ contacts: v })}
+            options={contacts.data ?? []} placeholder="Kontakt hinzufügen…" />
+        </Field>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <Field label="Benachrichtigen bei" hint="Leer = alle Problemzustände + Recovery">
+          <NotifyOnChips kind={kind} value={spec.notifyOn} onChange={(v) => patch({ notifyOn: v })} />
+        </Field>
+        <Field label="Benachrichtigungszeitraum" hint="Zeitfenster (Time-Period), leer = immer">
+          <Input value={spec.notificationPeriod ?? ''} list="sugg-notify-periods" placeholder="24x7"
+            onChange={(e) => patch({ notificationPeriod: e.target.value })} />
+          <datalist id="sugg-notify-periods">
+            {(periods.data ?? []).map((p) => <option key={p} value={p} />)}
+          </datalist>
+        </Field>
+      </div>
+    </div>
+  )
+}
+
+// AdvancedSection — parents, behaviour toggles, staleness, zone, vars, runbook
+// (Erweitert). Rarely touched: template inheritance + defaults cover most of it.
+export function AdvancedSection({ spec, patch, kind, compact }: SectionProps) {
+  const hosts = useQuery({
+    queryKey: ['objects', 'host-names', 'namesOnly'],
+    queryFn: () => get<{ items: { name: string }[] | null }>('/hosts?limit=2000&withState=false')
+      .then((r) => (r.items ?? []).map((x) => x.name)),
+    staleTime: 30_000,
+    enabled: kind !== 'service', // parents apply to hosts (and the catch-all template view)
+  })
+  const passive = splitRef(spec.checkCommand).kind === 'passive'
+  return (
+    <div className="space-y-4">
       {kind !== 'service' && (
         <Field label={t('parents')} hint="Hosts für die Erreichbarkeitslogik">
-          <DualListPicker value={spec.parents ?? []} onChange={(v) => patch({ parents: v })}
-            options={hosts.data ?? []} />
+          <RefPicker compact={compact} value={spec.parents ?? []} onChange={(v) => patch({ parents: v })}
+            options={hosts.data ?? []} placeholder="Parent-Host hinzufügen…" />
         </Field>
       )}
-
-      {/* INTERVALS — the heart of CMP check-interval management. */}
-      <div className="border border-border rounded-lg p-3 space-y-3">
-        <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('interval')} &amp; Scheduling</div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <Field label={t('interval')} hint="z.B. 60s, 5m">
-            <DurationInput value={spec.interval ?? ''} onChange={(v) => patch({ interval: v })} placeholder="60s" />
-          </Field>
-          <Field label={t('retryInterval')}>
-            <DurationInput value={spec.retryInterval ?? ''} onChange={(v) => patch({ retryInterval: v })} placeholder="15s" />
-          </Field>
-          <Field label={t('maxAttempts')}>
-            <Input type="number" min={1} value={spec.maxCheckAttempts ?? ''}
-              onChange={(e) => patch({ maxCheckAttempts: e.target.value === '' ? undefined : Number(e.target.value) })} />
-          </Field>
-          <Field label={t('timeout')}>
-            <DurationInput value={spec.timeout ?? ''} onChange={(v) => patch({ timeout: v })} placeholder="30s" />
-          </Field>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <Field label={t('checkPeriod')}>
-            <Input value={spec.checkPeriod ?? ''} list="sugg-periods" placeholder="24x7"
-              onChange={(e) => patch({ checkPeriod: e.target.value })} />
-            <datalist id="sugg-periods">
-              {(periods.data ?? []).map((p) => <option key={p} value={p} />)}
-            </datalist>
-          </Field>
-        </div>
-      </div>
-
-      {/* NOTIFICATION ROUTING — Nagios contact_groups parity: the
-          referenced groups/contacts are notified directly on hard state
-          changes; notifyOn filters the transitions, the period gates the
-          time window. */}
-      <div className="border border-border rounded-lg p-3 space-y-3">
-        <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('notifications')}</div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <Field label="Kontaktgruppen" hint="Direkt benachrichtigt bei harten Statuswechseln">
-            <DualListPicker value={spec.contactGroups ?? []} onChange={(v) => patch({ contactGroups: v })}
-              options={contactGroups.data ?? []} />
-          </Field>
-          <Field label="Kontakte" hint="Zusätzliche Einzelkontakte">
-            <DualListPicker value={spec.contacts ?? []} onChange={(v) => patch({ contacts: v })}
-              options={contacts.data ?? []} />
-          </Field>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <Field label="Benachrichtigen bei" hint="Leer = alle Problemzustände + Recovery">
-            <NotifyOnChips kind={kind} value={spec.notifyOn} onChange={(v) => patch({ notifyOn: v })} />
-          </Field>
-          <Field label="Benachrichtigungszeitraum" hint="Zeitfenster (Time-Period), leer = immer">
-            <Input value={spec.notificationPeriod ?? ''} list="sugg-periods" placeholder="24x7"
-              onChange={(e) => patch({ notificationPeriod: e.target.value })} />
-          </Field>
-        </div>
-      </div>
 
       {/* Behaviour toggles + threshold mode. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
@@ -320,3 +365,24 @@ export function SpecFields({ spec, onChange, kind, hideCommand }: {
   )
 }
 
+// ——— the flat spec editor (wide template editor) —————————————————————
+// `kind` toggles the host-only (parents) / service-only (staleness) blocks.
+// Pass kind='' from the template editor to show everything. The full DualList
+// pickers are kept here (compact=false) because there is room on this surface.
+export function SpecFields({ spec, onChange, kind, hideCommand }: {
+  spec: ObjectSpec
+  onChange: (s: ObjectSpec) => void
+  kind: Kind
+  hideCommand?: boolean
+}) {
+  const patch = (p: Partial<ObjectSpec>) => onChange({ ...spec, ...p })
+  return (
+    <div className="space-y-4">
+      <AddressField spec={spec} patch={patch} kind={kind} />
+      <CheckSection spec={spec} patch={patch} kind={kind} hideCommand={hideCommand} />
+      <IntervalSection spec={spec} patch={patch} kind={kind} />
+      <NotifySection spec={spec} patch={patch} kind={kind} />
+      <AdvancedSection spec={spec} patch={patch} kind={kind} />
+    </div>
+  )
+}

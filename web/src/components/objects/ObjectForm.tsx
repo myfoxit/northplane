@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
@@ -17,7 +18,9 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { t } from '../../i18n'
-import { SpecFields } from './SpecFields'
+import {
+  AddressField, CheckSection, IntervalSection, NotifySection, AdvancedSection,
+} from './SpecFields'
 import { cleanSpec, specOf } from './specUtil'
 
 // Radix SelectItem value cannot be "" — sentinel stands in for the
@@ -61,7 +64,11 @@ export function ObjectForm({ kind, edit, onDone, onCancel }: {
   const [labels, setLabels] = useState<Record<string, string>>(edit?.labels ?? {})
   const [host, setHost] = useState(edit?.hostId ?? '')
   const [spec, setSpec] = useState<ObjectSpec>(specOf(edit?.spec))
+  // Tabs (FORM-1/3/5): default to Basis so creating a host is a name+address
+  // job; check/notify/advanced config lives behind the other tabs.
+  const [tab, setTab] = useState<'basis' | 'check' | 'notify' | 'advanced'>('basis')
 
+  const patch = (p: Partial<ObjectSpec>) => setSpec((s) => ({ ...s, ...p }))
   const hosts = useHostPicker(kind === 'service')
 
   const save = useSave<void>(async () => {
@@ -79,49 +86,83 @@ export function ObjectForm({ kind, edit, onDone, onCancel }: {
   return (
     <form
       onSubmit={(e) => { e.preventDefault(); save.mutate() }}
-      className="space-y-4"
+      className="flex flex-col min-h-0 flex-1"
     >
-      <div className="grid grid-cols-2 gap-2">
-        <Field label={t('name')} required>
-          <Input value={name} onChange={(e) => setName(e.target.value)}
-            disabled={isEdit} placeholder={kind === 'host' ? 'web01' : 'http'} autoFocus={!isEdit} />
-        </Field>
-        <Field label={t('folder')} hint="z.B. /prod/web">
-          <Input value={folder} onChange={(e) => setFolder(e.target.value)} placeholder="/" />
-        </Field>
+      <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)} className="flex flex-col min-h-0 flex-1 gap-0">
+        <div className="px-6 pt-3 shrink-0">
+          <TabsList className="w-full justify-start">
+            <TabsTrigger value="basis">Basis</TabsTrigger>
+            <TabsTrigger value="check">Prüfung</TabsTrigger>
+            <TabsTrigger value="notify">Benachrichtigungen</TabsTrigger>
+            <TabsTrigger value="advanced">Erweitert</TabsTrigger>
+          </TabsList>
+        </div>
+
+        {/* Only this middle region scrolls; header/tabs above and the action
+            bar below stay pinned (FORM-5). */}
+        <div className="overflow-y-auto min-h-0 flex-1 px-6 py-4">
+          <TabsContent value="basis" className="mt-0 space-y-4">
+            <div className="grid grid-cols-2 gap-2">
+              <Field label={t('name')} required>
+                <Input value={name} onChange={(e) => setName(e.target.value)}
+                  disabled={isEdit} placeholder={kind === 'host' ? 'web01' : 'http'} autoFocus={!isEdit} />
+              </Field>
+              <Field label={t('folder')} hint="z.B. /prod/web">
+                <Input value={folder} onChange={(e) => setFolder(e.target.value)} placeholder="/" />
+              </Field>
+            </div>
+
+            {kind === 'service' && (
+              <Field label={t('host')} required hint={isEdit ? 'Host kann nicht geändert werden' : undefined}>
+                <Select value={host || NONE} onValueChange={(v) => setHost(v === NONE ? '' : v)} disabled={isEdit} required>
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NONE}>— {t('host')} wählen —</SelectItem>
+                    {(hosts.data ?? []).map((h) => (
+                      <SelectItem key={h.id} value={h.id}>{h.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            )}
+
+            <AddressField spec={spec} patch={patch} kind={kind} />
+
+            <Field label={t('labels')}>
+              <KVEditor value={labels} onChange={setLabels} keyPlaceholder="env" valuePlaceholder="prod" />
+            </Field>
+          </TabsContent>
+
+          <TabsContent value="check" className="mt-0 space-y-4">
+            <CheckSection spec={spec} patch={patch} kind={kind} compact />
+            <IntervalSection spec={spec} patch={patch} kind={kind} />
+          </TabsContent>
+
+          <TabsContent value="notify" className="mt-0">
+            <NotifySection spec={spec} patch={patch} kind={kind} compact />
+          </TabsContent>
+
+          <TabsContent value="advanced" className="mt-0">
+            <AdvancedSection spec={spec} patch={patch} kind={kind} compact />
+          </TabsContent>
+        </div>
+      </Tabs>
+
+      <div className="border-t border-border px-6 py-3 shrink-0 space-y-2">
+        {conflict
+          ? <FormError error="Konflikt — bitte neu laden." />
+          : <FormError error={err} />}
+        <SubmitRow onCancel={onCancel} saving={save.isPending}
+          disabled={!name || (kind === 'service' && !host)}
+          label={isEdit ? t('save') : t('create')} />
       </div>
-
-      {kind === 'service' && (
-        <Field label={t('host')} required hint={isEdit ? 'Host kann nicht geändert werden' : undefined}>
-          <Select value={host || NONE} onValueChange={(v) => setHost(v === NONE ? '' : v)} disabled={isEdit} required>
-            <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE}>— {t('host')} wählen —</SelectItem>
-              {(hosts.data ?? []).map((h) => (
-                <SelectItem key={h.id} value={h.id}>{h.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-      )}
-
-      <Field label={t('labels')}>
-        <KVEditor value={labels} onChange={setLabels} keyPlaceholder="env" valuePlaceholder="prod" />
-      </Field>
-
-      <SpecFields spec={spec} onChange={setSpec} kind={kind} />
-
-      {conflict
-        ? <FormError error="Konflikt — bitte neu laden." />
-        : <FormError error={err} />}
-      <SubmitRow onCancel={onCancel} saving={save.isPending}
-        disabled={!name || (kind === 'service' && !host)}
-        label={isEdit ? t('save') : t('create')} />
     </form>
   )
 }
 
-// ObjectFormDialog wraps ObjectForm in a Dialog (size lg).
+// ObjectFormDialog wraps ObjectForm in a Dialog. The content is a flex column
+// with a pinned header + footer action bar; only the tab body scrolls, so on a
+// tall form the title and Anlegen/Speichern stay reachable (FORM-5).
 export function ObjectFormDialog({ open, kind, edit, onClose }: {
   open: boolean; kind: Kind; edit?: NPObject; onClose: () => void
 }) {
@@ -131,8 +172,10 @@ export function ObjectFormDialog({ open, kind, edit, onClose }: {
     : kind === 'host' ? t('newHost') : t('newService')
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose() }}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
+      <DialogContent className="max-w-2xl sm:max-w-2xl p-0 gap-0 flex flex-col overflow-hidden">
+        <DialogHeader className="px-6 pt-6 pb-3 border-b border-border shrink-0">
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
         <ObjectForm kind={kind} edit={edit} onDone={onClose} onCancel={onClose} />
       </DialogContent>
     </Dialog>
