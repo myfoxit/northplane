@@ -59,6 +59,41 @@ func SPAHandler() http.Handler {
 	})
 }
 
+// GateSPA wraps the SPA handler so an unauthenticated *document* navigation is
+// redirected to /login server-side, instead of serving the app shell and
+// letting the client boot, render the full UI, fire its first API call, take a
+// 401 and only then hard-redirect. That sequence is what makes the whole app
+// "flash" before the login screen; gating the HTML document upstream removes it
+// entirely. Only top-level HTML navigations are gated — hashed assets and any
+// request that is not asking for an HTML document pass straight through, so the
+// login page's own assets and favicon still load. API auth is unchanged (the
+// API enforces its own auth and answers 401/JSON on /api/…).
+func GateSPA(next http.Handler, authn *auth.Authenticator) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isDocumentRequest(r) {
+			if p, _ := authn.Authenticate(r); p == nil {
+				http.Redirect(w, r, "/login", http.StatusFound)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// isDocumentRequest reports whether r is a browser navigation that would render
+// the SPA HTML document (and therefore must be gated when logged out). Asset
+// requests under /assets/ and anything not explicitly accepting text/html
+// (JS/CSS/image/font fetches, XHR) are excluded so they always resolve.
+func isDocumentRequest(r *http.Request) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return false
+	}
+	if strings.HasPrefix(r.URL.Path, "/assets/") {
+		return false
+	}
+	return strings.Contains(r.Header.Get("Accept"), "text/html")
+}
+
 // Pages renders login/auth/status.
 type Pages struct {
 	store     *storage.Store

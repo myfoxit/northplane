@@ -184,6 +184,14 @@ const de = {
   customers: 'Kunden',
   yourTenant: 'Eigener Mandant',
   activeCustomer: 'Aktiver Kunde',
+  // — objects / host detail & dual-list picker —
+  services: 'Services',
+  noServices: 'Keine Services für diesen Host.',
+  available: 'Verfügbar',
+  selected: 'Ausgewählt',
+  filterEllipsis: 'Filtern…',
+  addValue: 'Hinzufügen',
+  nothingFound: 'Nichts gefunden',
 } as const
 
 const en: Record<keyof typeof de, string> = {
@@ -368,6 +376,13 @@ const en: Record<keyof typeof de, string> = {
   customers: 'Customers',
   yourTenant: 'Your tenant',
   activeCustomer: 'Active customer',
+  services: 'Services',
+  noServices: 'No services on this host.',
+  available: 'Available',
+  selected: 'Selected',
+  filterEllipsis: 'Filter…',
+  addValue: 'Add',
+  nothingFound: 'Nothing found',
 }
 
 const lang = (typeof navigator !== 'undefined' && navigator.language.startsWith('de')) ? de : en
