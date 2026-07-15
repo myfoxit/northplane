@@ -405,7 +405,7 @@ export interface Report {
 // Dashboard spec is frontend-owned JSON (SPEC §12.3 / model.Dashboard.Spec).
 export interface DashboardWidget {
   type: 'counters' | 'problems' | 'metric' | 'bpi' | 'markdown' | 'alerts'
-    | 'gauge' | 'donut' | 'bar' | 'table'
+    | 'gauge' | 'donut' | 'bar' | 'table' | 'stat'
   title?: string
   // metric/gauge/bar widget:
   object?: string

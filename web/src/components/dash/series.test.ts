@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   alignSeries, groupByUnit, seriesColor, shortId, SERIES_PALETTE,
-  nagiosRangeStart, effectiveBand, thresholdTone,
+  nagiosRangeStart, effectiveBand, thresholdTone, fmtMetric,
 } from './series'
 import type { SeriesResult } from '../../types'
 
@@ -148,5 +148,24 @@ describe('thresholdTone', () => {
   it('ignores null thresholds', () => {
     expect(thresholdTone(100, null, null)).toBe('#34d399')
     expect(thresholdTone(100, 80, null)).toBe('#fbbf24')
+  })
+})
+
+describe('fmtMetric', () => {
+  it('humanises large numbers with SI suffixes', () => {
+    expect(fmtMetric(18490823)).toBe('18.5M')
+    expect(fmtMetric(1090)).toBe('1.09k')
+    expect(fmtMetric(2_500_000_000)).toBe('2.5G')
+    expect(fmtMetric(1_000)).toBe('1k')
+  })
+  it('keeps small/normal numbers readable', () => {
+    expect(fmtMetric(42)).toBe('42')
+    expect(fmtMetric(85.5)).toBe('85.5')
+    expect(fmtMetric(0)).toBe('0')
+    expect(fmtMetric(0.5)).toBe('0.5')
+  })
+  it('handles negatives and non-finite input', () => {
+    expect(fmtMetric(-1500)).toBe('-1.5k')
+    expect(fmtMetric(NaN)).toBe('—')
   })
 })

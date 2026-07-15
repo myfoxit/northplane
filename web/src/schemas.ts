@@ -38,7 +38,7 @@ const stringRecord = z.record(z.string(), z.string())
 export const dashboardWidgetSchema = z.object({
   type: z.enum([
     'counters', 'problems', 'metric', 'bpi', 'markdown', 'alerts',
-    'gauge', 'donut', 'bar', 'table',
+    'gauge', 'donut', 'bar', 'table', 'stat',
   ]),
   title: z.string().optional(),
   object: z.string().optional(),

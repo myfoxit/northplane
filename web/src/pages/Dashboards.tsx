@@ -10,7 +10,7 @@ import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import {
   ArrowLeft, ArrowRight, Maximize2, X, LayoutGrid, Pencil, Radar, Loader2,
   GripVertical, Settings2, Copy, RefreshCw, Clock,
-  Activity, BarChart3, Bell, Donut, Gauge, Network, Table, TriangleAlert, FileText,
+  Activity, BarChart3, Bell, Donut, Gauge, Network, Table, TriangleAlert, FileText, Sigma,
 } from 'lucide-react'
 import { APIError, resourceApi } from '../api'
 import { dashboardDocSchema } from '../schemas'
@@ -28,8 +28,9 @@ import { Empty, Spinner, ErrorState, Field, FormError, SubmitRow, useSave, Delet
 import { WidgetBody } from '../components/dash/widgets'
 import { widgetTypeLabel } from '../components/dash/util'
 import { ObjectPicker, MetricPicker } from '../components/dash/pickers'
+import { cn } from '@/lib/utils'
 import { GridLayout, type DragHandleProps } from '../components/dash/GridLayout'
-import { toLayout, layoutBottom, type GridItem } from '../components/dash/grid'
+import { toLayout, layoutBottom, flowLayout, type GridItem } from '../components/dash/grid'
 import { DashViewCtx, RANGE_TOKENS, REFRESH_TOKENS, refreshMsFor } from '../components/dash/ctx'
 import { t } from '../i18n'
 
@@ -53,6 +54,7 @@ const WIDGET_ICONS: Record<DashboardWidget['type'], typeof Activity> = {
   alerts: Bell,
   metric: Activity,
   gauge: Gauge,
+  stat: Sigma,
   donut: Donut,
   bar: BarChart3,
   table: Table,
@@ -73,6 +75,7 @@ function defaultWidget(type: DashboardWidget['type']): DashboardWidget {
     case 'counters': return { ...base, w: 12, h: 1 }
     case 'metric': return { ...base, w: 6, h: 2, range: '3h' }
     case 'gauge': return { ...base, w: 3, h: 2 }
+    case 'stat': return { ...base, w: 3, h: 2, range: '6h' }
     case 'donut': return { ...base, w: 4, h: 2, scope: 'services' }
     case 'bar': return { ...base, w: 6, h: 2, limit: 8 }
     case 'table': return { ...base, w: 12, h: 2, limit: 15 }
@@ -277,6 +280,10 @@ function DashboardEditor({ name, wallboard, doc }: {
     })
   const addWidget = (wd: DashboardWidget) =>
     setDraft((cur) => { const base = cur ?? widgets; return [...base, placeNew(base, wd)] })
+  // Tidy: re-flow every panel left-to-right and gravity-pack it, closing the
+  // dead space that free dragging leaves behind (DASH-4).
+  const tidyLayout = () =>
+    setDraft((cur) => { const base = cur ?? widgets; return applyLayout(base, flowLayout(base)) })
 
   return (
     <DashViewCtx.Provider value={ctxValue}>
@@ -306,6 +313,9 @@ function DashboardEditor({ name, wallboard, doc }: {
               {editing ? (
                 <>
                   <Button variant="outline" onClick={() => setAddOpen(true)}>+ {t('addWidget')}</Button>
+                  <Button variant="ghost" onClick={tidyLayout} disabled={widgets.length === 0} title="Layout aufräumen">
+                    <LayoutGrid size={14} /> Aufräumen
+                  </Button>
                   <Button variant="ghost" onClick={cancelEdit}>{t('cancel')}</Button>
                   <Button variant="default" onClick={() => save.mutate({ widgets, time: range, refresh })} disabled={save.isPending}>
                     {save.isPending ? <Loader2 className="animate-spin" size={14} /> : t('save')}
@@ -444,6 +454,20 @@ function DashControls({ range, setRange, refresh, setRefresh, onRefreshNow }: {
   )
 }
 
+// WidgetPreview: live render of a widget, shared by the add + edit dialogs so a
+// data-source / config change is visible immediately (DASH-1). Rendered inside
+// the dashboard's DashViewCtx, so its queries use the dashboard time range.
+function WidgetPreview({ widget }: { widget: DashboardWidget }) {
+  return (
+    <div>
+      <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1.5">Vorschau</div>
+      <div className="border border-border rounded-lg bg-card/40 p-3 h-56 overflow-auto">
+        <WidgetBody widget={widget} />
+      </div>
+    </div>
+  )
+}
+
 // ——— per-widget configuration dialog (replaces the old inline editor) ———
 
 function WidgetEditDialog({ widget, onChange, onClose }: {
@@ -470,6 +494,7 @@ function WidgetEditDialog({ widget, onChange, onClose }: {
             </Field>
           </div>
           <WidgetConfigFields widget={widget} onChange={onChange} />
+          <WidgetPreview widget={widget} />
           <div className="flex justify-end pt-2">
             <Button variant="default" onClick={onClose}>Fertig</Button>
           </div>
@@ -531,6 +556,18 @@ function WidgetConfigFields({ widget, onChange }: {
           <Field label="Skalen-Maximum (leer = auto/crit)">
             <Input type="number" min={1} value={widget.max ?? ''}
               onChange={(e) => onChange({ max: e.target.value ? Number(e.target.value) : undefined })} />
+          </Field>
+          <ThresholdFields widget={widget} onChange={onChange} />
+        </div>
+      )
+    case 'stat':
+      return (
+        <div className="space-y-2">
+          <Field label="Objekt">
+            <ObjectPicker value={widget.object} onChange={(object) => onChange({ object, metric: '' })} />
+          </Field>
+          <Field label="Metrik">
+            <MetricPicker objectId={widget.object} value={widget.metric} onChange={(metric) => onChange({ metric })} />
           </Field>
           <ThresholdFields widget={widget} onChange={onChange} />
         </div>
@@ -629,7 +666,7 @@ function WidgetConfigFields({ widget, onChange }: {
 // ——— add-widget dialog: pick a type, configure, append ———
 
 const WIDGET_TYPES: DashboardWidget['type'][] = [
-  'counters', 'problems', 'alerts', 'table', 'metric', 'gauge', 'donut', 'bar', 'bpi', 'markdown',
+  'counters', 'problems', 'alerts', 'table', 'metric', 'stat', 'gauge', 'donut', 'bar', 'bpi', 'markdown',
 ]
 
 // Rendered only while open (mounted fresh each time) so its working state
@@ -638,32 +675,46 @@ function AddWidgetDialog({ onClose, onAdd }: {
   onClose: () => void; onAdd: (w: DashboardWidget) => void
 }) {
   const [draft, setDraft] = useState<DashboardWidget>(() => defaultWidget('counters'))
-  const changeType = (next: DashboardWidget['type']) => setDraft(defaultWidget(next))
+  // Switching type resets type-specific config but keeps any title already typed.
+  const changeType = (next: DashboardWidget['type']) =>
+    setDraft((d) => ({ ...defaultWidget(next), title: d.title }))
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader><DialogTitle>{t('addWidget')}</DialogTitle></DialogHeader>
         <div className="space-y-3">
-          <Field label={t('type')}>
-            <Select value={draft.type} onValueChange={(v) => changeType(v as DashboardWidget['type'])}>
-              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {WIDGET_TYPES.map((tp) => (
-                  <SelectItem key={tp} value={tp}>
-                    <span className="inline-flex items-center gap-2">
-                      <WidgetTypeIcon type={tp} className="text-muted-foreground" />{widgetTypeLabel(tp)}
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
+          {/* Type gallery: an icon card per widget type so the choice is visual,
+              not a text-only dropdown, and add+configure stay one flow (DASH-3). */}
+          <div>
+            <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1.5">{t('type')}</div>
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+              {WIDGET_TYPES.map((tp) => {
+                const active = draft.type === tp
+                return (
+                  <button
+                    key={tp} type="button" onClick={() => changeType(tp)}
+                    aria-pressed={active}
+                    className={cn(
+                      'flex flex-col items-center gap-1.5 rounded-lg border px-2 py-3 text-xs cursor-pointer transition-colors',
+                      active
+                        ? 'border-primary/60 bg-primary/10 text-foreground'
+                        : 'border-border bg-card/40 text-muted-foreground hover:border-primary/30 hover:text-foreground',
+                    )}
+                  >
+                    <WidgetTypeIcon type={tp} size={18} className={active ? 'text-primary' : ''} />
+                    <span className="text-center leading-tight">{widgetTypeLabel(tp)}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
           <Field label="Titel (optional)">
             <Input value={draft.title ?? ''} onChange={(e) => setDraft({ ...draft, title: e.target.value })}
               placeholder={widgetTypeLabel(draft.type)} />
           </Field>
           <WidgetConfigFields widget={draft} onChange={(patch) => setDraft((d) => ({ ...d, ...patch }))} />
+          <WidgetPreview widget={draft} />
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="ghost" onClick={onClose}>{t('cancel')}</Button>
             <Button variant="default" onClick={() => onAdd(draft)}>{t('add')}</Button>

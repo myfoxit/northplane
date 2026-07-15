@@ -18,7 +18,7 @@ import { Badge } from '@/components/ui/badge'
 import { Chart } from '../Chart'
 import { t } from '../../i18n'
 import { type BSNode, bsStateMeta, rangeFrom } from './util'
-import { groupByUnit, nagiosRangeStart, thresholdTone } from './series'
+import { groupByUnit, nagiosRangeStart, thresholdTone, fmtMetric } from './series'
 import { useDashView } from './ctx'
 
 // TileLink: a KPI tile that drills down into the matching filtered list
@@ -274,10 +274,10 @@ function GaugeWidget({ widget }: { widget: DashboardWidget }) {
           <path d={arc(START, START + SPAN * frac, 46)} fill="none" stroke={tone} strokeWidth="9" strokeLinecap="round" />
         )}
         <text x="60" y="58" textAnchor="middle" fill="#e2e8f0" fontSize="20" fontWeight="700" className="tabular-nums">
-          {value >= 100 ? Math.round(value) : value.toFixed(1)}
+          {fmtMetric(value)}
         </text>
         <text x="60" y="72" textAnchor="middle" fill="#64748b" fontSize="8">
-          {s.series.metric}{s.series.unit ? ` (${s.series.unit})` : ''} / {max}
+          {s.series.metric}{s.series.unit ? ` (${s.series.unit})` : ''} / {fmtMetric(max)}
         </text>
       </svg>
       {(warn !== null || crit !== null) && (
@@ -451,7 +451,7 @@ function BarWidget({ widget }: { widget: DashboardWidget }) {
             <div className="flex items-baseline justify-between mb-0.5">
               <span className="text-foreground/90 font-mono truncate">{r.metric}</span>
               <span className="text-foreground tabular-nums font-semibold shrink-0 ml-2">
-                {r.value >= 100 ? Math.round(r.value) : r.value.toFixed(1)}{r.unit}
+                {fmtMetric(r.value)}{r.unit}
               </span>
             </div>
             <div className="relative h-2.5 bg-slate-800/80 rounded overflow-hidden">
@@ -470,6 +470,54 @@ function BarWidget({ widget }: { widget: DashboardWidget }) {
   )
 }
 
+// StatWidget: one scoped metric as a big number + tiny sparkline — a focused,
+// object/metric-bound alternative to the global KPI counters (DASH-5).
+// Threshold-coloured against the metric's warn/crit (or an explicit override).
+function StatWidget({ widget }: { widget: DashboardWidget }) {
+  const { refreshMs, range: rangeOverride } = useDashView()
+  const range = rangeOverride ?? widget.range ?? '6h'
+  const { data, isLoading } = useQuery({
+    queryKey: ['metrics', 'stat', widget.object, widget.metric, range],
+    enabled: !!widget.object,
+    queryFn: () => post<SeriesResult[]>('/metrics/query', {
+      objectId: widget.object,
+      metric: widget.metric || undefined,
+      from: rangeFrom(range),
+      to: new Date().toISOString(),
+      maxPoints: 60,
+    }),
+    refetchInterval: refreshMs || false,
+  })
+  if (!widget.object) return <Empty text={t('empty')} />
+  if (isLoading) return <Spinner />
+  const s = (data ?? []).filter((r) => !r.series.metric.startsWith('np_') && r.points.length > 0)[0]
+  const last = s?.points[s.points.length - 1]
+  if (!s || !last) return <Empty text="keine Daten" />
+  const value = last.v
+  const warn = widget.warn ?? nagiosRangeStart(s.series.warn)
+  const crit = widget.crit ?? nagiosRangeStart(s.series.crit)
+  const tone = thresholdTone(value, warn, crit)
+  const vals = s.points.map((p) => p.v)
+  const lo = Math.min(...vals), span = (Math.max(...vals) - lo) || 1
+  const spark = s.points
+    .map((p, i) => `${((i / (s.points.length - 1)) * 100).toFixed(1)},${(26 - ((p.v - lo) / span) * 24).toFixed(1)}`)
+    .join(' ')
+  return (
+    <div className="flex flex-col h-full justify-center gap-1 px-1">
+      <div className="flex items-baseline gap-1.5">
+        <span className="text-3xl font-bold tabular-nums leading-none" style={{ color: tone }}>{fmtMetric(value)}</span>
+        {s.series.unit && <span className="text-sm text-muted-foreground">{s.series.unit}</span>}
+      </div>
+      <div className="text-xs text-muted-foreground truncate">{widget.metric || s.series.metric}</div>
+      {s.points.length > 1 && (
+        <svg viewBox="0 0 100 28" preserveAspectRatio="none" className="w-full h-7 mt-0.5">
+          <polyline points={spark} fill="none" stroke={tone} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+        </svg>
+      )}
+    </div>
+  )
+}
+
 // WidgetBody dispatches to the right renderer for a widget type.
 export function WidgetBody({ widget }: { widget: DashboardWidget }) {
   switch (widget.type) {
@@ -478,6 +526,7 @@ export function WidgetBody({ widget }: { widget: DashboardWidget }) {
     case 'alerts': return <AlertsWidget widget={widget} />
     case 'metric': return <MetricWidget widget={widget} />
     case 'gauge': return <GaugeWidget widget={widget} />
+    case 'stat': return <StatWidget widget={widget} />
     case 'donut': return <DonutWidget widget={widget} />
     case 'bar': return <BarWidget widget={widget} />
     case 'table': return <TableWidget widget={widget} />

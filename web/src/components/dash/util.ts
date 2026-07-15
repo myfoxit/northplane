@@ -42,6 +42,7 @@ export function widgetTypeLabel(type: DashboardWidget['type']): string {
     alerts: 'Alarme',
     metric: 'Metrik-Diagramm',
     gauge: 'Gauge (Tacho)',
+    stat: 'Einzelwert (Stat)',
     donut: 'Status-Donut',
     bar: 'Balkendiagramm',
     table: 'Tabelle (Hosts/Services)',

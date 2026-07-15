@@ -130,3 +130,25 @@ export function thresholdTone(v: number, warn: number | null, crit: number | nul
   if (warn !== null && v >= warn) return '#fbbf24' // amber-400
   return '#34d399' // emerald-400
 }
+
+// fmtMetric humanises a metric value for a compact label: SI suffixes k/M/G/T
+// so a raw SNMP counter like 18490823 reads "18.5M" instead of a wall of
+// digits (DASH-2). The unit is rendered separately by the caller. Trailing
+// zeros are dropped; sub-unit values keep two significant digits.
+export function fmtMetric(v: number): string {
+  if (!Number.isFinite(v)) return '—'
+  const abs = Math.abs(v)
+  const scale = (f: number, suf: string) => {
+    const n = v / f
+    const digits = Math.abs(n) >= 100 ? 0 : Math.abs(n) >= 10 ? 1 : 2
+    return `${Number(n.toFixed(digits))}${suf}`
+  }
+  if (abs >= 1e12) return scale(1e12, 'T')
+  if (abs >= 1e9) return scale(1e9, 'G')
+  if (abs >= 1e6) return scale(1e6, 'M')
+  if (abs >= 1e3) return scale(1e3, 'k')
+  if (abs >= 100 || Number.isInteger(v)) return String(Math.round(v))
+  if (abs >= 1) return String(Number(v.toFixed(2)))
+  if (abs === 0) return '0'
+  return String(Number(v.toPrecision(2)))
+}
