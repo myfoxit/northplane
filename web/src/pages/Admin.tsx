@@ -46,9 +46,14 @@ export function AdminPage() {
     <div className="space-y-4">
       <h1 className="text-lg font-bold">{t('admin')}</h1>
       <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
-        <TabsList>
-          {tabs.map((tb) => <TabsTrigger key={tb} value={tb}>{t(tb)}</TabsTrigger>)}
-        </TabsList>
+        {/* 19 tabs overflow one row — scroll horizontally instead of clipping
+            the last ones (NAV-1). w-max lets the list size to its content so
+            the wrapper is what scrolls; the thin scrollbar signals more tabs. */}
+        <div className="overflow-x-auto pb-1 [scrollbar-width:thin]">
+          <TabsList className="w-max">
+            {tabs.map((tb) => <TabsTrigger key={tb} value={tb}>{t(tb)}</TabsTrigger>)}
+          </TabsList>
+        </div>
       </Tabs>
       {tab === 'users' && <UsersTab />}
       {tab === 'roles' && <RolesTab />}

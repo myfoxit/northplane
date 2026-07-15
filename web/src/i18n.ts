@@ -103,7 +103,7 @@ const de = {
   checkCommand: 'Check-Kommando',
   args: 'Argumente',
   interval: 'Intervall',
-  retryInterval: 'Wiederholungsintervall',
+  retryInterval: 'Retry-Intervall',
   maxAttempts: 'Max. Versuche',
   timeout: 'Timeout',
   checkPeriod: 'Prüfzeitraum',
@@ -164,6 +164,7 @@ const de = {
   // — dashboards / reports / bpi / discovery —
   newDashboard: 'Dashboard anlegen',
   widget: 'Widget',
+  widgets: 'Widgets',
   addWidget: 'Widget hinzufügen',
   schedule: 'Zeitplan',
   recipients: 'Empfänger',
@@ -357,6 +358,7 @@ const en: Record<keyof typeof de, string> = {
   // — dashboards / reports / bpi / discovery —
   newDashboard: 'New dashboard',
   widget: 'Widget',
+  widgets: 'Widgets',
   addWidget: 'Add widget',
   schedule: 'Schedule',
   recipients: 'Recipients',

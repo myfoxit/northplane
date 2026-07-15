@@ -71,42 +71,46 @@ function CheckCommandField({ spec, patch }: { spec: ObjectSpec; patch: (p: Parti
   const commands = useResourceNames('check-commands', ['resources', 'check-commands', 'names'])
   const { kind, rest } = splitRef(spec.checkCommand)
   const listId = kind === 'builtin' ? 'sugg-builtins' : kind === 'command' ? 'sugg-commands' : undefined
+  const kindSelect = (
+    <Select value={kind} onValueChange={(v) => patch({ checkCommand: joinRef(v, rest) })}>
+      <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+      <SelectContent>
+        <SelectItem value="builtin">builtin</SelectItem>
+        <SelectItem value="command">Kommando (definiert)</SelectItem>
+        <SelectItem value="exec">exec</SelectItem>
+        <SelectItem value="agent:exec">agent:exec</SelectItem>
+        <SelectItem value="passive">passive</SelectItem>
+      </SelectContent>
+    </Select>
+  )
+  // passive has no command to type — show only the kind selector (full width)
+  // with a one-line explanation instead of a redundant disabled field (FORM-6).
+  if (kind === 'passive') {
+    return (
+      <Field label={t('checkCommand')} hint="Passiv: Ergebnisse werden extern eingespeist (Agent / API) — kein aktiver Check.">
+        {kindSelect}
+      </Field>
+    )
+  }
   return (
     <div className="grid grid-cols-[10rem_1fr] gap-2">
-      <Field label={t('checkCommand')}>
-        <Select value={kind} onValueChange={(v) => patch({ checkCommand: joinRef(v, rest) })}>
-          <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="builtin">builtin</SelectItem>
-            <SelectItem value="command">Kommando (definiert)</SelectItem>
-            <SelectItem value="exec">exec</SelectItem>
-            <SelectItem value="agent:exec">agent:exec</SelectItem>
-            <SelectItem value="passive">passive</SelectItem>
-          </SelectContent>
-        </Select>
-      </Field>
-      <Field label={kind === 'builtin' ? 'Builtin-Check' : kind === 'command' ? 'Check-Kommando' : kind === 'passive' ? '—' : 'Kommando / Plugin'}>
-        {kind === 'passive' ? (
-          <Input value="passive" disabled />
-        ) : (
-          <>
-            <Input
-              value={rest}
-              list={listId}
-              placeholder={kind === 'builtin' ? 'icmp' : kind === 'command' ? 'check_disk_all' : 'check_postgres'}
-              onChange={(e) => patch({ checkCommand: joinRef(kind, e.target.value) })}
-            />
-            {kind === 'builtin' && (
-              <datalist id="sugg-builtins">
-                {(builtins ?? []).map((b) => <option key={b} value={b} />)}
-              </datalist>
-            )}
-            {kind === 'command' && (
-              <datalist id="sugg-commands">
-                {(commands.data ?? []).map((c) => <option key={c} value={c} />)}
-              </datalist>
-            )}
-          </>
+      <Field label={t('checkCommand')}>{kindSelect}</Field>
+      <Field label={kind === 'builtin' ? 'Builtin-Check' : kind === 'command' ? 'Check-Kommando' : 'Kommando / Plugin'}>
+        <Input
+          value={rest}
+          list={listId}
+          placeholder={kind === 'builtin' ? 'icmp' : kind === 'command' ? 'check_disk_all' : 'check_postgres'}
+          onChange={(e) => patch({ checkCommand: joinRef(kind, e.target.value) })}
+        />
+        {kind === 'builtin' && (
+          <datalist id="sugg-builtins">
+            {(builtins ?? []).map((b) => <option key={b} value={b} />)}
+          </datalist>
+        )}
+        {kind === 'command' && (
+          <datalist id="sugg-commands">
+            {(commands.data ?? []).map((c) => <option key={c} value={c} />)}
+          </datalist>
         )}
       </Field>
     </div>

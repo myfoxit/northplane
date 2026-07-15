@@ -98,7 +98,7 @@ export function Field({ label, hint, error, required, children, className }: {
 }) {
   return (
     <div className={cn('block text-sm', className)}>
-      <Label className="text-xs text-muted-foreground font-medium">
+      <Label className="block text-xs leading-tight break-words text-muted-foreground font-medium">
         {label}{required && <span className="text-destructive"> *</span>}
       </Label>
       <div className="mt-1">{children}</div>

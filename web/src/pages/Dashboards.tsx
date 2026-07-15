@@ -10,6 +10,7 @@ import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import {
   ArrowLeft, ArrowRight, Maximize2, X, LayoutGrid, Pencil, Radar, Loader2,
   GripVertical, Settings2, Copy, RefreshCw, Clock,
+  Activity, BarChart3, Bell, Donut, Gauge, Network, Table, TriangleAlert, FileText,
 } from 'lucide-react'
 import { APIError, resourceApi } from '../api'
 import { dashboardDocSchema } from '../schemas'
@@ -43,6 +44,28 @@ const BOTH_SCOPE = '__both__'
 
 const clampNum = (v: string, lo: number, hi: number) =>
   Math.max(lo, Math.min(hi, Math.round(Number(v) || lo)))
+
+// Per-type icon so the type picker and panel headers read at a glance instead
+// of being text-only / generic (DASH-6).
+const WIDGET_ICONS: Record<DashboardWidget['type'], typeof Activity> = {
+  counters: LayoutGrid,
+  problems: TriangleAlert,
+  alerts: Bell,
+  metric: Activity,
+  gauge: Gauge,
+  donut: Donut,
+  bar: BarChart3,
+  table: Table,
+  bpi: Network,
+  markdown: FileText,
+}
+
+function WidgetTypeIcon({ type, size = 14, className }: {
+  type: DashboardWidget['type']; size?: number; className?: string
+}) {
+  const Icon = WIDGET_ICONS[type]
+  return <Icon size={size} className={className} />
+}
 
 function defaultWidget(type: DashboardWidget['type']): DashboardWidget {
   const base: DashboardWidget = { type, w: 6, h: 1 }
@@ -125,7 +148,7 @@ export function DashboardsPage() {
                 {d.shared && <Badge variant="outline" className="bg-sky-500/15 text-sky-400 border-sky-500/30">geteilt</Badge>}
               </div>
               <div className="text-xs text-muted-foreground mt-2">
-                {(d.spec?.widgets?.length ?? 0)} {t('widget')}
+                {(d.spec?.widgets?.length ?? 0)} {(d.spec?.widgets?.length ?? 0) === 1 ? t('widget') : t('widgets')}
               </div>
               <div className="flex items-center justify-between mt-3">
                 <Link
@@ -358,6 +381,7 @@ function Panel({ widget, editing, handle, onConfigure, onDuplicate, onRemove }: 
       >
         <span className="text-xs font-semibold text-muted-foreground truncate flex items-center gap-1.5 min-w-0">
           {editing && <GripVertical size={13} className="opacity-40 shrink-0" />}
+          <WidgetTypeIcon type={widget.type} size={13} className="opacity-50 shrink-0" />
           <span className="truncate">{widget.title || widgetTypeLabel(widget.type)}</span>
         </span>
         {editing && (
@@ -625,7 +649,13 @@ function AddWidgetDialog({ onClose, onAdd }: {
             <Select value={draft.type} onValueChange={(v) => changeType(v as DashboardWidget['type'])}>
               <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
-                {WIDGET_TYPES.map((tp) => <SelectItem key={tp} value={tp}>{widgetTypeLabel(tp)}</SelectItem>)}
+                {WIDGET_TYPES.map((tp) => (
+                  <SelectItem key={tp} value={tp}>
+                    <span className="inline-flex items-center gap-2">
+                      <WidgetTypeIcon type={tp} className="text-muted-foreground" />{widgetTypeLabel(tp)}
+                    </span>
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </Field>

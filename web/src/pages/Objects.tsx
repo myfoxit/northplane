@@ -18,6 +18,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { Empty, LabelChips, ErrorState } from '@/components/kit'
+import { redactSecrets } from '@/lib/redact'
 import { Chart } from '../components/Chart'
 import { groupByUnit } from '../components/dash/series'
 import { DowntimeDialog } from '../components/AckDialog'
@@ -361,7 +362,7 @@ export function ObjectDetailPage() {
           <CardHeader><CardTitle>{`${t('effectiveConfig')}${effective?.templateChain?.length ? ` — ${t('templateChain')}: ${effective.templateChain.join(' → ')}` : ''}`}</CardTitle></CardHeader>
           <CardContent>
             <pre className="text-xs text-muted-foreground overflow-auto max-h-64 font-mono">
-              {JSON.stringify(effective?.spec ?? obj.spec, null, 2)}
+              {JSON.stringify(redactSecrets(effective?.spec ?? obj.spec), null, 2)}
             </pre>
           </CardContent>
         </Card>
