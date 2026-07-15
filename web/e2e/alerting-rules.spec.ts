@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { authFile } from './lib/roles'
 
 // Alerting-config E2E. Drives the real `northplaned --demo` binary + embedded
-// shadcn SPA. The /alerting page has three tabs — Alert rules (rules), Gruppen
+// shadcn SPA. The /alerting page has three tabs — Alarm-Regeln (rules), Gruppen
 // (groups), Eskalationen (escalations). German is the reference locale, so every
 // selector uses the exact de-DE strings from src/i18n.ts. Each test is
 // self-contained: it opens /alerting fresh, uses a unique name, and deletes
@@ -28,7 +28,7 @@ const uniq = (prefix: string) =>
   `${prefix}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e4).toString(36)}`
 
 // Land on /alerting and select one of the three tabs by its exact label.
-async function gotoTab(page: Page, label: 'Alert rules' | 'Groups' | 'Escalations') {
+async function gotoTab(page: Page, label: 'Alarm-Regeln' | 'Gruppen' | 'Eskalationen') {
   await page.goto('/alerting')
   const tab = page.getByRole('tab', { name: label })
   await expect(tab).toBeVisible()
@@ -49,29 +49,29 @@ async function clickInDialog(page: Page, name: string | RegExp) {
   await btn.click({ force: true })
 }
 
-test.describe('Alerting · Alert rules (rules)', () => {
+test.describe('Alerting · Alarm-Regeln (rules)', () => {
   test('lists the seeded demo alert-rules', async ({ page }) => {
-    await gotoTab(page, 'Alert rules')
+    await gotoTab(page, 'Alarm-Regeln')
     // demo-critical is the canonical CEL rule in the demo seed.
     await expect(page.getByRole('cell', { name: 'demo-critical' })).toBeVisible()
     // demo-heartbeat-rule is the heartbeat-style seed rule.
     await expect(page.getByRole('cell', { name: 'demo-heartbeat-rule' })).toBeVisible()
   })
 
-  test('runs the inline tester for an existing rule (Test rule)', async ({ page }) => {
-    await gotoTab(page, 'Alert rules')
+  test('runs the inline tester for an existing rule (Regel testen)', async ({ page }) => {
+    await gotoTab(page, 'Alarm-Regeln')
     const row = page.getByRole('row', { name: /demo-critical/ })
     await expect(row).toBeVisible()
-    // The per-row FlaskConical button is labelled "Test rule".
-    await row.getByRole('button', { name: 'Test rule' }).click()
-    // It opens a result dialog titled "Test rule: demo-critical".
+    // The per-row FlaskConical button is labelled "Regel testen".
+    await row.getByRole('button', { name: 'Regel testen' }).click()
+    // It opens a result dialog titled "Regel testen: demo-critical".
     const dialog = page.getByRole('dialog')
     await expect(dialog).toBeVisible()
-    await expect(dialog.getByText('Test rule: demo-critical')).toBeVisible()
-    // The tester renders a "<n> events would match, <m> alerts would open."
+    await expect(dialog.getByText('Regel testen: demo-critical')).toBeVisible()
+    // The tester renders a "<n> Events würden matchen, <m> Alarme entstehen."
     // summary regardless of how many history events match.
-    await expect(dialog.getByText(/events would match/)).toBeVisible()
-    await expect(dialog.getByText(/alerts would open/)).toBeVisible()
+    await expect(dialog.getByText(/Events würden matchen/)).toBeVisible()
+    await expect(dialog.getByText(/Alarme entstehen/)).toBeVisible()
   })
 
   // — Mutations need config:write ⇒ admin role. —
@@ -80,12 +80,12 @@ test.describe('Alerting · Alert rules (rules)', () => {
 
     test('creates, tests inline, edits and deletes a CEL rule', async ({ page }) => {
     const name = uniq('e2e-rule')
-    await gotoTab(page, 'Alert rules')
+    await gotoTab(page, 'Alarm-Regeln')
 
     // — CREATE —
-    await page.getByRole('button', { name: 'New rule' }).click()
+    await page.getByRole('button', { name: 'Regel anlegen' }).click()
     let dialog = page.getByRole('dialog')
-    await expect(dialog.getByText('New rule')).toBeVisible()
+    await expect(dialog.getByText('Regel anlegen')).toBeVisible()
 
     await dialog.getByPlaceholder('host-down-critical').fill(name)
     // CEL source is the default radio; fill the match-expression textarea.
@@ -93,36 +93,36 @@ test.describe('Alerting · Alert rules (rules)', () => {
     await cel.fill('event.severity == "critical"')
 
     // — TEST (in-dialog runner against a hand-written demo event) —
-    // The Demo-Event panel has its own "Run" button + JSON textarea
+    // The Demo-Event panel has its own "Ausführen" button + JSON textarea
     // pre-filled with a critical state_change, which matches our expression.
-    await clickInDialog(page, 'Run')
-    await expect(dialog.getByText(/events would match/)).toBeVisible()
+    await clickInDialog(page, 'Ausführen')
+    await expect(dialog.getByText(/Events würden matchen/)).toBeVisible()
     // The sample event is critical, so exactly one event matches.
-    await expect(dialog.getByText(/1 events would match/)).toBeVisible()
+    await expect(dialog.getByText(/1 Events würden matchen/)).toBeVisible()
 
     // Save the new rule.
-    await clickInDialog(page, 'Save')
+    await clickInDialog(page, 'Speichern')
     await expect(dialog).toBeHidden()
 
     // It now appears in the table.
     await expect(page.getByRole('cell', { name, exact: true })).toBeVisible()
 
     // — EDIT — reopen, change the CEL expression, save.
-    await page.getByRole('row', { name: new RegExp(name) }).getByRole('button', { name: 'Edit' }).click()
+    await page.getByRole('row', { name: new RegExp(name) }).getByRole('button', { name: 'Bearbeiten' }).click()
     dialog = page.getByRole('dialog')
-    await expect(dialog.getByText(`Edit: ${name}`)).toBeVisible()
+    await expect(dialog.getByText(`Bearbeiten: ${name}`)).toBeVisible()
     // Name input is disabled when editing.
     await expect(dialog.getByPlaceholder('host-down-critical')).toBeDisabled()
     const celEdit = dialog.getByPlaceholder('event.type == "state_change" && event.severity == "critical"')
     await celEdit.fill('event.severity == "critical" && event.type == "state_change"')
-    await clickInDialog(page, 'Save')
+    await clickInDialog(page, 'Speichern')
     await expect(dialog).toBeHidden()
 
     // — DELETE — reopen, arm the inline confirm, confirm.
-    await page.getByRole('row', { name: new RegExp(name) }).getByRole('button', { name: 'Edit' }).click()
+    await page.getByRole('row', { name: new RegExp(name) }).getByRole('button', { name: 'Bearbeiten' }).click()
     dialog = page.getByRole('dialog')
-    await clickInDialog(page, 'Delete')
-    await clickInDialog(page, 'Really delete?')
+    await clickInDialog(page, 'Löschen')
+    await clickInDialog(page, 'Wirklich löschen?')
     await expect(dialog).toBeHidden()
 
     // Gone from the table.
@@ -133,15 +133,15 @@ test.describe('Alerting · Alert rules (rules)', () => {
 
 test.describe('Alerting · Eskalationen (escalation policies)', () => {
   test('lists demo-escalation', async ({ page }) => {
-    await gotoTab(page, 'Escalations')
+    await gotoTab(page, 'Eskalationen')
     await expect(page.getByRole('cell', { name: 'demo-escalation' })).toBeVisible()
   })
 
   test('simulates demo-escalation and renders the timeline', async ({ page }) => {
-    await gotoTab(page, 'Escalations')
-    await page.getByRole('row', { name: /demo-escalation/ }).getByRole('button', { name: 'Edit' }).click()
+    await gotoTab(page, 'Eskalationen')
+    await page.getByRole('row', { name: /demo-escalation/ }).getByRole('button', { name: 'Bearbeiten' }).click()
     const dialog = page.getByRole('dialog')
-    await expect(dialog.getByText('Edit: demo-escalation')).toBeVisible()
+    await expect(dialog.getByText('Bearbeiten: demo-escalation')).toBeVisible()
 
     // The simulator button is enabled for a saved policy. There are two
     // "Simulieren" controls (the section label + the button) — click the button.
@@ -163,32 +163,32 @@ test.describe('Alerting · Eskalationen (escalation policies)', () => {
 
     test('creates and deletes a minimal escalation policy', async ({ page }) => {
     const name = uniq('e2e-policy')
-    await gotoTab(page, 'Escalations')
+    await gotoTab(page, 'Eskalationen')
 
-    // — CREATE — "Create" opens a dialog pre-seeded with one empty step.
-    await page.getByRole('button', { name: 'Create' }).click()
+    // — CREATE — "Anlegen" opens a dialog pre-seeded with one empty step.
+    await page.getByRole('button', { name: 'Anlegen' }).click()
     let dialog = page.getByRole('dialog')
-    await expect(dialog.getByText('Create', { exact: true })).toBeVisible()
+    await expect(dialog.getByText('Anlegen', { exact: true })).toBeVisible()
     await dialog.getByPlaceholder('standard-oncall').fill(name)
 
     // Wire step 1 to notify a contact (demo-alice) so the policy is meaningful.
     // The notify radios are unlabelled inputs wrapped in a <label> with text;
-    // click the exact label text to select the "Contact" option (not the
-    // "Contact group" label, which also contains "Contact").
+    // click the exact label text to select the "Kontakt" option (not the
+    // "Kontaktgruppe" label, which also contains "Kontakt").
     await dialog.locator('label').filter({ hasText: /^Kontakt$/ }).click()
     // The contact Select is now the only combobox shown for this step.
     await dialog.getByRole('combobox').click()
     await page.getByRole('option', { name: 'demo-alice' }).click()
 
-    await clickInDialog(page, 'Save')
+    await clickInDialog(page, 'Speichern')
     await expect(dialog).toBeHidden()
     await expect(page.getByRole('cell', { name, exact: true })).toBeVisible()
 
     // — DELETE —
-    await page.getByRole('row', { name: new RegExp(name) }).getByRole('button', { name: 'Edit' }).click()
+    await page.getByRole('row', { name: new RegExp(name) }).getByRole('button', { name: 'Bearbeiten' }).click()
     dialog = page.getByRole('dialog')
-    await clickInDialog(page, 'Delete')
-    await clickInDialog(page, 'Really delete?')
+    await clickInDialog(page, 'Löschen')
+    await clickInDialog(page, 'Wirklich löschen?')
     await expect(dialog).toBeHidden()
     await expect(page.getByRole('cell', { name, exact: true })).toHaveCount(0)
     })
@@ -197,7 +197,7 @@ test.describe('Alerting · Eskalationen (escalation policies)', () => {
 
 test.describe('Alerting · Gruppen (alert groups)', () => {
   test('lists demo-storm', async ({ page }) => {
-    await gotoTab(page, 'Groups')
+    await gotoTab(page, 'Gruppen')
     await expect(page.getByRole('cell', { name: 'demo-storm' })).toBeVisible()
   })
 
@@ -207,12 +207,12 @@ test.describe('Alerting · Gruppen (alert groups)', () => {
 
     test('creates and deletes an alert group', async ({ page }) => {
     const name = uniq('e2e-group')
-    await gotoTab(page, 'Groups')
+    await gotoTab(page, 'Gruppen')
 
     // — CREATE —
-    await page.getByRole('button', { name: 'Create' }).click()
+    await page.getByRole('button', { name: 'Anlegen' }).click()
     let dialog = page.getByRole('dialog')
-    await expect(dialog.getByText('Create', { exact: true })).toBeVisible()
+    await expect(dialog.getByText('Anlegen', { exact: true })).toBeVisible()
     await dialog.getByPlaceholder('per-host-flood').fill(name)
     // Add a group-by label key via the ListEditor (type + Enter). The list
     // input's placeholder is exactly "host" (the name input's "per-host-flood"
@@ -223,15 +223,15 @@ test.describe('Alerting · Gruppen (alert groups)', () => {
     // The accepted key renders as a chip.
     await expect(dialog.getByText('host', { exact: true })).toBeVisible()
 
-    await clickInDialog(page, 'Save')
+    await clickInDialog(page, 'Speichern')
     await expect(dialog).toBeHidden()
     await expect(page.getByRole('cell', { name, exact: true })).toBeVisible()
 
     // — DELETE —
-    await page.getByRole('row', { name: new RegExp(name) }).getByRole('button', { name: 'Edit' }).click()
+    await page.getByRole('row', { name: new RegExp(name) }).getByRole('button', { name: 'Bearbeiten' }).click()
     dialog = page.getByRole('dialog')
-    await clickInDialog(page, 'Delete')
-    await clickInDialog(page, 'Really delete?')
+    await clickInDialog(page, 'Löschen')
+    await clickInDialog(page, 'Wirklich löschen?')
     await expect(dialog).toBeHidden()
     await expect(page.getByRole('cell', { name, exact: true })).toHaveCount(0)
     })

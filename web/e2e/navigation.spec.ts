@@ -22,18 +22,18 @@ const RETRY = 'Erneut versuchen'
 // "Templates". `getByRole('heading')` never collides with the same-named
 // sidebar <Link> (role=link).
 const NAV: { label: string; path: string; heading: RegExp }[] = [
-  { label: 'Overview', path: '/', heading: /^Overview$/ },
-  { label: 'Problems', path: '/problems', heading: /^Probleme/ },
-  { label: 'Objects', path: '/objects', heading: /^Objects/ },
-  { label: 'Alerts', path: '/alerts', heading: /^Alerts/ },
+  { label: 'Übersicht', path: '/', heading: /^Übersicht$/ },
+  { label: 'Probleme', path: '/problems', heading: /^Probleme/ },
+  { label: 'Objekte', path: '/objects', heading: /^Objekte/ },
+  { label: 'Alarme', path: '/alerts', heading: /^Alarme/ },
   { label: 'Incidents', path: '/incidents', heading: /^Incidents$/ },
   { label: 'Events', path: '/events', heading: /^Events$/ },
   { label: 'Dashboards', path: '/dashboards', heading: /^Dashboards$/ },
   { label: 'Business Services', path: '/business', heading: /^Business Services$/ },
   { label: 'Reports', path: '/reports', heading: /^Reports$/ },
-  { label: 'Alert rules', path: '/alerting', heading: /^Alert rules$/ },
-  { label: 'On-Call', path: '/oncall', heading: /^On-Call$/ },
-  { label: 'Maintenance', path: '/maintenance', heading: /^Maintenance$/ },
+  { label: 'Alarm-Regeln', path: '/alerting', heading: /^Alarm-Regeln$/ },
+  { label: 'Bereitschaft', path: '/oncall', heading: /^Bereitschaft$/ },
+  { label: 'Wartung', path: '/maintenance', heading: /^Wartung$/ },
   { label: 'Templates', path: '/templates', heading: /^Templates/ },
   { label: 'Discovery', path: '/discovery', heading: /^Discovery$/ },
   { label: 'Administration', path: '/admin', heading: /^Administration$/ },
@@ -86,7 +86,7 @@ test.describe('navigation — app shell', () => {
   test('the active sidebar link tracks the current route', async ({ page }) => {
     await page.goto('/objects')
     // Sidebar stays mounted across navigations — every nav link is present.
-    await expect(page.getByRole('link', { name: 'Objects', exact: true })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Objekte', exact: true })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Reports', exact: true })).toBeVisible()
     await page.getByRole('link', { name: 'Reports', exact: true }).click()
     await expect(page).toHaveURL(/\/reports/)
@@ -97,18 +97,18 @@ test.describe('navigation — app shell', () => {
 test.describe('navigation — overview', () => {
   test('summary tiles, incidents and on-call widgets render', async ({ page }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: /^Overview$/ })).toBeVisible()
+    await expect(page.getByRole('heading', { name: /^Übersicht$/ })).toBeVisible()
 
     // KPI tiles (TileLink labels from i18n). Hosts UP / Services OK always exist;
     // their numeric value resolves once /overview returns.
     await expect(page.getByText('Hosts UP', { exact: true })).toBeVisible()
     await expect(page.getByText('Services OK', { exact: true })).toBeVisible()
-    await expect(page.getByText('Open alerts', { exact: true })).toBeVisible()
+    await expect(page.getByText('Offene Alarme', { exact: true })).toBeVisible()
 
     // The right column cards: open incidents + current on-call. shadcn CardTitle
     // renders a <div data-slot="card-title">, not a heading role — match by text.
-    await expect(page.getByText('Open incidents', { exact: true })).toBeVisible()
-    await expect(page.getByText('On call now', { exact: true })).toBeVisible()
+    await expect(page.getByText('Offene Incidents', { exact: true })).toBeVisible()
+    await expect(page.getByText('Aktuelle Bereitschaft', { exact: true })).toBeVisible()
 
     // A tile value resolved to a number (or the em-dash placeholder turned into
     // a real count) — i.e. /overview actually answered.
@@ -125,7 +125,7 @@ test.describe('navigation — overview', () => {
     await expect(page).toHaveURL(/\/objects/)
     await expect(page).toHaveURL(/kind=host/)
     await expect(page).toHaveURL(/state=up/)
-    await expect(page.getByRole('heading', { name: /^Objects/ })).toBeVisible()
+    await expect(page.getByRole('heading', { name: /^Objekte/ })).toBeVisible()
     await expectNoErrorState(page)
   })
 })
@@ -213,7 +213,7 @@ test.describe('navigation — business services (BPI)', () => {
     await expect(page.getByText('Definition', { exact: true })).toBeVisible()
     // SLA budget tiles resolve once /business-services/{name}/sla answers; the
     // 99.9% target from the demo seed proves real SLA content rendered.
-    await expect(page.getByText('Availability', { exact: true })).toBeVisible()
+    await expect(page.getByText('Verfügbarkeit', { exact: true })).toBeVisible()
     await expect(page.getByText('99.9%', { exact: false }).first()).toBeVisible()
     await expectNoErrorState(page)
   })
@@ -232,8 +232,8 @@ test.describe('navigation — reports', () => {
     // what this rendering suite verifies.)
     const row = page.getByRole('row', { name: /demo-availability/ })
     await expect(row).toBeVisible()
-    await expect(row.getByRole('button', { name: 'Preview' })).toBeVisible()
-    await expect(row.getByRole('button', { name: 'Run' })).toBeVisible()
+    await expect(row.getByRole('button', { name: 'Vorschau' })).toBeVisible()
+    await expect(row.getByRole('button', { name: 'Ausführen' })).toBeVisible()
 
     // The archive dialog opens (GET …/archive, operator-readable) and renders
     // its content — prior runs as download links, or the empty state — never
@@ -242,7 +242,7 @@ test.describe('navigation — reports', () => {
     const archiveDialog = page.getByRole('dialog')
     await expect(archiveDialog.getByRole('heading', { name: /Archiv: demo-availability/ })).toBeVisible()
     const entries = archiveDialog.getByRole('link', { name: /Download/ })
-    const empty = archiveDialog.getByText('No entries.', { exact: true })
+    const empty = archiveDialog.getByText('Keine Einträge.', { exact: true })
     await expect(entries.first().or(empty)).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(archiveDialog).toBeHidden()
@@ -252,9 +252,9 @@ test.describe('navigation — reports', () => {
 test.describe('navigation — on-call', () => {
   test('renders the who-is-on-call now widget and schedule manager', async ({ page }) => {
     await page.goto('/oncall')
-    await expect(page.getByRole('heading', { name: /^On-Call$/ })).toBeVisible()
-    // SchedulesManager always renders its "Schedules" card (CardTitle div).
-    await expect(page.getByText('Schedules', { exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: /^Bereitschaft$/ })).toBeVisible()
+    // SchedulesManager always renders its "Dienstpläne" card (CardTitle div).
+    await expect(page.getByText('Dienstpläne', { exact: true })).toBeVisible()
     // The demo seed defines schedule "demo-oncall": its now-card title + the
     // 14-day detail card ("demo-oncall — 14 Tage") prove the schedule rendered.
     await expect(page.getByText('demo-oncall', { exact: false }).first()).toBeVisible()

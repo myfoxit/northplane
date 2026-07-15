@@ -52,24 +52,29 @@ async function mintStateChange(page: Page): Promise<void> {
 }
 
 // Open a shadcn Select by its visible (current) value and pick an option.
+// The current-value match is case-insensitive so it survives locale casing
+// (e.g. the de label "Offen + quittiert" vs a lowercase regex).
 async function pickSelect(page: Page, currentLabel: string | RegExp, option: string | RegExp) {
-  await page.getByRole('combobox').filter({ hasText: currentLabel }).click()
-  await page.getByRole('option', { name: option }).click()
+  const ci = (v: string | RegExp) => typeof v === 'string'
+    ? v
+    : new RegExp(v.source, v.flags.includes('i') ? v.flags : v.flags + 'i')
+  await page.getByRole('combobox').filter({ hasText: ci(currentLabel) }).click()
+  await page.getByRole('option', { name: ci(option) }).click()
 }
 
 test.describe('alerts', () => {
   test('alerts list renders (rows or empty state)', async ({ page }) => {
     await page.goto('/')
-    await page.getByRole('link', { name: 'Alerts' }).click()
+    await page.getByRole('link', { name: 'Alarme' }).click()
     await expect(page).toHaveURL(/\/alerts/)
-    // Heading with the live count, e.g. "Alerts (3)".
-    await expect(page.getByRole('heading', { name: /Alerts/ })).toBeVisible()
+    // Heading with the live count, e.g. "Alarme (3)".
+    await expect(page.getByRole('heading', { name: /Alarme/ })).toBeVisible()
     // Both filter Selects are present (severity + status); scope to the
     // content area — the sidebar's refresh-cadence Select is also a combobox.
     await expect(page.getByRole('main').getByRole('combobox')).toHaveCount(2)
     // Either alert rows are shown, or the explicit empty state. The default
     // status filter is "offen + quittiert" so this captures whatever is open.
-    const empty = page.getByText('No entries.')
+    const empty = page.getByText(/Keine aktiven Alarme|Keine Einträge/)
     const rows = page.locator('div.group').filter({ has: page.getByText(/seit/) })
     await expect.poll(async () =>
       (await empty.count()) > 0 || (await rows.count()) > 0,
@@ -78,7 +83,7 @@ test.describe('alerts', () => {
 
   test('filter by status drives the URL and the "all"/default option clears it', async ({ page }) => {
     await page.goto('/alerts')
-    await expect(page.getByRole('heading', { name: /Alerts/ })).toBeVisible()
+    await expect(page.getByRole('heading', { name: /Alarme/ })).toBeVisible()
 
     // Pick "nur offen" -> ?status=open
     await pickSelect(page, /offen \+ quittiert/, 'nur offen')
@@ -95,7 +100,7 @@ test.describe('alerts', () => {
 
   test('filter by severity drives the URL and "alle Severities" clears it', async ({ page }) => {
     await page.goto('/alerts')
-    await expect(page.getByRole('heading', { name: /Alerts/ })).toBeVisible()
+    await expect(page.getByRole('heading', { name: /Alarme/ })).toBeVisible()
 
     // Severity Select starts on the "alle Severities" sentinel.
     await pickSelect(page, /alle Severities/, 'critical')
@@ -115,7 +120,7 @@ test.describe('alerts', () => {
     await expect(page).toHaveURL(/\/incidents/)
     await expect(page.getByRole('heading', { name: 'Incidents' })).toBeVisible()
     // Either incident cards or the empty state (demo opens no standing incident).
-    await expect(page.getByText('No entries.').or(page.getByText('Lade…')).first())
+    await expect(page.getByText(/Keine offenen Incidents|Keine Einträge/).or(page.getByText('Lade…')).first())
       .toBeVisible({ timeout: 10_000 })
   })
 
@@ -127,7 +132,7 @@ test.describe('alerts', () => {
     // 2) Show only open alerts so the row is unambiguous, and the CRITICAL one
     //    surfaces. Poll the list (the pipeline + rule engine are async).
     await page.goto('/alerts?status=open&severity=critical')
-    await expect(page.getByRole('heading', { name: /Alerts/ })).toBeVisible()
+    await expect(page.getByRole('heading', { name: /Alarme/ })).toBeVisible()
 
     const alertRow = page.locator('div.group').filter({ hasText: 'demo-batchjob' }).first()
     await expect.poll(async () => {
@@ -144,17 +149,17 @@ test.describe('alerts', () => {
     await expect(alertRow.getByText(/is CRITICAL/)).toBeVisible()
     await expect(alertRow.getByText(/^open ·/)).toBeVisible()
 
-    // 3) ACK: hover to reveal the actions, click "Acknowledge".
+    // 3) ACK: hover to reveal the actions, click "Quittieren".
     await alertRow.hover()
-    await alertRow.getByRole('button', { name: 'Acknowledge' }).click()
+    await alertRow.getByRole('button', { name: 'Quittieren' }).click()
 
     // Ack confirmation dialog: consequence text + confirm button.
     const ackDialog = page.getByRole('dialog')
     await expect(ackDialog).toBeVisible()
-    await expect(ackDialog.getByText('Running escalations will stop.')).toBeVisible()
-    // The confirm button reuses the t('ack') label ("Acknowledge"); pick it
+    await expect(ackDialog.getByText('Laufende Eskalationen werden gestoppt.')).toBeVisible()
+    // The confirm button reuses the t('ack') label ("Quittieren"); pick it
     // inside the dialog (the row's button is hidden behind the modal overlay).
-    await ackDialog.getByRole('button', { name: 'Acknowledge' }).click()
+    await ackDialog.getByRole('button', { name: 'Quittieren' }).click()
     await expect(ackDialog).not.toBeVisible()
 
     // 4) Assert acknowledged: with status=open the acked alert drops out of the
@@ -171,7 +176,7 @@ test.describe('alerts', () => {
 
     // 5) RESOLVE: hover, click "Schließen". Acked alerts keep the resolve button.
     await ackedRow.hover()
-    await ackedRow.getByRole('button', { name: 'Resolve' }).click()
+    await ackedRow.getByRole('button', { name: 'Schließen' }).click()
 
     // 6) Assert it leaves the open+acked list (status -> resolved).
     await expect.poll(async () => ackedRow.count(), { timeout: 15_000 }).toBe(0)
