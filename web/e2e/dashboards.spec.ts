@@ -139,9 +139,8 @@ test.describe('dashboard lifecycle (admin)', () => {
 
     const addDialog = page.getByRole('dialog')
     await expect(addDialog.getByRole('heading', { name: 'Widget hinzufügen' })).toBeVisible()
-    // The Typ Select is the only combobox in the dialog for the problems type.
-    await addDialog.getByRole('combobox').click()
-    await page.getByRole('option', { name: 'Probleme' }).click()
+    // The type is picked from the icon-card gallery (each type is a button).
+    await addDialog.getByRole('button', { name: 'Probleme', exact: true }).click()
     const widgetTitle = `E2E-Probleme-${Date.now()}`
     // The "Titel (optional)" input carries the type label as its placeholder
     // ("Probleme" once the problems type is selected).
@@ -177,7 +176,7 @@ test.describe('dashboard lifecycle (admin)', () => {
     const card = page
       .locator('.grid > div', { has: page.getByRole('link', { name, exact: true }) })
       .first()
-    await expect(card.getByText('2 Widget')).toBeVisible()
+    await expect(card.getByText('2 Widgets')).toBeVisible()
 
     // DELETE — remove it and confirm it's gone from the list.
     await deleteDashboard(page, name)
@@ -191,8 +190,7 @@ test.describe('dashboard lifecycle (admin)', () => {
     await page.getByRole('button', { name: 'Bearbeiten' }).click()
     await page.getByRole('button', { name: 'Widget hinzufügen' }).click()
     const addDialog = page.getByRole('dialog')
-    await addDialog.getByRole('combobox').click()
-    await page.getByRole('option', { name: 'Gauge (Tacho)' }).click()
+    await addDialog.getByRole('button', { name: 'Gauge (Tacho)', exact: true }).click()
     await addDialog.getByRole('button', { name: 'Hinzufügen' }).click()
 
     // Set a non-default dashboard time range + refresh (DashControls).

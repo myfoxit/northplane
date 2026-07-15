@@ -189,7 +189,9 @@ export function ObjectsPage() {
                       : `○ ${t('pending')}`}
                   </span>
                   <span className="w-16 shrink-0 text-xs text-muted-foreground uppercase">{o.kind}</span>
-                  <span className="w-28 shrink-0 text-xs text-muted-foreground truncate font-mono" title={o.folder}>{o.folder}</span>
+                  {/* aria-hidden: keep the row link's accessible name the
+                      object identity (kind + name), not the folder path. */}
+                  <span aria-hidden className="w-28 shrink-0 text-xs text-muted-foreground truncate font-mono" title={o.folder}>{o.folder}</span>
                   <span className="text-foreground font-medium truncate w-56 shrink-0">
                     {o.kind === 'service' && o.hostName ? `${o.hostName} / ` : ''}{o.name}
                   </span>
