@@ -7,6 +7,7 @@ import { get } from '../../api'
 import type { ObjectSpec } from '../../types'
 import { useBuiltins, useResourceNames } from './specUtil'
 import { Field, DurationInput, KVEditor, ListEditor } from '@/components/kit'
+import { DualListPicker } from '@/components/DualListPicker'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -187,14 +188,14 @@ export function SpecFields({ spec, onChange, kind, hideCommand }: {
       </Field>
 
       <Field label={t('templates')} hint="Vererbung in deklarierter Reihenfolge (später gewinnt)">
-        <ListEditor value={spec.templates ?? []} onChange={(v) => patch({ templates: v })}
-          placeholder="generic-service" suggestions={templates.data ?? []} />
+        <DualListPicker value={spec.templates ?? []} onChange={(v) => patch({ templates: v })}
+          options={templates.data ?? []} />
       </Field>
 
       {kind !== 'service' && (
         <Field label={t('parents')} hint="Hosts für die Erreichbarkeitslogik">
-          <ListEditor value={spec.parents ?? []} onChange={(v) => patch({ parents: v })}
-            placeholder="core-switch01" suggestions={hosts.data ?? []} />
+          <DualListPicker value={spec.parents ?? []} onChange={(v) => patch({ parents: v })}
+            options={hosts.data ?? []} />
         </Field>
       )}
 
@@ -235,12 +236,12 @@ export function SpecFields({ spec, onChange, kind, hideCommand }: {
         <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('notifications')}</div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <Field label="Kontaktgruppen" hint="Direkt benachrichtigt bei harten Statuswechseln">
-            <ListEditor value={spec.contactGroups ?? []} onChange={(v) => patch({ contactGroups: v })}
-              placeholder="ops" suggestions={contactGroups.data ?? []} />
+            <DualListPicker value={spec.contactGroups ?? []} onChange={(v) => patch({ contactGroups: v })}
+              options={contactGroups.data ?? []} />
           </Field>
           <Field label="Kontakte" hint="Zusätzliche Einzelkontakte">
-            <ListEditor value={spec.contacts ?? []} onChange={(v) => patch({ contacts: v })}
-              placeholder="alice" suggestions={contacts.data ?? []} />
+            <DualListPicker value={spec.contacts ?? []} onChange={(v) => patch({ contacts: v })}
+              options={contacts.data ?? []} />
           </Field>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">

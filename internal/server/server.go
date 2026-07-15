@@ -196,7 +196,10 @@ func (s *Server) rootHandler(apiHandler http.Handler, authn *auth.Authenticator)
 	if svc, ok := s.api.AI.(*ai.Service); ok {
 		mux.Handle("/mcp", mcpserver.HTTPHandler(svc, authn, s.version))
 	}
-	mux.Handle("/", spa) // SPA + static assets (auth enforced client-side + API)
+	// SPA + static assets. GateSPA redirects logged-out *document* navigations
+	// to /login server-side so the app shell never renders before the client's
+	// own 401 redirect (no full-app flash); assets and API auth are unchanged.
+	mux.Handle("/", web.GateSPA(spa, authn))
 	return securityHeaders(withTimeouts(mux), s.Cfg.TrustProxy)
 }
 

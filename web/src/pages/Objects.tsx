@@ -216,6 +216,18 @@ export function ObjectDetailPage() {
     queryKey: ['events', id],
     queryFn: () => get<{ items: NPEvent[] | null }>(`/events?objectId=${id}&limit=30`),
   })
+  // A host's own services (kind=service, hostId=this host) — shown as a card
+  // below so the detail view of a host lists what runs on it. Enabled only for
+  // hosts; services have no sub-services.
+  const isHost = obj?.kind === 'host'
+  const refresh = useRefreshInterval()
+  const { data: svcData } = useQuery({
+    queryKey: ['objects', id, 'services'],
+    queryFn: () => get<ListResponse<NPObject>>(`/services?hostId=${id}&limit=1000`),
+    enabled: isHost,
+    refetchInterval: refresh,
+  })
+  const services = useMemo(() => svcData?.items ?? [], [svcData])
   const { data: series } = useQuery({
     queryKey: ['metrics', id],
     queryFn: () => post<SeriesResult[]>('/metrics/query', {
@@ -294,6 +306,39 @@ export function ObjectDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      {isHost && (
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              {t('services')} <span className="text-muted-foreground text-sm font-normal">({services.length})</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {services.length === 0 ? (
+              <Empty text={t('noServices')} />
+            ) : (
+              <div className="divide-y divide-border/50">
+                {services.map((s) => (
+                  <Link
+                    key={s.id} to="/objects/$id" params={{ id: s.id }}
+                    className="flex items-center gap-3 py-1.5 px-2 -mx-2 rounded-md hover:bg-muted/40 text-sm group"
+                  >
+                    <span className={`w-28 shrink-0 font-semibold ${s.state ? stateColor(s.kind, s.state.state) : 'text-muted-foreground'}`}>
+                      {s.state?.lastCheck
+                        ? `${stateIcon(s.kind, s.state.state)} ${stateLabel(s.kind, s.state.state)}`
+                        : `○ ${t('pending')}`}
+                    </span>
+                    <span className="font-medium truncate w-56 shrink-0 text-foreground">{s.name}</span>
+                    <span className="text-muted-foreground text-xs truncate flex-1">{s.state?.output}</span>
+                    <LabelChips labels={s.labels} />
+                  </Link>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid lg:grid-cols-2 gap-4">
         <Card>
