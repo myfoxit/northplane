@@ -55,6 +55,15 @@ describe('<DualListPicker />', () => {
     expect(val()).toBe('zoe')
   })
 
+  it('tolerates non-string options without crashing (defensive coercion)', async () => {
+    // A shared query-cache slot can resolve to the wrong shape; the picker must
+    // degrade (coerce to strings) rather than throw on localeCompare/toLowerCase.
+    const bad = [1, { name: 'x' }, 'carol'] as unknown as string[]
+    renderWithProviders(<Harness options={bad} />)
+    // renders a pane instead of throwing an error boundary
+    expect(await screen.findByText('carol')).toBeInTheDocument()
+  })
+
   it('does not double-add an already-selected value', async () => {
     const user = userEvent.setup()
     renderWithProviders(<Harness initial={['alice']} options={['alice', 'bob']} />)

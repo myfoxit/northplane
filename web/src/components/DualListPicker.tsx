@@ -36,13 +36,18 @@ export function DualListPicker({
   const [selMarked, setSelMarked] = useState<Set<string>>(() => new Set())
 
   const selectedSet = useMemo(() => new Set(value), [value])
+  // Coerce to strings up front: options is typed string[], but a caller can
+  // still hand us the wrong shape (e.g. a shared React-Query cache slot that
+  // resolved to objects). Normalising here keeps every downstream string op
+  // (localeCompare, toLowerCase) from throwing and taking the page down.
+  const opts = useMemo(() => (options ?? []).map((o) => String(o)), [options])
   // Available universe = options minus what's already selected, de-duplicated
   // and alphabetised (the selected pane keeps insertion order instead).
   const available = useMemo(() => {
-    const uniq = Array.from(new Set(options)).filter((o) => !selectedSet.has(o))
+    const uniq = Array.from(new Set(opts)).filter((o) => !selectedSet.has(o))
     uniq.sort((a, b) => a.localeCompare(b))
     return uniq
-  }, [options, selectedSet])
+  }, [opts, selectedSet])
 
   const availShown = useMemo(
     () => available.filter((o) => o.toLowerCase().includes(availFilter.trim().toLowerCase())),

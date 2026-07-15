@@ -164,8 +164,13 @@ export function SpecFields({ spec, onChange, kind, hideCommand }: {
   const periods = useResourceNames('time-periods', ['resources', 'time-periods', 'names'])
   const contactGroups = useResourceNames('contact-groups', ['resources', 'contact-groups', 'names'])
   const contacts = useResourceNames('contacts', ['resources', 'contacts', 'names'])
+  // Distinct query key from ObjectForm's useHostPicker (['objects','host-names']):
+  // that one caches {id,name} objects for the host <Select>, this one caches
+  // plain name strings for the parents picker. Sharing the key let whichever
+  // ran first decide the shape — and object-shaped data crashed the string-only
+  // DualListPicker (localeCompare/toLowerCase on an object).
   const hosts = useQuery({
-    queryKey: ['objects', 'host-names'],
+    queryKey: ['objects', 'host-names', 'namesOnly'],
     queryFn: () => get<{ items: { name: string }[] | null }>('/hosts?limit=2000&withState=false')
       .then((r) => (r.items ?? []).map((x) => x.name)),
     staleTime: 30_000,
