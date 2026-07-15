@@ -39,7 +39,7 @@ export function ContactsTab() {
             <TableHead>{t('email')}</TableHead>
             <TableHead>{t('phone')}</TableHead>
             <TableHead>{t('timezone')}</TableHead>
-            <TableHead>Profile</TableHead>
+            <TableHead>{t('profiles')}</TableHead>
             <TableHead></TableHead>
           </TableRow>
         </TableHeader>
@@ -136,11 +136,11 @@ function ContactForm({ doc, etag, isNew, onClose }: {
           <div className="grid grid-cols-2 gap-2">
             <Field label={t('name')} required><Input value={name} onChange={(e) => setName(e.target.value)} required disabled={!isNew} /></Field>
             <Field label={t('email')}><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
-            <Field label={t('phone')} hint="E.164, z.B. +491701234567"><Input value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>
-            <Field label={t('timezone')} hint="z.B. Europe/Berlin"><Input value={timeZone} onChange={(e) => setTimeZone(e.target.value)} /></Field>
+            <Field label={t('phone')} hint={t('phoneHint')}><Input value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>
+            <Field label={t('timezone')} hint={t('timezoneHint')}><Input value={timeZone} onChange={(e) => setTimeZone(e.target.value)} /></Field>
           </div>
           <div>
-            <div className="text-xs text-muted-foreground font-medium mb-1">Benachrichtigungs-Präferenzen</div>
+            <div className="text-xs text-muted-foreground font-medium mb-1">{t('notificationPreferences')}</div>
             <PreferencesEditor value={prefs} onChange={setPrefs} />
           </div>
           <FormError error={save.error} />
@@ -162,22 +162,22 @@ function PreferencesEditor({ value, onChange }: {
       {value.map((p, i) => (
         <div key={i} className="border border-border rounded-lg p-2 space-y-2 bg-card/40">
           <div className="grid grid-cols-3 gap-2">
-            <Field label="Profil"><Input value={p.profile} onChange={(e) => update(i, { profile: e.target.value })} placeholder="default" /></Field>
-            <Field label="Zeitperiode"><Input value={p.period ?? ''} onChange={(e) => update(i, { period: e.target.value || undefined })} placeholder="(immer)" /></Field>
-            <Field label="Min. Severity">
+            <Field label={t('profile')}><Input value={p.profile} onChange={(e) => update(i, { profile: e.target.value })} placeholder="default" /></Field>
+            <Field label={t('timePeriodField')}><Input value={p.period ?? ''} onChange={(e) => update(i, { period: e.target.value || undefined })} placeholder={t('alwaysParen')} /></Field>
+            <Field label={t('minSeverity')}>
               <Select
                 value={p.severity ?? ALL_SEVERITIES}
                 onValueChange={(v) => update(i, { severity: v === ALL_SEVERITIES ? undefined : (v as Severity) })}
               >
                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={ALL_SEVERITIES}>(alle)</SelectItem>
+                  <SelectItem value={ALL_SEVERITIES}>{t('allParen')}</SelectItem>
                   {SEVERITIES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                 </SelectContent>
               </Select>
             </Field>
           </div>
-          <Field label="Kanäle (Reihenfolge = Priorität)">
+          <Field label={t('channelsPriority')}>
             <ChannelTypePicker value={p.channels} onChange={(ch) => update(i, { channels: ch })} />
           </Field>
           <div className="flex justify-end">
@@ -210,7 +210,7 @@ export function ChannelTypePicker({ value, onChange }: {
             <span className="text-muted-foreground">{i + 1}.</span> {c} <X size={13} />
           </button>
         ))}
-        {value.length === 0 && <span className="text-xs text-muted-foreground py-1">keine</span>}
+        {value.length === 0 && <span className="text-xs text-muted-foreground py-1">{t('none')}</span>}
       </div>
       {available.length > 0 && (
         <div className="flex flex-wrap gap-1">

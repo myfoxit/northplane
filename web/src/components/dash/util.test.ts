@@ -57,7 +57,7 @@ describe('widgetTypeLabel', () => {
     'donut', 'bar', 'table', 'bpi', 'markdown',
   ]
 
-  it('returns a non-empty German label for every widget type', () => {
+  it('returns a non-empty label for every widget type', () => {
     for (const type of types) {
       const label = widgetTypeLabel(type)
       expect(label).toBeTruthy()
@@ -66,7 +66,7 @@ describe('widgetTypeLabel', () => {
   })
 
   it('returns a specific known label', () => {
-    expect(widgetTypeLabel('counters')).toBe('Zähler (KPIs)')
+    expect(widgetTypeLabel('counters')).toBe('Counters (KPIs)')
     expect(widgetTypeLabel('markdown')).toBe('Text / Markdown')
   })
 

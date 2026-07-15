@@ -31,7 +31,7 @@ describe('<ObjectFormDialog /> — tabbed create form', () => {
     renderWithProviders(<ObjectFormDialog open kind="host" onClose={() => {}} />)
 
     const dialog = await screen.findByRole('dialog')
-    for (const name of ['Basis', 'Prüfung', 'Benachrichtigungen', 'Erweitert']) {
+    for (const name of ['Basics', 'Check', 'Notifications', 'Advanced']) {
       expect(within(dialog).getByRole('tab', { name })).toBeInTheDocument()
     }
 
@@ -55,7 +55,7 @@ describe('<ObjectFormDialog /> — tabbed create form', () => {
     renderWithProviders(<ObjectFormDialog open kind="host" onClose={() => {}} />)
     const dialog = await screen.findByRole('dialog')
 
-    await user.click(within(dialog).getByRole('tab', { name: 'Prüfung' }))
+    await user.click(within(dialog).getByRole('tab', { name: 'Check' }))
     // The interval grid moved here (its retry label is the FORM-4 case).
     expect(await within(dialog).findByText(/Retry-Intervall|Retry interval/)).toBeInTheDocument()
     // …and the check-command kind selector (a new object defaults to passive).
@@ -68,10 +68,10 @@ describe('<ObjectFormDialog /> — tabbed create form', () => {
     renderWithProviders(<ObjectFormDialog open kind="host" onClose={() => {}} />)
     const dialog = await screen.findByRole('dialog')
 
-    await user.click(within(dialog).getByRole('tab', { name: 'Benachrichtigungen' }))
+    await user.click(within(dialog).getByRole('tab', { name: 'Notifications' }))
     // Compact combobox triggers (their placeholders) are present…
-    expect(await within(dialog).findByRole('combobox', { name: /Gruppe hinzufügen/ })).toBeInTheDocument()
-    expect(within(dialog).getByRole('combobox', { name: /Kontakt hinzufügen/ })).toBeInTheDocument()
+    expect(await within(dialog).findByRole('combobox', { name: /Add group/ })).toBeInTheDocument()
+    expect(within(dialog).getByRole('combobox', { name: /Add contact/ })).toBeInTheDocument()
     // …and the DualListPicker's move controls (› » « ‹) are NOT.
     expect(within(dialog).queryByRole('button', { name: '›' })).not.toBeInTheDocument()
   })

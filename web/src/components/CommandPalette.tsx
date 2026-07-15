@@ -13,6 +13,7 @@ import {
 import { get, type ListResponse } from '../api'
 import type { NPObject } from '../types'
 import { stateIcon, stateColor } from '../types'
+import { t } from '../i18n'
 
 interface Entry {
   label: string
@@ -72,10 +73,10 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
       <CommandInput
         value={query}
         onValueChange={setQuery}
-        placeholder="Navigation, Objekte, Aktionen…"
+        placeholder={t('palettePlaceholder')}
       />
       <CommandList>
-        <CommandEmpty>nichts gefunden</CommandEmpty>
+        <CommandEmpty>{t('nothingFound')}</CommandEmpty>
         {objEntries.length > 0 && (
           <CommandGroup>
             {objEntries.map((entry, i) => (

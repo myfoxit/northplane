@@ -1,12 +1,11 @@
 // Downtimes tab (SPEC §6.3/§11.4): scheduled maintenance windows on an
 // object or a selector, fixed or flexible, optionally recurring (RRULE).
-import { useState } from 'react'
+import { useEffect, useState, type RefObject } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { get, post, del, fmtTime, type ListResponse } from '../../api'
 import type { Downtime, NPObject } from '../../types'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
@@ -25,23 +24,21 @@ import { localInputToIso, nowPlus } from './datetime'
 const KEY = ['downtimes']
 const fetchDowntimes = () => get<ListResponse<Downtime>>('/downtimes').then((r) => r.items ?? [])
 
-export function DowntimesTab() {
+export function DowntimesTab({ createRef }: { createRef?: RefObject<() => void> }) {
   const { data } = useQuery({ queryKey: KEY, queryFn: fetchDowntimes })
   const [creating, setCreating] = useState(false)
   const remove = useSave((id: string) => del(`/downtimes/${encodeURIComponent(id)}`), { invalidate: [KEY] })
+  useEffect(() => { if (createRef) createRef.current = () => setCreating(true) })
 
   return (
     <div className="space-y-3">
-      <div className="flex justify-end">
-        <Button variant="default" onClick={() => setCreating(true)}>{t('create')}</Button>
-      </div>
-      {(data?.length ?? 0) === 0 ? <Empty text="Keine geplanten Downtimes." /> : (
+      {(data?.length ?? 0) === 0 ? <Empty text={t('noScheduledDowntimes')} /> : (
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>{t('target')}</TableHead>
               <TableHead>{t('type')}</TableHead>
-              <TableHead>Fenster</TableHead>
+              <TableHead>{t('window')}</TableHead>
               <TableHead>RRULE</TableHead>
               <TableHead>{t('comment')}</TableHead>
               <TableHead>{t('actions')}</TableHead>
@@ -107,10 +104,10 @@ function DowntimeDialog({ onClose }: { onClose: () => void }) {
             <span className="text-xs text-muted-foreground font-medium">{t('target')}</span>
             <div className="flex gap-4 mt-1 mb-2">
               <label className="flex items-center gap-1.5 text-sm text-foreground/90 cursor-pointer">
-                <input type="radio" checked={targetKind === 'object'} onChange={() => setTargetKind('object')} /> Objekt
+                <input type="radio" checked={targetKind === 'object'} onChange={() => setTargetKind('object')} /> {t('object')}
               </label>
               <label className="flex items-center gap-1.5 text-sm text-foreground/90 cursor-pointer">
-                <input type="radio" checked={targetKind === 'selector'} onChange={() => setTargetKind('selector')} /> Selector
+                <input type="radio" checked={targetKind === 'selector'} onChange={() => setTargetKind('selector')} /> {t('selector')}
               </label>
             </div>
             {targetKind === 'object'
@@ -131,7 +128,7 @@ function DowntimeDialog({ onClose }: { onClose: () => void }) {
               </Select>
             </Field>
             {type === 'flexible' && (
-              <Field label="Dauer" hint="aktive Zeit im Fenster">
+              <Field label={t('duration')} hint={t('durationHint')}>
                 <DurationInput value={duration} onChange={setDuration} placeholder="1h" />
               </Field>
             )}
@@ -142,7 +139,7 @@ function DowntimeDialog({ onClose }: { onClose: () => void }) {
             <Field label={t('to')}><DateTimeInput value={end} onChange={setEnd} /></Field>
           </div>
 
-          <Field label="RRULE" hint="optional, wiederkehrend">
+          <Field label="RRULE" hint={t('optionalRecurring')}>
             <Input value={rrule} onChange={(e) => setRrule(e.target.value)} placeholder="FREQ=WEEKLY;BYDAY=SA" />
           </Field>
           <Field label={t('comment')} required>
@@ -169,7 +166,7 @@ function ObjectPicker({ value, onChange }: { value: string; onChange: (id: strin
 
   return (
     <div className="space-y-1.5">
-      <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Objekt suchen…" />
+      <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('searchObject')} />
       {value && (
         <div className="flex items-center gap-2 text-xs">
           <Badge variant="outline" className="bg-primary/15 text-primary border-primary/30">{chosen?.name ?? value}</Badge>

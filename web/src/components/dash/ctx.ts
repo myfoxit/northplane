@@ -3,6 +3,7 @@
 // pure .ts module (no component exports) so widgets.tsx stays component-only
 // and react-refresh is happy. The Provider used is `DashViewCtx.Provider`.
 import { createContext, useContext } from 'react'
+import { t } from '../../i18n'
 
 export interface DashView {
   // Range token ("1h".."30d") overriding a time-series widget's own range.
@@ -13,7 +14,7 @@ export interface DashView {
 }
 
 export const REFRESH_TOKENS: { value: string; label: string; ms: number }[] = [
-  { value: 'off', label: 'Aus', ms: 0 },
+  { value: 'off', label: t('off'), ms: 0 },
   { value: '10s', label: '10 s', ms: 10_000 },
   { value: '30s', label: '30 s', ms: 30_000 },
   { value: '1m', label: '1 min', ms: 60_000 },

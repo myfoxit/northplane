@@ -25,7 +25,7 @@ describe('<DeadLettersTab />', () => {
     server.use(http.get('/api/v1/notifications/dead-letters', () =>
       HttpResponse.json({ items: [] })))
     renderWithProviders(<DeadLettersTab />)
-    expect(await screen.findByText(/Keine Dead-Letters/)).toBeInTheDocument()
+    expect(await screen.findByText(/No dead letters/)).toBeInTheDocument()
   })
 
   it('replays an item and reports success', async () => {
@@ -40,7 +40,7 @@ describe('<DeadLettersTab />', () => {
     const user = userEvent.setup()
     renderWithProviders(<DeadLettersTab />)
     await user.click(await screen.findByRole('button', { name: 'Replay' }))
-    await waitFor(() => expect(screen.getByText(/erneut eingereiht/)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/requeued/)).toBeInTheDocument())
     expect(replayed).toBe('dl-1')
   })
 })

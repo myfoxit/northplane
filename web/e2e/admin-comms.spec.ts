@@ -18,7 +18,7 @@ const uniq = () => `${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).
 // associated with its <Input> (no htmlFor/id) — so getByLabel cannot find the
 // control. Instead we scope to the Field wrapper (a div carrying both the label
 // text and, in a sibling div, the control) and pull its textbox. Matching the
-// label exactly avoids "Name" also hitting "Benutzername" etc.
+// label exactly avoids "Name" also hitting "Username" etc.
 function field(scope: ReturnType<Page['locator']>, label: string) {
   // The Field wrapper (div.block.text-sm) holds the label text + the control;
   // required fields render the label as "<label> *", so anchor on the start of
@@ -39,16 +39,16 @@ async function openAdminTab(page: Page, tabName: string | RegExp) {
   await tab.click()
 }
 
-// The confirm-armed DeleteButton: first "Löschen" arms, then "Wirklich löschen?"
+// The confirm-armed DeleteButton: first "Delete" arms, then "Really delete?"
 // commits. We scope to the row to avoid hitting another row's button.
 async function deleteRow(row: ReturnType<Page['locator']>) {
-  await row.getByRole('button', { name: 'Löschen', exact: true }).click()
-  await row.getByRole('button', { name: 'Wirklich löschen?' }).click()
+  await row.getByRole('button', { name: 'Delete', exact: true }).click()
+  await row.getByRole('button', { name: 'Really delete?' }).click()
 }
 
 test.describe('admin · contacts', () => {
   test('lists demo contacts, then creates / edits / deletes a contact', async ({ page }) => {
-    await openAdminTab(page, 'Kontakte')
+    await openAdminTab(page, 'Contacts')
 
     // Demo seed contacts are listed.
     await expect(page.getByRole('cell', { name: 'demo-alice', exact: true })).toBeVisible()
@@ -57,18 +57,18 @@ test.describe('admin · contacts', () => {
     const name = `e2e-contact-${uniq()}`
     const email = `${name}@example.test`
 
-    // CREATE — "Anlegen" opens the dialog; fill name + email + add a
+    // CREATE — "Create" opens the dialog; fill name + email + add a
     // notification preference whose first channel is "email".
-    await page.getByRole('button', { name: 'Anlegen' }).click()
+    await page.getByRole('button', { name: 'Create' }).click()
     const dialog = page.getByRole('dialog')
-    await expect(dialog.getByRole('heading', { name: 'Anlegen' })).toBeVisible()
+    await expect(dialog.getByRole('heading', { name: 'Create' })).toBeVisible()
     await field(dialog, 'Name').fill(name)
     await field(dialog, 'E-Mail').fill(email)
-    // PreferencesEditor: "Hinzufügen" appends a default-profile row, then the
+    // PreferencesEditor: "Add" appends a default-profile row, then the
     // ChannelTypePicker offers "+ email" as a clickable chip.
-    await dialog.getByRole('button', { name: 'Hinzufügen' }).click()
+    await dialog.getByRole('button', { name: 'Add' }).click()
     await dialog.getByRole('button', { name: '+ email' }).click()
-    await dialog.getByRole('button', { name: 'Speichern' }).click()
+    await dialog.getByRole('button', { name: 'Save' }).click()
     await expect(dialog).toBeHidden()
 
     // Listed with the email + a non-zero profile count.
@@ -78,12 +78,12 @@ test.describe('admin · contacts', () => {
 
     // EDIT — change the e-mail. Name field is locked on edit (disabled).
     const newEmail = `edited-${name}@example.test`
-    await row.getByRole('button', { name: 'Bearbeiten' }).click()
+    await row.getByRole('button', { name: 'Edit' }).click()
     const editDialog = page.getByRole('dialog')
-    await expect(editDialog.getByRole('heading', { name: `Bearbeiten: ${name}` })).toBeVisible()
+    await expect(editDialog.getByRole('heading', { name: `Edit: ${name}` })).toBeVisible()
     const emailField = field(editDialog, 'E-Mail')
     await emailField.fill(newEmail)
-    await editDialog.getByRole('button', { name: 'Speichern' }).click()
+    await editDialog.getByRole('button', { name: 'Save' }).click()
     await expect(editDialog).toBeHidden()
     await expect(page.getByRole('cell', { name: newEmail })).toBeVisible()
 
@@ -95,26 +95,26 @@ test.describe('admin · contacts', () => {
 
 test.describe('admin · contact groups', () => {
   test('lists demo-ops, then creates a group with a member and deletes it', async ({ page }) => {
-    await openAdminTab(page, 'Kontaktgruppen')
+    await openAdminTab(page, 'Contact groups')
 
     await expect(page.getByRole('cell', { name: 'demo-ops', exact: true })).toBeVisible()
 
     const name = `e2e-group-${uniq()}`
 
     // CREATE — name + one member via the ListEditor (type a contact, Enter/Add).
-    await page.getByRole('button', { name: 'Anlegen' }).click()
+    await page.getByRole('button', { name: 'Create' }).click()
     const dialog = page.getByRole('dialog')
-    await expect(dialog.getByRole('heading', { name: 'Anlegen' })).toBeVisible()
+    await expect(dialog.getByRole('heading', { name: 'Create' })).toBeVisible()
     await field(dialog, 'Name').fill(name)
-    const memberInput = dialog.getByPlaceholder('Kontakt…')
+    const memberInput = dialog.getByPlaceholder('Contact…')
     await memberInput.fill('demo-alice')
-    await dialog.getByRole('button', { name: 'Hinzufügen' }).click()
+    await dialog.getByRole('button', { name: 'Add' }).click()
     // The added member appears as a chip inside the dialog.
     await expect(dialog.getByText('demo-alice')).toBeVisible()
-    await dialog.getByRole('button', { name: 'Speichern' }).click()
+    await dialog.getByRole('button', { name: 'Save' }).click()
     await expect(dialog).toBeHidden()
 
-    // Listed, member shown in the "Mitglieder" cell.
+    // Listed, member shown in the "Members" cell.
     const row = page.getByRole('row', { name: new RegExp(name) })
     await expect(row).toBeVisible()
     await expect(row.getByRole('cell', { name: /demo-alice/ })).toBeVisible()
@@ -127,7 +127,7 @@ test.describe('admin · contact groups', () => {
 
 test.describe('admin · channels', () => {
   test('lists demo channels, creates one via type Select, test-sends, deletes', async ({ page }) => {
-    await openAdminTab(page, 'Kanäle')
+    await openAdminTab(page, 'Channels')
 
     await expect(page.getByRole('cell', { name: 'demo-email', exact: true })).toBeVisible()
     await expect(page.getByRole('cell', { name: 'demo-hook', exact: true })).toBeVisible()
@@ -136,9 +136,9 @@ test.describe('admin · channels', () => {
 
     // CREATE — pick "webhook" via the shadcn type Select, fill its minimal
     // config (URL), keep enabled, save.
-    await page.getByRole('button', { name: 'Anlegen' }).click()
+    await page.getByRole('button', { name: 'Create' }).click()
     const dialog = page.getByRole('dialog')
-    await expect(dialog.getByRole('heading', { name: 'Anlegen' })).toBeVisible()
+    await expect(dialog.getByRole('heading', { name: 'Create' })).toBeVisible()
     await field(dialog, 'Name').fill(name)
     // Type Select (defaults to "email") → switch to "webhook". The email
     // form also carries a provider Select, so take the first combobox.
@@ -146,7 +146,7 @@ test.describe('admin · channels', () => {
     await page.getByRole('option', { name: 'webhook', exact: true }).click()
     // The webhook config block now renders a "URL" field.
     await field(dialog, 'URL').fill('http://127.0.0.1:65535/never')
-    await dialog.getByRole('button', { name: 'Speichern' }).click()
+    await dialog.getByRole('button', { name: 'Save' }).click()
     await expect(dialog).toBeHidden()
 
     // Listed with its type badge.
@@ -181,31 +181,31 @@ test.describe('admin · event sources', () => {
 
     // CREATE — default type is "webhook"; flip the enabled Switch off so we can
     // assert the disabled status badge, then save.
-    await page.getByRole('button', { name: 'Anlegen' }).click()
+    await page.getByRole('button', { name: 'Create' }).click()
     const dialog = page.getByRole('dialog')
-    await expect(dialog.getByRole('heading', { name: 'Anlegen' })).toBeVisible()
+    await expect(dialog.getByRole('heading', { name: 'Create' })).toBeVisible()
     await field(dialog, 'Name').fill(name)
-    // The "Aktiv" Switch starts on (checked); toggle it off.
+    // The "Enabled" Switch starts on (checked); toggle it off.
     const enableSwitch = dialog.getByRole('switch')
     await expect(enableSwitch).toBeChecked()
     await enableSwitch.click()
     await expect(enableSwitch).not.toBeChecked()
-    await dialog.getByRole('button', { name: 'Speichern' }).click()
+    await dialog.getByRole('button', { name: 'Save' }).click()
     await expect(dialog).toBeHidden()
 
-    // Listed and shows the "Deaktiviert" status (we created it disabled).
+    // Listed and shows the "Disabled" status (we created it disabled).
     const row = page.getByRole('row', { name: new RegExp(name) })
     await expect(row).toBeVisible()
     await expect(row.getByText('Deaktiviert')).toBeVisible()
 
-    // TOGGLE — re-open, enable, save; status flips to "Aktiv".
-    await row.getByRole('button', { name: 'Bearbeiten' }).click()
+    // TOGGLE — re-open, enable, save; status flips to "Enabled".
+    await row.getByRole('button', { name: 'Edit' }).click()
     const editDialog = page.getByRole('dialog')
     const editSwitch = editDialog.getByRole('switch')
     await expect(editSwitch).not.toBeChecked()
     await editSwitch.click()
     await expect(editSwitch).toBeChecked()
-    await editDialog.getByRole('button', { name: 'Speichern' }).click()
+    await editDialog.getByRole('button', { name: 'Save' }).click()
     await expect(editDialog).toBeHidden()
     await expect(page.getByRole('row', { name: new RegExp(name) }).getByText('Aktiv')).toBeVisible()
 
@@ -223,12 +223,12 @@ test.describe('admin · integrations (webhooks)', () => {
     const url = 'https://example.net/e2e-hook'
 
     // CREATE — name + URL are both required.
-    await page.getByRole('button', { name: 'Anlegen' }).click()
+    await page.getByRole('button', { name: 'Create' }).click()
     const dialog = page.getByRole('dialog')
-    await expect(dialog.getByRole('heading', { name: 'Anlegen' })).toBeVisible()
+    await expect(dialog.getByRole('heading', { name: 'Create' })).toBeVisible()
     await field(dialog, 'Name').fill(name)
     await field(dialog, 'URL').fill(url)
-    await dialog.getByRole('button', { name: 'Speichern' }).click()
+    await dialog.getByRole('button', { name: 'Save' }).click()
     await expect(dialog).toBeHidden()
 
     // Listed with its URL.
@@ -248,14 +248,14 @@ test.describe('admin · integrations (heartbeats)', () => {
 
     const name = `e2e-hb-${uniq()}`
 
-    // CREATE — name + "Erwartet alle" (duration) are required; the form
+    // CREATE — name + "Expected every" (duration) are required; the form
     // pre-fills "1h" so just set a name and save.
-    await page.getByRole('button', { name: 'Anlegen' }).click()
+    await page.getByRole('button', { name: 'Create' }).click()
     const dialog = page.getByRole('dialog')
-    await expect(dialog.getByRole('heading', { name: 'Anlegen' })).toBeVisible()
+    await expect(dialog.getByRole('heading', { name: 'Create' })).toBeVisible()
     await field(dialog, 'Name').fill(name)
     await field(dialog, 'Erwartet alle').fill('30m')
-    await dialog.getByRole('button', { name: 'Speichern' }).click()
+    await dialog.getByRole('button', { name: 'Save' }).click()
     await expect(dialog).toBeHidden()
 
     // Listed; a brand-new heartbeat has never beaten ("nie").

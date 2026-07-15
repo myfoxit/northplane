@@ -13,6 +13,7 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import {
   GRID_COLS, ROW_HEIGHT, GRID_MARGIN, layoutBottom, moveItem, resizeItem, type GridItem,
 } from './grid'
+import { t } from '../../i18n'
 
 // Props the consumer spreads onto its panel header to make it a drag handle.
 export interface DragHandleProps {
@@ -149,8 +150,8 @@ export function GridLayout({ layout, editing, onChange, renderItem }: {
                   {...handlerProps}
                   className="absolute -bottom-0.5 -right-0.5 w-5 h-5 cursor-nwse-resize z-20 text-muted-foreground/60 hover:text-primary"
                   style={{ touchAction: 'none' }}
-                  title="Größe ändern"
-                  aria-label="Größe ändern"
+                  title={t('resize')}
+                  aria-label={t('resize')}
                 >
                   <svg viewBox="0 0 16 16" className="w-full h-full pointer-events-none">
                     <path d="M15 5 L5 15 M15 10 L10 15 M15 15 L14 15" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />

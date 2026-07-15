@@ -19,7 +19,7 @@ import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Empty, Spinner, Field, FormError, SubmitRow, useSave, DeleteButton, KVEditor } from '@/components/kit'
 import { t } from '../../i18n'
-import { TypeBadge, StatusBadge, TableActions, RowActions, secretHint } from './common'
+import { TypeBadge, StatusBadge, TableActions, RowActions } from './common'
 
 const channelsApi = resourceApi<Channel>('channels')
 
@@ -39,21 +39,21 @@ const CONFIG_FIELDS: Record<string, FieldSpec[]> = {
   webhook: [
     { key: 'url', label: 'URL' },
     { key: 'secret', label: 'HMAC-Secret', secret: true },
-    { key: 'method', label: 'HTTP-Methode', hint: 'POST (Standard)' },
+    { key: 'method', label: t('httpMethod'), hint: t('postDefault') },
   ],
-  slack: [{ key: 'url', label: 'Webhook-URL', secret: true }],
-  teams: [{ key: 'url', label: 'Webhook-URL', secret: true }],
+  slack: [{ key: 'url', label: t('webhookUrl'), secret: true }],
+  teams: [{ key: 'url', label: t('webhookUrl'), secret: true }],
   ntfy: [
-    { key: 'url', label: 'Server-URL', hint: 'z.B. https://ntfy.sh' },
+    { key: 'url', label: t('serverUrl'), hint: t('ntfyUrlHint') },
     { key: 'topic', label: 'Topic' },
-    { key: 'token', label: 'Access-Token', secret: true },
+    { key: 'token', label: t('accessToken'), secret: true },
   ],
   // sms is provider-driven; we surface the common twilio + generic-http keys.
   sms: [
     { key: 'provider', label: 'Provider', hint: 'twilio | generic-http' },
     { key: 'accountSid', label: 'Account SID (twilio)', secret: true },
-    { key: 'authToken', label: 'Auth-Token (twilio)', secret: true },
-    { key: 'from', label: 'Absender-Nummer (twilio)' },
+    { key: 'authToken', label: t('authTokenTwilio'), secret: true },
+    { key: 'from', label: t('senderNumber') },
     { key: 'url', label: 'URL (generic-http)', secret: true },
   ],
   push: [],
@@ -62,44 +62,44 @@ const CONFIG_FIELDS: Record<string, FieldSpec[]> = {
   voice: [
     { key: 'provider', label: 'Provider', hint: 'twilio | generic-http' },
     { key: 'accountSid', label: 'Account SID (twilio)', secret: true },
-    { key: 'authToken', label: 'Auth-Token (twilio)', secret: true },
-    { key: 'from', label: 'Anrufer-Nummer (twilio)' },
-    { key: 'language', label: 'TTS-Sprache', hint: 'z.B. de-DE (Standard en-US)' },
+    { key: 'authToken', label: t('authTokenTwilio'), secret: true },
+    { key: 'from', label: t('callerNumber') },
+    { key: 'language', label: t('ttsLanguage'), hint: t('ttsLanguageHint') },
     { key: 'url', label: 'URL (generic-http)', secret: true },
   ],
   // Ticket-Systeme (F-04.05): Ticket bei Eskalation, Auto-Close bei Resolve.
   servicenow: [
-    { key: 'url', label: 'Instanz-URL', hint: 'https://<instanz>.service-now.com' },
-    { key: 'username', label: 'Benutzername' },
-    { key: 'password', label: 'Passwort', secret: true },
-    { key: 'table', label: 'Tabelle', hint: 'incident (Standard)' },
-    { key: 'closeState', label: 'Close-State', hint: '6 = Resolved (Standard)' },
+    { key: 'url', label: t('instanceUrl'), hint: t('servicenowUrlHint') },
+    { key: 'username', label: t('username') },
+    { key: 'password', label: t('password'), secret: true },
+    { key: 'table', label: t('table'), hint: t('incidentDefault') },
+    { key: 'closeState', label: 'Close-State', hint: t('closeStateHint') },
     { key: 'autoClose', label: 'Auto-Close (true/false)' },
   ],
   zendesk: [
     { key: 'url', label: 'Subdomain-URL', hint: 'https://<subdomain>.zendesk.com' },
-    { key: 'email', label: 'Agent-E-Mail' },
-    { key: 'apiToken', label: 'API-Token', secret: true },
-    { key: 'closeStatus', label: 'Close-Status', hint: 'solved (Standard)' },
+    { key: 'email', label: t('agentEmail') },
+    { key: 'apiToken', label: t('apiToken'), secret: true },
+    { key: 'closeStatus', label: 'Close-Status', hint: t('solvedDefault') },
     { key: 'autoClose', label: 'Auto-Close (true/false)' },
   ],
   jira: [
     { key: 'url', label: 'Jira-URL', hint: 'https://<org>.atlassian.net' },
-    { key: 'project', label: 'Projekt-Key', hint: 'z.B. OPS' },
-    { key: 'issueType', label: 'Issue-Typ', hint: 'Task (Standard)' },
-    { key: 'username', label: 'Benutzer / E-Mail' },
-    { key: 'password', label: 'API-Token', secret: true },
-    { key: 'closeTransitionId', label: 'Close-Transition-ID', hint: 'Workflow-Transition zum Schließen' },
+    { key: 'project', label: t('projectKey'), hint: t('egOps') },
+    { key: 'issueType', label: t('issueType'), hint: t('taskDefault') },
+    { key: 'username', label: t('userEmail') },
+    { key: 'password', label: t('apiToken'), secret: true },
+    { key: 'closeTransitionId', label: 'Close-Transition-ID', hint: t('closeTransitionHint') },
     { key: 'autoClose', label: 'Auto-Close (true/false)' },
   ],
   ticket: [
     { key: 'url', label: 'Create-URL (POST, JSON)' },
-    { key: 'token', label: 'Bearer-Token', secret: true },
-    { key: 'username', label: 'Basic-Auth Benutzer' },
-    { key: 'password', label: 'Basic-Auth Passwort', secret: true },
-    { key: 'refField', label: 'Ticket-ID-Feld', hint: 'JSON-Pfad, z.B. data.ticketId (Standard: id)' },
-    { key: 'ticketUrlTemplate', label: 'Ticket-URL-Vorlage', hint: 'https://…/{ref}' },
-    { key: 'closeUrl', label: 'Close-URL', hint: '{ref}-Platzhalter' },
+    { key: 'token', label: t('bearerToken'), secret: true },
+    { key: 'username', label: t('basicAuthUser') },
+    { key: 'password', label: t('basicAuthPassword'), secret: true },
+    { key: 'refField', label: t('ticketIdField'), hint: t('ticketIdFieldHint') },
+    { key: 'ticketUrlTemplate', label: t('ticketUrlTemplate'), hint: 'https://…/{ref}' },
+    { key: 'closeUrl', label: 'Close-URL', hint: t('refPlaceholderHint') },
     { key: 'autoClose', label: 'Auto-Close (true/false)' },
   ],
 }
@@ -111,18 +111,18 @@ const CONFIG_FIELDS: Record<string, FieldSpec[]> = {
 const EMAIL_PROVIDERS = ['smtp', 'sendmail', 'resend', 'ses'] as const
 function emailFields(provider: string): FieldSpec[] {
   const common: FieldSpec[] = [
-    { key: 'provider', label: 'Provider', hint: 'smtp (Standard) | sendmail | resend | ses' },
-    { key: 'from', label: 'Absender (From)' },
+    { key: 'provider', label: 'Provider', hint: t('emailProviderHint') },
+    { key: 'from', label: t('senderFrom') },
   ]
   switch (provider || 'smtp') {
     case 'sendmail':
-      return [...common, { key: 'sendmailPath', label: 'sendmail-Pfad', hint: 'Standard: sendmail aus PATH bzw. /usr/sbin/sendmail' }]
+      return [...common, { key: 'sendmailPath', label: t('sendmailPath'), hint: t('sendmailPathHint') }]
     case 'resend':
-      return [...common, { key: 'apiKey', label: 'API-Key', secret: true }]
+      return [...common, { key: 'apiKey', label: t('apiKey'), secret: true }]
     case 'ses':
       return [
         ...common,
-        { key: 'region', label: 'AWS-Region', hint: 'z.B. eu-central-1' },
+        { key: 'region', label: 'AWS-Region', hint: t('egRegion') },
         { key: 'accessKeyId', label: 'Access-Key-ID' },
         { key: 'secretAccessKey', label: 'Secret-Access-Key', secret: true },
         { key: 'sessionToken', label: 'Session-Token (optional)', secret: true },
@@ -131,11 +131,11 @@ function emailFields(provider: string): FieldSpec[] {
       return [
         ...common,
         { key: 'host', label: 'SMTP-Host' },
-        { key: 'port', label: 'Port', type: 'number', hint: '587 STARTTLS (Standard), 465 implizites TLS' },
-        { key: 'username', label: 'Benutzername' },
-        { key: 'password', label: 'Passwort', secret: true },
-        { key: 'tls', label: 'TLS-Modus', hint: 'leer = STARTTLS, implicit = direktes TLS' },
-        { key: 'allowPlaintext', label: 'Klartext erlauben (true/false)', hint: 'nur falls der Server kein STARTTLS bietet' },
+        { key: 'port', label: 'Port', type: 'number', hint: t('smtpPortHint') },
+        { key: 'username', label: t('username') },
+        { key: 'password', label: t('password'), secret: true },
+        { key: 'tls', label: t('tlsMode'), hint: t('tlsModeHint') },
+        { key: 'allowPlaintext', label: t('allowPlaintext'), hint: t('allowPlaintextHint') },
       ]
   }
 }
@@ -296,9 +296,9 @@ function ChannelForm({ doc, etag, isNew, onClose }: {
 
           {known.length > 0 && (
             <div className="border border-border rounded-lg p-3 space-y-2">
-              <div className="text-xs text-muted-foreground font-medium">Konfiguration ({type})</div>
+              <div className="text-xs text-muted-foreground font-medium">{t('configuration')} ({type})</div>
               {known.map((f) => (
-                <Field key={f.key} label={f.label} hint={f.secret ? secretHint : f.hint}>
+                <Field key={f.key} label={f.label} hint={f.secret ? t('secretHint') : f.hint}>
                   {type === 'email' && f.key === 'provider' ? (
                     <Select value={config['provider'] || 'smtp'} onValueChange={(v) => setField('provider', v === 'smtp' ? '' : v)}>
                       <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
@@ -318,16 +318,16 @@ function ChannelForm({ doc, etag, isNew, onClose }: {
             </div>
           )}
 
-          <Field label="Weitere Einstellungen" hint="Beliebige zusätzliche Config-Schlüssel">
+          <Field label={t('moreSettings')} hint={t('moreSettingsHintAny')}>
             <KVEditor value={extra} onChange={setExtra} />
           </Field>
 
-          <Field label="Template" hint="optional — überschreibt das Standard-Template">
-            <Input value={template} onChange={(e) => setTemplate(e.target.value)} placeholder="(Standard)" />
+          <Field label="Template" hint={t('templateHint')}>
+            <Input value={template} onChange={(e) => setTemplate(e.target.value)} placeholder={t('defaultParen')} />
           </Field>
 
           {type === 'push' && (
-            <Badge variant="outline" className="bg-muted text-muted-foreground border-input">VAPID serverseitig — keine Config nötig</Badge>
+            <Badge variant="outline" className="bg-muted text-muted-foreground border-input">{t('vapidServerSide')}</Badge>
           )}
 
           <FormError error={save.error} />

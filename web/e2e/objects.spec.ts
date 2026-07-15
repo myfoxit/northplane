@@ -19,7 +19,7 @@ function row(page: Page, kind: 'host' | 'service', name: string) {
   return page.getByRole('link', { name: new RegExp(`${kind} (?:[\\w.-]+ / )?${name}\\b`) })
 }
 
-// Open the create dialog ("+ Host anlegen" / "+ Service anlegen" buttons).
+// Open the create dialog ("+ New host" / "+ New service" buttons).
 async function openCreate(page: Page, kind: 'host' | 'service') {
   const label = kind === 'host' ? '+ Host anlegen' : '+ Service anlegen'
   await page.getByRole('button', { name: label }).click()
@@ -74,10 +74,10 @@ test.describe('Objects explorer (operator)', () => {
     await expect(row(page, 'service', 'demo-tls')).toBeVisible()
     await expect(row(page, 'host', 'demo-gateway')).toHaveCount(0)
 
-    // "Filter zurücksetzen" clears kind (and state) — both kinds return and
+    // "Reset filter" clears kind (and state) — both kinds return and
     // the kind param leaves the URL.
     await expect(stateFilter).toBeVisible()
-    await page.getByRole('button', { name: 'Filter zurücksetzen' }).click()
+    await page.getByRole('button', { name: 'Reset filter' }).click()
     await expect(page).not.toHaveURL(/kind=/)
     await expect(row(page, 'host', 'demo-gateway')).toBeVisible()
     await expect(row(page, 'service', 'demo-tls')).toBeVisible()
@@ -94,7 +94,7 @@ test.describe('Objects explorer (operator)', () => {
     await openCreate(page, 'host')
     const dialog = page.getByRole('dialog')
     await dialog.getByPlaceholder('web01').fill(name)
-    await dialog.getByRole('button', { name: 'Anlegen', exact: true }).click()
+    await dialog.getByRole('button', { name: 'Create', exact: true }).click()
     await expect(dialog).toBeHidden()
     await page.setViewportSize(DEFAULT_VIEWPORT)
     await expect(row(page, 'host', name)).toBeVisible()
@@ -109,14 +109,14 @@ test.describe('Objects explorer (operator)', () => {
     await expect(row(page, 'host', name)).toBeVisible()
 
     // Clearing the filter restores the full list and drops the param.
-    await page.getByRole('button', { name: 'Filter zurücksetzen' }).click()
+    await page.getByRole('button', { name: 'Reset filter' }).click()
     await expect(page).not.toHaveURL(/state=/)
 
     // Clean up the host we created (two-click inline confirm on its detail page).
     await row(page, 'host', name).click()
     await expect(page).toHaveURL(/\/objects\/[\w-]+$/)
-    await page.getByRole('button', { name: 'Löschen', exact: true }).click()
-    await page.getByRole('button', { name: 'Wirklich löschen?', exact: true }).click()
+    await page.getByRole('button', { name: 'Delete', exact: true }).click()
+    await page.getByRole('button', { name: 'Really delete?', exact: true }).click()
     await expect(page).toHaveURL(/\/objects$/)
   })
 
@@ -144,8 +144,8 @@ test.describe('Objects explorer (operator)', () => {
     await page.setViewportSize(TALL_VIEWPORT)
     await page.goto('/objects')
 
-    // — CREATE — open the "Host anlegen" dialog, fill the required Name and an
-    // address in the spec, then submit ("Anlegen").
+    // — CREATE — open the "New host" dialog, fill the required Name and an
+    // address in the spec, then submit ("Create").
     await openCreate(page, 'host')
     const dialog = page.getByRole('dialog')
     // Name is the only required field; it autofocuses, but target it by its
@@ -153,7 +153,7 @@ test.describe('Objects explorer (operator)', () => {
     await dialog.getByPlaceholder('web01').fill(name)
     // Address lives in SpecFields with this exact placeholder.
     await dialog.getByPlaceholder('10.0.0.1 / host.example.com').fill('10.10.10.10')
-    await dialog.getByRole('button', { name: 'Anlegen', exact: true }).click()
+    await dialog.getByRole('button', { name: 'Create', exact: true }).click()
 
     // Dialog closes and the new host appears in the list.
     await expect(dialog).toBeHidden()
@@ -170,7 +170,7 @@ test.describe('Objects explorer (operator)', () => {
     await expect(page.getByRole('heading', { name: new RegExp(name) })).toBeVisible()
 
     await page.setViewportSize(TALL_VIEWPORT)
-    await page.getByRole('button', { name: 'Bearbeiten', exact: true }).click()
+    await page.getByRole('button', { name: 'Edit', exact: true }).click()
     const editDialog = page.getByRole('dialog')
     await expect(editDialog).toBeVisible()
     // The folder input carries the "/" placeholder and is editable on edit.
@@ -178,7 +178,7 @@ test.describe('Objects explorer (operator)', () => {
     const folder = editDialog.getByPlaceholder('/', { exact: true })
     await folder.fill('/e2e/edited')
     // On edit the submit button reads "Speichern".
-    await editDialog.getByRole('button', { name: 'Speichern', exact: true }).click()
+    await editDialog.getByRole('button', { name: 'Save', exact: true }).click()
     await expect(editDialog).toBeHidden()
     await page.setViewportSize(DEFAULT_VIEWPORT)
 
@@ -187,9 +187,9 @@ test.describe('Objects explorer (operator)', () => {
     await expect(page.getByText('/e2e/edited', { exact: false }).first()).toBeVisible()
 
     // — DELETE — the detail page DeleteButton is a two-click inline confirm:
-    // first click arms ("Löschen"), second confirms ("Wirklich löschen?").
-    await page.getByRole('button', { name: 'Löschen', exact: true }).click()
-    await page.getByRole('button', { name: 'Wirklich löschen?', exact: true }).click()
+    // first click arms ("Delete"), second confirms ("Really delete?").
+    await page.getByRole('button', { name: 'Delete', exact: true }).click()
+    await page.getByRole('button', { name: 'Really delete?', exact: true }).click()
 
     // Deleting a host navigates back to /objects and the row is gone.
     await expect(page).toHaveURL(/\/objects$/)
@@ -201,7 +201,7 @@ test.describe('Objects explorer (operator)', () => {
     await page.setViewportSize(TALL_VIEWPORT)
     await page.goto('/objects')
 
-    // — CREATE — "Service anlegen" requires picking a host from the Select.
+    // — CREATE — "New service" requires picking a host from the Select.
     await openCreate(page, 'service')
     const dialog = page.getByRole('dialog')
     // Service name field uses the "http" placeholder in create mode.
@@ -211,7 +211,7 @@ test.describe('Objects explorer (operator)', () => {
     await dialog.getByRole('combobox').first().click()
     await page.getByRole('option', { name: 'demo-gateway', exact: true }).click()
 
-    await dialog.getByRole('button', { name: 'Anlegen', exact: true }).click()
+    await dialog.getByRole('button', { name: 'Create', exact: true }).click()
     await expect(dialog).toBeHidden()
     await page.setViewportSize(DEFAULT_VIEWPORT)
 
@@ -224,24 +224,24 @@ test.describe('Objects explorer (operator)', () => {
     // the row to expose the action cluster, then two-click confirm.
     await svc.hover()
     const rowEl = page.locator('div.group', { has: svc })
-    await rowEl.getByRole('button', { name: 'Löschen', exact: true }).click()
-    await rowEl.getByRole('button', { name: 'Wirklich löschen?', exact: true }).click()
+    await rowEl.getByRole('button', { name: 'Delete', exact: true }).click()
+    await rowEl.getByRole('button', { name: 'Really delete?', exact: true }).click()
 
     await expect(row(page, 'service', name)).toHaveCount(0)
   })
 
-  test('triggers "Jetzt prüfen" (check-now) from an object detail', async ({ page }) => {
+  test('triggers "Check now" (check-now) from an object detail', async ({ page }) => {
     await page.goto('/objects')
 
     // Open a stable seed host detail and fire the recheck action. The button is
-    // labelled exactly "Jetzt prüfen" (i18n checkNow). It disables while the
+    // labelled exactly "Check now" (i18n checkNow). It disables while the
     // mutation is in flight; we assert it returns to enabled (request settled)
     // rather than asserting on async re-check output, which is non-deterministic
     // for loopback checks in a fresh demo DB.
     await row(page, 'host', 'demo-gateway').click()
     await expect(page).toHaveURL(/\/objects\/[\w-]+$/)
 
-    const checkNow = page.getByRole('button', { name: 'Jetzt prüfen' })
+    const checkNow = page.getByRole('button', { name: 'Check now' })
     await expect(checkNow).toBeEnabled()
     await checkNow.click()
     // Re-enabled once the POST /objects/$id/check-now resolves.

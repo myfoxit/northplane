@@ -59,6 +59,9 @@ export function TenantSwitcher() {
   const activeName = active
     ? (tenants?.find((c) => c.id === active)?.name ?? active)
     : null
+  // In the "your tenant" (home) view, surface which tenant that actually is so
+  // the operator can see their scope at a glance (NP-16).
+  const homeName = me?.tenantId ? (tenants?.find((c) => c.id === me.tenantId)?.name ?? null) : null
 
   return (
     <div className="px-3 py-2 border-b border-border/80">
@@ -72,7 +75,7 @@ export function TenantSwitcher() {
           <SelectValue placeholder={t('customer')} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value={HOME}>{t('yourTenant')}</SelectItem>
+          <SelectItem value={HOME}>{homeName ? `${t('yourTenant')} · ${homeName}` : t('yourTenant')}</SelectItem>
           {(tenants ?? []).map((c) => (
             <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
           ))}

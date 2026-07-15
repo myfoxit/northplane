@@ -60,9 +60,7 @@ export function MCPTab() {
         <CardHeader>
           <CardTitle>MCP-Server</CardTitle>
           <CardDescription>
-            Diese Instanz spricht Model Context Protocol (Streamable HTTP). Jeder MCP-Client —
-            Claude Code, Claude Desktop, Cursor &amp; Co. — kann damit Monitoring lesen, bedienen
-            und (mit Freigabe-Queue) konfigurieren. Auth: gewöhnliches API-Token als Bearer.
+            {t('mcpServerDesc')}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -75,15 +73,15 @@ export function MCPTab() {
 
       <Card>
         <CardHeader>
-          <CardTitle>1. Token erstellen</CardTitle>
-          <CardDescription>Das Token bestimmt, was der Agent darf (Least Privilege; Audit als ai_agent).</CardDescription>
+          <CardTitle>{t('step1CreateToken')}</CardTitle>
+          <CardDescription>{t('mcpTokenDesc')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex gap-2 items-end flex-wrap">
             <Field label={t('name')}>
               <Input value={name} onChange={(e) => setName(e.target.value)} className="max-w-48" />
             </Field>
-            <Field label="Rechte">
+            <Field label={t('rights')}>
               <Tabs value={preset} onValueChange={(v) => setPreset(v as typeof preset)}>
                 <TabsList>
                   {SCOPE_PRESETS.map((p) => <TabsTrigger key={p.key} value={p.key}>{p.label}</TabsTrigger>)}
@@ -95,7 +93,7 @@ export function MCPTab() {
           <div className="text-xs text-muted-foreground font-mono">{scopes}</div>
           {minted && (
             <div className="bg-amber-950/40 border border-amber-800/50 rounded-lg p-3">
-              <div className="text-xs text-amber-400 mb-1">Einmalig sichtbar — die Snippets unten enthalten es bereits:</div>
+              <div className="text-xs text-amber-400 mb-1">{t('tokenOnceVisibleSnippets')}</div>
               <code className="text-sm text-amber-200 break-all select-all">{minted}</code>
             </div>
           )}
@@ -104,9 +102,9 @@ export function MCPTab() {
 
       <Card>
         <CardHeader>
-          <CardTitle>2. Client verbinden</CardTitle>
+          <CardTitle>{t('step2ConnectClient')}</CardTitle>
           <CardDescription>
-            {minted ? 'Snippet kopieren — fertig.' : `Snippet kopieren und ${TOKEN_PLACEHOLDER} durch ein Token ersetzen.`}
+            {minted ? t('copySnippetDone') : t('copySnippetReplace').replace('{token}', TOKEN_PLACEHOLDER)}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -124,10 +122,7 @@ export function MCPTab() {
               {snippet.code}
             </pre>
           </div>
-          <p className="text-xs text-muted-foreground">
-            Lokal auf demselben Host geht auch stdio: <code className="font-mono">northplaned mcp</code> mit{' '}
-            <code className="font-mono">NORTHPLANE_TOKEN</code> in der Umgebung.
-          </p>
+          <p className="text-xs text-muted-foreground">{t('mcpStdioHint')}</p>
         </CardContent>
       </Card>
     </div>

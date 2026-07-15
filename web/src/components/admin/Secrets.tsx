@@ -25,13 +25,13 @@ export function SecretsTab() {
     <div className="space-y-4">
       <TableActions onCreate={() => setCreating(true)} label={t('create')} />
       <p className="text-xs text-muted-foreground">
-        Werte werden verschlüsselt gespeichert und nie wieder angezeigt. Referenz in Kanälen/Quellen: <code className="text-muted-foreground">$SECRET:name$</code>
+        {t('secretsIntro')} <code className="text-muted-foreground">$SECRET:name$</code>
       </p>
       <Table>
         <TableHeader>
           <TableRow>
             <TableHead>{t('name')}</TableHead>
-            <TableHead>Referenz</TableHead>
+            <TableHead>{t('reference')}</TableHead>
             <TableHead></TableHead>
           </TableRow>
         </TableHeader>
@@ -79,10 +79,10 @@ function SecretDialog({ onClose }: { onClose: () => void }) {
           <DialogTitle>{`${t('secrets')} — ${t('create')}`}</DialogTitle>
         </DialogHeader>
         <form onSubmit={(e) => { e.preventDefault(); save.mutate(undefined) }} className="space-y-3">
-          <Field label={t('name')} required hint="z.B. smtp-password">
+          <Field label={t('name')} required hint={t('egSmtpPassword')}>
             <Input value={name} onChange={(e) => setName(e.target.value)} required autoComplete="off" />
           </Field>
-          <Field label="Wert" required hint="Wird nie wieder angezeigt.">
+          <Field label={t('value')} required hint={t('neverShownAgain')}>
             <Input type="password" value={value} onChange={(e) => setValue(e.target.value)} required autoComplete="new-password" />
           </Field>
           <FormError error={save.error} />

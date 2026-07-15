@@ -8,9 +8,9 @@ import { keepPreviousData, useQuery, useMutation } from '@tanstack/react-query'
 import { Link, useParams, useNavigate, useSearch } from '@tanstack/react-router'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { X, RefreshCw, Tag, Search } from 'lucide-react'
-import { get, post, del, fmtTime, fmtAgo, queryClient, type ListResponse } from '../api'
+import { get, post, del, fmtTime, fmtAgo, queryClient, APIError, type ListResponse } from '../api'
 import type { NPObject, NPEvent, SeriesResult, ObjectSpec, ObjectsSearch } from '../types'
-import { stateLabel, stateIcon, stateColor, sevColor } from '../types'
+import { stateLabel, stateIcon, stateColor, eventBadge } from '../types'
 import { useRefreshInterval } from '../settings'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
@@ -21,8 +21,9 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Empty, LabelChips, ErrorState } from '@/components/kit'
 import { redactSecrets } from '@/lib/redact'
 import { parsePerfdata } from '@/lib/perfdata'
+import { humanizeOutput } from '@/lib/humanize'
 import { Chart } from '../components/Chart'
-import { groupByUnit, thresholdTone, fmtMetric } from '../components/dash/series'
+import { groupByUnit, thresholdTone, fmtMetric, rateifyCounters } from '../components/dash/series'
 import { DowntimeDialog } from '../components/AckDialog'
 import { ObjectFormDialog, BatchAddDialog } from '../components/objects/ObjectForm'
 import { t } from '../i18n'
@@ -34,8 +35,8 @@ const ALL = '__all__'
 // State filter options (URL token → label). Tokens match
 // stateLabel(kind, n).toLowerCase() so one filter serves both kinds.
 const STATE_FILTERS: [string, string][] = [
-  ['', 'Alle Status'],
-  ['problem', 'Probleme'],
+  ['', t('allStatuses')],
+  ['problem', t('problems')],
   ['ok', 'OK'],
   ['up', 'Up'],
   ['warning', 'Warning'],
@@ -131,18 +132,18 @@ export function ObjectsPage() {
             a label selector vs. free-text over name/output. */}
         <div className="relative max-w-xs w-full">
           <Tag size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-          <Input placeholder={t('filter')} title="Label-Selektor (z.B. env=prod)"
+          <Input placeholder={t('filter')} title={t('labelSelectorTitle')}
             value={selector} onChange={(e) => setSelector(e.target.value)} className="pl-8" />
         </div>
         <div className="relative max-w-xs w-full">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-          <Input placeholder="Volltext…" title="Volltext-Suche (Name / Ausgabe)"
+          <Input placeholder={t('fulltextPlaceholder')} title={t('fulltextSearchTitle')}
             value={query} onChange={(e) => setQuery(e.target.value)} className="pl-8" />
         </div>
         <Select value={kindFilter || ALL} onValueChange={(v) => patchSearch({ kind: (v === ALL ? undefined : v) as ObjectsSearch['kind'] })}>
           <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value={ALL}>Hosts + Services</SelectItem>
+            <SelectItem value={ALL}>{t('hostsAndServices')}</SelectItem>
             <SelectItem value="host">Hosts</SelectItem>
             <SelectItem value="service">Services</SelectItem>
           </SelectContent>
@@ -155,7 +156,7 @@ export function ObjectsPage() {
         </Select>
         {(stateFilter || kindFilter) && (
           <Button variant="ghost" onClick={() => patchSearch({ state: undefined, kind: undefined })}>
-            <X size={14} /> Filter zurücksetzen
+            <X size={14} /> {t('resetFilter')}
           </Button>
         )}
       </div>
@@ -195,7 +196,7 @@ export function ObjectsPage() {
                   <span className="text-foreground font-medium truncate w-56 shrink-0">
                     {o.kind === 'service' && o.hostName ? `${o.hostName} / ` : ''}{o.name}
                   </span>
-                  <span className="text-muted-foreground text-xs truncate flex-1">{o.state?.output}</span>
+                  <span className="text-muted-foreground text-xs truncate flex-1">{humanizeOutput(o.state?.output)}</span>
                   <LabelChips labels={o.labels} />
                 </Link>
                 <div className="shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -227,7 +228,7 @@ export function ObjectDetailPage() {
   const [dtOpen, setDtOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
 
-  const { data: obj } = useQuery({
+  const { data: obj, isLoading: objLoading, isError: objIsError, error: objError, refetch: refetchObj } = useQuery({
     queryKey: ['objects', id],
     queryFn: () => get<NPObject>(`/objects/${id}`),
   })
@@ -274,7 +275,7 @@ export function ObjectDetailPage() {
   // Overlay same-unit metrics in one chart (grouped so unlike units don't share
   // a y-axis); memoised so the Chart effect stays stable across refetches.
   const metricGroups = useMemo(
-    () => groupByUnit((series ?? []).filter((s) => !s.series.metric.startsWith('np_'))),
+    () => groupByUnit(rateifyCounters((series ?? []).filter((s) => !s.series.metric.startsWith('np_')))),
     [series],
   )
   const recheck = useMutation({
@@ -289,7 +290,23 @@ export function ObjectDetailPage() {
     },
   })
 
-  if (!obj) return <Empty text={t('loading')} />
+  // A missing/deleted object (bad or stale id) must not spin forever (NP-03):
+  // a 404 gets a real not-found state with a way back; other failures reuse the
+  // shared error UI with retry.
+  if (objIsError) {
+    const notFound = objError instanceof APIError && objError.status === 404
+    if (!notFound) {
+      return <div className="p-8"><ErrorState error={objError} onRetry={() => refetchObj()} /></div>
+    }
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 p-16 text-center">
+        <div className="text-4xl font-bold text-muted-foreground">404</div>
+        <div className="text-sm text-muted-foreground max-w-sm">{t('objectNotFound')}</div>
+        <Button variant="outline" onClick={() => navigate({ to: '/objects' })}>{t('backToObjects')}</Button>
+      </div>
+    )
+  }
+  if (objLoading || !obj) return <Empty text={t('loading')} />
   const cs = obj.state
   // Prefer the resolved effective config for the interval card (so template
   // inheritance is visible); fall back to the object's own spec.
@@ -343,7 +360,7 @@ export function ObjectDetailPage() {
         <TabsList variant="line">
           <TabsTrigger value="overview">{t('overview')}</TabsTrigger>
           <TabsTrigger value="history">{t('history')}</TabsTrigger>
-          <TabsTrigger value="config">Konfiguration</TabsTrigger>
+          <TabsTrigger value="config">{t('configuration')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="mt-4 space-y-4">
@@ -352,14 +369,14 @@ export function ObjectDetailPage() {
               <CardHeader><CardTitle>{t('state')}</CardTitle></CardHeader>
               <CardContent>
                 <dl className="text-sm space-y-1.5">
-                  <Row k={t('output')} v={cs?.output} mono />
+                  <Row k={t('output')} v={humanizeOutput(cs?.output)} mono />
                   {cs?.longOutput && <Row k="Long" v={cs.longOutput} mono />}
                   <Row k="Last check" v={cs?.lastCheck ? `${fmtTime(cs.lastCheck)} (${fmtAgo(cs.lastCheck)} ago)` : '—'} />
                   <Row k="Next check" v={fmtTime(cs?.nextCheck)} />
                   <Row k="Last hard change" v={fmtTime(cs?.lastHardChange)} />
                   {cs?.ackedBy && <Row k={t('acked')} v={`${cs.ackedBy} — ${cs.ackComment ?? ''}`} />}
-                  {(cs?.downtimeDepth ?? 0) > 0 && <Row k={t('downtime')} v="aktiv" />}
-                  {cs?.flapping && <Row k="Flapping" v="ja" />}
+                  {(cs?.downtimeDepth ?? 0) > 0 && <Row k={t('downtime')} v={t('active')} />}
+                  {cs?.flapping && <Row k="Flapping" v={t('yes')} />}
                 </dl>
                 {cs?.perfdata && (
                   <div className="mt-3 pt-3 border-t border-border/50">
@@ -399,7 +416,7 @@ export function ObjectDetailPage() {
 
           {isHost && <RelatedServicesCard title={t('services')} services={services} />}
           {obj.kind === 'service' && siblings.length > 0 && (
-            <RelatedServicesCard title="Weitere Services des Hosts" services={siblings} />
+            <RelatedServicesCard title={t('otherHostServices')} services={siblings} />
           )}
         </TabsContent>
 
@@ -456,6 +473,11 @@ function PerfMeters({ perfdata }: { perfdata: string }) {
     <div className="space-y-2">
       {perfs.map((p) => {
         const min = p.min ?? 0
+        // A bar only means something against a real scale: an explicit max or a
+        // warn/crit threshold. An unbounded counter (e.g. SNMP sysUpTime) has
+        // neither — drawing it would fill the bar to 100% of nothing, so we show
+        // just the value instead (NP-09).
+        const hasScale = p.max !== null || p.warn !== null || p.crit !== null
         const max = p.max ?? (Math.max(p.value, p.crit ?? 0, p.warn ?? 0) || 1)
         const span = (max - min) || 1
         const at = (n: number) => ((n - min) / span) * 100
@@ -466,15 +488,17 @@ function PerfMeters({ perfdata }: { perfdata: string }) {
               <span className="text-muted-foreground font-mono truncate">{p.label}</span>
               <span className="text-foreground tabular-nums font-semibold shrink-0">{fmtMetric(p.value)}{p.unit}</span>
             </div>
-            <div className="relative h-2 bg-slate-800/80 rounded overflow-hidden">
-              <div className="absolute inset-y-0 left-0 rounded" style={{ width: `${Math.max(1.5, Math.min(100, at(p.value)))}%`, background: tone }} />
-              {p.warn !== null && p.warn >= min && p.warn <= max && (
-                <div className="absolute inset-y-0 w-px bg-amber-400/70" style={{ left: `${at(p.warn)}%` }} />
-              )}
-              {p.crit !== null && p.crit >= min && p.crit <= max && (
-                <div className="absolute inset-y-0 w-px bg-red-400/80" style={{ left: `${at(p.crit)}%` }} />
-              )}
-            </div>
+            {hasScale && (
+              <div className="relative h-2 bg-slate-800/80 rounded overflow-hidden">
+                <div className="absolute inset-y-0 left-0 rounded" style={{ width: `${Math.max(1.5, Math.min(100, at(p.value)))}%`, background: tone }} />
+                {p.warn !== null && p.warn >= min && p.warn <= max && (
+                  <div className="absolute inset-y-0 w-px bg-amber-400/70" style={{ left: `${at(p.warn)}%` }} />
+                )}
+                {p.crit !== null && p.crit >= min && p.crit <= max && (
+                  <div className="absolute inset-y-0 w-px bg-red-400/80" style={{ left: `${at(p.crit)}%` }} />
+                )}
+              </div>
+            )}
           </div>
         )
       })}
@@ -508,7 +532,7 @@ function RelatedServicesCard({ title, services }: { title: string; services: NPO
                     : `○ ${t('pending')}`}
                 </span>
                 <span className="font-medium truncate w-56 shrink-0 text-foreground">{s.name}</span>
-                <span className="text-muted-foreground text-xs truncate flex-1">{s.state?.output}</span>
+                <span className="text-muted-foreground text-xs truncate flex-1">{humanizeOutput(s.state?.output)}</span>
                 <LabelChips labels={s.labels} />
               </Link>
             ))}
@@ -529,10 +553,10 @@ function HistoryList({ events }: { events: NPEvent[] }) {
         <div key={e.id} className="flex items-center gap-3 py-1.5 px-2 -mx-2 rounded hover:bg-muted/30 border-b border-border/40 last:border-0">
           <span className="text-muted-foreground/70 text-xs tabular-nums w-36 shrink-0">{fmtTime(e.ts)}</span>
           <Badge variant="outline" className="bg-muted text-muted-foreground border-input shrink-0">{e.type}</Badge>
-          {e.severity && <Badge variant="outline" className={`${sevColor(e.severity)} shrink-0`}>{e.severity}</Badge>}
+          {(() => { const b = eventBadge(e); return b && <Badge variant="outline" className={`${b.className} shrink-0`}>{b.label}</Badge> })()}
           <span className="text-muted-foreground text-xs truncate">
-            {String((e.payload as Record<string, unknown>).output ??
-              (e.payload as Record<string, unknown>).summary ?? JSON.stringify(e.payload))}
+            {humanizeOutput(String((e.payload as Record<string, unknown>).output ??
+              (e.payload as Record<string, unknown>).summary ?? JSON.stringify(e.payload)))}
           </span>
         </div>
       ))}
@@ -569,7 +593,7 @@ function EffectiveConfig({ spec, templateChain }: {
         ) : <span />}
         <button type="button" onClick={() => setRaw((r) => !r)}
           className="text-xs text-muted-foreground hover:text-foreground shrink-0">
-          {raw ? 'Tabelle' : 'Raw JSON'}
+          {raw ? t('table') : 'Raw JSON'}
         </button>
       </div>
       {raw ? (
@@ -605,7 +629,7 @@ export function ObjectDeleteButton({ kind, onDelete, size = 'sm' }: {
   return (
     <span className="inline-flex items-center gap-1">
       {kind === 'host' && (
-        <span className="text-[11px] text-amber-400">Löscht auch alle Services des Hosts?</span>
+        <span className="text-[11px] text-amber-400">{t('deleteHostCascade')}</span>
       )}
       <Button size={btnSize} variant="destructive" onClick={() => { setArm(false); onDelete() }}>{t('deleteConfirm')}</Button>
       <Button size={btnSize} variant="ghost" onClick={() => setArm(false)}>{t('cancel')}</Button>

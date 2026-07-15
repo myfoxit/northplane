@@ -56,11 +56,11 @@ export function SitesTab() {
           <TableRow>
             <TableHead>{t('name')}</TableHead>
             <TableHead>{t('status')}</TableHead>
-            <TableHead>Zuletzt gesehen</TableHead>
+            <TableHead>{t('lastSeen')}</TableHead>
             <TableHead>Version</TableHead>
             <TableHead>Hosts/Services</TableHead>
-            <TableHead>Offene Alarme</TableHead>
-            <TableHead>Konfiguration</TableHead>
+            <TableHead>{t('openAlerts')}</TableHead>
+            <TableHead>{t('configuration')}</TableHead>
             <TableHead className="text-right">{t('actions')}</TableHead>
           </TableRow>
         </TableHeader>
@@ -74,8 +74,8 @@ export function SitesTab() {
               <TableCell className="px-3 py-2">
                 {s.disabled ? <StatusBadge kind="disabled" />
                   : s.connected
-                    ? <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-800">Verbunden</Badge>
-                    : <Badge variant="outline" className="bg-red-500/10 text-red-400 border-red-800">Getrennt</Badge>}
+                    ? <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-800">{t('connected')}</Badge>
+                    : <Badge variant="outline" className="bg-red-500/10 text-red-400 border-red-800">{t('disconnected')}</Badge>}
               </TableCell>
               <TableCell className="px-3 py-2 text-xs text-muted-foreground">{fmtAgo(s.status.lastSeenAt)}</TableCell>
               <TableCell className="px-3 py-2 text-xs font-mono text-muted-foreground">{s.status.version ?? '—'}</TableCell>
@@ -85,9 +85,9 @@ export function SitesTab() {
               <TableCell className="px-3 py-2 text-xs text-muted-foreground">{s.status.stats?.alertsOpen ?? '—'}</TableCell>
               <TableCell className="px-3 py-2">
                 {s.status.applyError
-                  ? <Badge variant="outline" className="bg-red-500/10 text-red-400 border-red-800" title={s.status.applyError}>Apply-Fehler</Badge>
+                  ? <Badge variant="outline" className="bg-red-500/10 text-red-400 border-red-800" title={s.status.applyError}>{t('applyError')}</Badge>
                   : s.status.bundleEtag
-                    ? <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-800">Angewendet</Badge>
+                    ? <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-800">{t('applied')}</Badge>
                     : <Badge variant="outline" className="bg-muted text-muted-foreground border-input">—</Badge>}
               </TableCell>
               <TableCell className="px-3 py-2">
@@ -102,8 +102,7 @@ export function SitesTab() {
       </Table>
       {!isLoading && (data?.length ?? 0) === 0 && <Empty text={t('empty')} />}
       <p className="text-xs text-muted-foreground">
-        Edge-Anbindung: Token mit Scope <code className="font-mono">sites:connect</code> erzeugen und auf der
-        Kunden-Instanz in <code className="font-mono">config.yaml</code> eintragen:{' '}
+        {t('edgeConnectionHint')}{' '}
         <code className="font-mono">federation: {'{'} mode: edge, mainUrl: …, token: np_…, site: &lt;Name&gt; {'}'}</code>
       </p>
       {creating && <SiteDialog onClose={() => setCreating(false)} />}
@@ -137,10 +136,10 @@ function SiteDialog({ name, onClose }: { name?: string; onClose: () => void }) {
           <Field label={t('name')} required>
             <Input value={doc.name} onChange={(e) => set({ name: e.target.value })} disabled={isEdit} required />
           </Field>
-          <Field label="Beschreibung">
+          <Field label={t('description')}>
             <Input value={doc.description ?? ''} onChange={(e) => set({ description: e.target.value })} />
           </Field>
-          <Field label="Config-Bundle (YAML)" hint="Wird von der Edge-Instanz gezogen und angewendet; Validierung beim Speichern.">
+          <Field label={t('configBundleYaml')} hint={t('configBundleHint')}>
             <Textarea
               value={doc.bundle ?? ''}
               onChange={(e) => set({ bundle: e.target.value })}
@@ -150,7 +149,7 @@ function SiteDialog({ name, onClose }: { name?: string; onClose: () => void }) {
           </Field>
           <label className="flex items-center gap-2 text-sm">
             <Checkbox checked={doc.disabled ?? false} onCheckedChange={(v) => set({ disabled: v === true })} />
-            Deaktiviert (Edge-Zugriffe ablehnen)
+            {t('disabledEdgeReject')}
           </label>
           <FormError error={save.error} />
           <SubmitRow onCancel={onClose} saving={save.isPending} disabled={!doc.name} />

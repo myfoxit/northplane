@@ -16,7 +16,7 @@ const planResponse = {
 
 async function typeYamlAndPlan(user: ReturnType<typeof userEvent.setup>) {
   await user.type(await screen.findByPlaceholderText(/kind: Host/), 'kind: Host')
-  await user.click(screen.getByRole('button', { name: /Planen/ }))
+  await user.click(screen.getByRole('button', { name: /Plan/ }))
 }
 
 describe('<BundlesTab />', () => {
@@ -28,7 +28,7 @@ describe('<BundlesTab />', () => {
     expect(await screen.findByText('web-01')).toBeInTheDocument()
     expect(screen.getByText('create')).toBeInTheDocument()
     expect(screen.getByText(/has no checks/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Anwenden \(1/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Apply \(1/ })).toBeInTheDocument()
   })
 
   it('applies with the plan token', async () => {
@@ -43,8 +43,8 @@ describe('<BundlesTab />', () => {
     const user = userEvent.setup()
     renderWithProviders(<BundlesTab />)
     await typeYamlAndPlan(user)
-    await user.click(await screen.findByRole('button', { name: /Anwenden/ }))
-    await waitFor(() => expect(screen.getByText(/angewendet \(1/)).toBeInTheDocument())
+    await user.click(await screen.findByRole('button', { name: /Apply/ }))
+    await waitFor(() => expect(screen.getByText(/applied \(1/i)).toBeInTheDocument())
     expect(applyURL).toContain('applyToken=ap_tok1')
   })
 

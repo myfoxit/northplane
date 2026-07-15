@@ -31,13 +31,13 @@ import { authFile } from './lib/roles'
 // counters widget).
 async function createDashboard(page: Page, name: string): Promise<void> {
   await page.goto('/dashboards')
-  await page.getByRole('button', { name: 'Dashboard anlegen' }).click()
+  await page.getByRole('button', { name: 'New dashboard' }).click()
   const dialog = page.getByRole('dialog')
-  await expect(dialog.getByRole('heading', { name: 'Dashboard anlegen' })).toBeVisible()
+  await expect(dialog.getByRole('heading', { name: 'New dashboard' })).toBeVisible()
   // The name is the autoFocused text input in the dialog (Field's Label isn't
   // htmlFor-associated, so target the textbox directly).
   await dialog.getByRole('textbox').first().fill(name)
-  await dialog.getByRole('button', { name: 'Anlegen' }).click()
+  await dialog.getByRole('button', { name: 'Create' }).click()
   // create.onSuccess navigates to /dashboards/$name.
   await page.waitForURL(`**/dashboards/${encodeURIComponent(name)}`)
   await expect(page.getByRole('heading', { name })).toBeVisible()
@@ -50,8 +50,8 @@ async function deleteDashboard(page: Page, name: string): Promise<void> {
   const card = page
     .locator('.grid > div', { has: page.getByRole('link', { name }) })
     .first()
-  await card.getByRole('button', { name: 'Löschen' }).click()
-  await card.getByRole('button', { name: 'Wirklich löschen?' }).click()
+  await card.getByRole('button', { name: 'Delete' }).click()
+  await card.getByRole('button', { name: 'Really delete?' }).click()
   await expect(page.getByRole('link', { name })).toHaveCount(0)
 }
 
@@ -102,10 +102,10 @@ test.describe('demo-overview dashboard', () => {
 
   test('demo-overview opens as a chrome-free wallboard', async ({ page }) => {
     await page.goto('/dashboards/demo-overview?wallboard')
-    // Wallboard strips the editor controls (no "Bearbeiten" button) and shows
+    // Wallboard strips the editor controls (no "Edit" button) and shows
     // the title large with the live clock.
     await expect(page.getByRole('heading', { name: 'demo-overview' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Bearbeiten' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Edit' })).toHaveCount(0)
     // Widget content still renders (the seeded titles are present).
     await expect(page.getByText('Webshop health')).toBeVisible()
     await expect(page.getByText('Demo-Inventar')).toBeVisible()
@@ -123,29 +123,29 @@ test.describe('dashboard lifecycle (admin)', () => {
 
     // CREATE — opens straight into the grid view with one counters widget.
     await createDashboard(page, name)
-    await expect(page.getByText('Zähler (KPIs)')).toBeVisible()
+    await expect(page.getByText('Counters (KPIs)')).toBeVisible()
 
     // It also shows up back on the list with the "1 Widget" count.
     await page.goto('/dashboards')
     await expect(page.getByRole('link', { name, exact: true })).toBeVisible()
 
     // ADD A WIDGET — enter edit mode, open the add-widget dialog, pick the
-    // "Probleme" (problems) type via the shadcn Select, give it a unique
+    // "Problems" (problems) type via the shadcn Select, give it a unique
     // title, and append it.
     await page.getByRole('link', { name, exact: true }).click()
     await page.waitForURL(`**/dashboards/${encodeURIComponent(name)}`)
-    await page.getByRole('button', { name: 'Bearbeiten' }).click()
-    await page.getByRole('button', { name: 'Widget hinzufügen' }).click()
+    await page.getByRole('button', { name: 'Edit' }).click()
+    await page.getByRole('button', { name: 'Add widget' }).click()
 
     const addDialog = page.getByRole('dialog')
-    await expect(addDialog.getByRole('heading', { name: 'Widget hinzufügen' })).toBeVisible()
+    await expect(addDialog.getByRole('heading', { name: 'Add widget' })).toBeVisible()
     // The type is picked from the icon-card gallery (each type is a button).
-    await addDialog.getByRole('button', { name: 'Probleme', exact: true }).click()
+    await addDialog.getByRole('button', { name: 'Problems', exact: true }).click()
     const widgetTitle = `E2E-Probleme-${Date.now()}`
     // The "Titel (optional)" input carries the type label as its placeholder
-    // ("Probleme" once the problems type is selected).
-    await addDialog.getByPlaceholder('Probleme').fill(widgetTitle)
-    await addDialog.getByRole('button', { name: 'Hinzufügen' }).click()
+    // ("Problems" once the problems type is selected).
+    await addDialog.getByPlaceholder('Problems').fill(widgetTitle)
+    await addDialog.getByRole('button', { name: 'Add' }).click()
 
     // The new widget appears in the (still-editing) draft grid.
     await expect(page.getByText(widgetTitle)).toBeVisible()
@@ -153,19 +153,19 @@ test.describe('dashboard lifecycle (admin)', () => {
     // EDIT — rename the COUNTERS widget via its panel config dialog (opened
     // from the panel's hover toolbar), so we exercise both an added widget and
     // a renamed existing one in one save. The counters panel is the first one
-    // (layout is index-sorted), so its "Konfigurieren" button is .first().
-    const renamed = `Übersicht-${Date.now()}`
+    // (layout is index-sorted), so its "Configure" button is .first().
+    const renamed = `Overview-${Date.now()}`
     await page.getByRole('button', { name: 'Konfigurieren' }).first().click()
     const editDialog = page.getByRole('dialog')
     await expect(editDialog.getByRole('heading', { name: /Panel bearbeiten/ })).toBeVisible()
-    await editDialog.getByPlaceholder('Zähler (KPIs)').fill(renamed)
+    await editDialog.getByPlaceholder('Counters (KPIs)').fill(renamed)
     await editDialog.getByRole('button', { name: 'Fertig' }).click()
 
     // SAVE — goes through the ETag/If-Match PUT (409 → re-fetch + retry).
-    await page.getByRole('button', { name: 'Speichern' }).click()
-    // Save exits edit mode (onDone clears draft + editing) → the "Bearbeiten"
+    await page.getByRole('button', { name: 'Save' }).click()
+    // Save exits edit mode (onDone clears draft + editing) → the "Edit"
     // button comes back.
-    await expect(page.getByRole('button', { name: 'Bearbeiten' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Edit' })).toBeVisible()
 
     // PERSIST — reload and re-assert from the server copy.
     await page.reload()
@@ -187,16 +187,16 @@ test.describe('dashboard lifecycle (admin)', () => {
     await createDashboard(page, name) // one counters widget (w:12)
 
     // Add a gauge (w:3) so we have a non-full-width panel to resize.
-    await page.getByRole('button', { name: 'Bearbeiten' }).click()
-    await page.getByRole('button', { name: 'Widget hinzufügen' }).click()
+    await page.getByRole('button', { name: 'Edit' }).click()
+    await page.getByRole('button', { name: 'Add widget' }).click()
     const addDialog = page.getByRole('dialog')
     await addDialog.getByRole('button', { name: 'Gauge (Tacho)', exact: true }).click()
-    await addDialog.getByRole('button', { name: 'Hinzufügen' }).click()
+    await addDialog.getByRole('button', { name: 'Add' }).click()
 
     // Set a non-default dashboard time range + refresh (DashControls).
-    await page.getByRole('combobox', { name: 'Zeitraum' }).click()
+    await page.getByRole('combobox', { name: 'Time range' }).click()
     await page.getByRole('option', { name: '24h' }).click()
-    await page.getByRole('combobox', { name: 'Aktualisierungsintervall' }).click()
+    await page.getByRole('combobox', { name: 'Refresh interval' }).click()
     await page.getByRole('option', { name: '10 s' }).click()
 
     // RESIZE the gauge (2nd panel → 2nd resize grip) wider via a pointer drag.
@@ -205,7 +205,7 @@ test.describe('dashboard lifecycle (admin)', () => {
     await page.waitForTimeout(400)
     const gaugePanel = page.locator('[class*="group/panel"]').filter({ hasText: 'Gauge (Tacho)' })
     const wBefore = (await gaugePanel.boundingBox())!.width
-    const grip = page.getByTitle('Größe ändern').nth(1)
+    const grip = page.getByTitle('Resize').nth(1)
     const box = await grip.boundingBox()
     if (!box) throw new Error('resize grip not found')
     const cx = box.x + box.width / 2, cy = box.y + box.height / 2
@@ -218,8 +218,8 @@ test.describe('dashboard lifecycle (admin)', () => {
     expect(wAfter, `gauge resized wider ${wBefore}→${wAfter}`).toBeGreaterThan(wBefore + 20)
 
     // SAVE → reload → assert from the persisted server doc via the API.
-    await page.getByRole('button', { name: 'Speichern' }).click()
-    await expect(page.getByRole('button', { name: 'Bearbeiten' })).toBeVisible()
+    await page.getByRole('button', { name: 'Save' }).click()
+    await expect(page.getByRole('button', { name: 'Edit' })).toBeVisible()
 
     const res = await page.request.get(`/api/v1/dashboards/${encodeURIComponent(name)}`)
     expect(res.ok()).toBeTruthy()

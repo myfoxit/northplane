@@ -48,7 +48,7 @@ export function ProblemsPage() {
         <h1 className="text-lg font-bold">{t('problems')} <span className="text-muted-foreground text-sm">({rows.length})</span></h1>
         <label className="text-xs text-muted-foreground flex items-center gap-2 cursor-pointer">
           <input type="checkbox" checked={includeHandled} onChange={(e) => setIncludeHandled(e.target.checked)} />
-          inkl. quittiert/Downtime
+          {t('inclAckedDowntime')}
         </label>
       </div>
       {isLoading && <Empty text={t('loading')} />}

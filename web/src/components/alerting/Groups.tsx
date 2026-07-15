@@ -1,5 +1,5 @@
 // Alert-groups tab: aggregate/rollup rules (SPEC §9.4). CRUD only.
-import { useState } from 'react'
+import { useEffect, useState, type RefObject } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { resourceApi } from '../../api'
 import type { AlertGroup } from '../../types'
@@ -25,7 +25,7 @@ function emptyGroup(): AlertGroup {
   return { name: '', groupBy: [], window: '5m', aggregate: 'count' }
 }
 
-export function GroupsTab() {
+export function GroupsTab({ createRef }: { createRef?: RefObject<() => void> }) {
   const { data, isError, error, refetch } = useQuery({ queryKey: groupsApi.queryKey, queryFn: groupsApi.list })
   const [editing, setEditing] = useState<{ group: AlertGroup; etag: number } | null>(null)
 
@@ -34,6 +34,7 @@ export function GroupsTab() {
     const { data: g, etag } = await groupsApi.get(name)
     setEditing({ group: g, etag })
   }
+  useEffect(() => { if (createRef) createRef.current = () => void open() })
 
   if (isError && !data) {
     return <div className="p-8"><ErrorState error={error} onRetry={() => refetch()} /></div>
@@ -41,17 +42,14 @@ export function GroupsTab() {
 
   return (
     <div className="space-y-3">
-      <div className="flex justify-end">
-        <Button variant="default" onClick={() => open()}>{t('create')}</Button>
-      </div>
       {(data?.length ?? 0) === 0 ? <Empty text={t('empty')} /> : (
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>{t('name')}</TableHead>
               <TableHead>Group-By</TableHead>
-              <TableHead>Fenster</TableHead>
-              <TableHead>Aggregat</TableHead>
+              <TableHead>{t('window')}</TableHead>
+              <TableHead>{t('aggregate')}</TableHead>
               <TableHead>Min</TableHead>
               <TableHead>{t('actions')}</TableHead>
             </TableRow>
@@ -99,14 +97,14 @@ function GroupDialog({ state, onClose }: { state: { group: AlertGroup; etag: num
           <Field label={t('name')} required>
             <Input value={g.name} disabled={!isNew} onChange={(e) => set({ name: e.target.value })} placeholder="per-host-flood" />
           </Field>
-          <Field label="Group-By (Label-Keys)">
+          <Field label={t('groupByField')}>
             <ListEditor value={g.groupBy} onChange={(v) => set({ groupBy: v })} placeholder="host" />
           </Field>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Fenster">
+            <Field label={t('window')}>
               <DurationInput value={g.window} onChange={(v) => set({ window: v })} placeholder="5m" />
             </Field>
-            <Field label="Aggregat">
+            <Field label={t('aggregate')}>
               <Select value={g.aggregate ?? 'count'} onValueChange={(v) => set({ aggregate: v as AlertGroup['aggregate'] })}>
                 <SelectTrigger className="w-full">
                   <SelectValue />
@@ -118,10 +116,10 @@ function GroupDialog({ state, onClose }: { state: { group: AlertGroup; etag: num
             </Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Wert-Pfad" hint="optional (für min/max/avg/sum/median)">
+            <Field label={t('valuePath')} hint={t('valuePathHint')}>
               <Input value={g.valuePath ?? ''} onChange={(e) => set({ valuePath: e.target.value || undefined })} placeholder="payload.value" />
             </Field>
-            <Field label="Min. Anzahl" hint="optional">
+            <Field label={t('minCount')} hint="optional">
               <Input type="number" value={g.minCount ?? ''} onChange={(e) => set({ minCount: e.target.value ? Number(e.target.value) : undefined })} placeholder="3" />
             </Field>
           </div>

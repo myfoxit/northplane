@@ -148,7 +148,7 @@ export function DashboardsPage() {
                 >
                   <LayoutGrid size={15} className="shrink-0" />{d.name}
                 </Link>
-                {d.shared && <Badge variant="outline" className="bg-sky-500/15 text-sky-400 border-sky-500/30">geteilt</Badge>}
+                {d.shared && <Badge variant="outline" className="bg-sky-500/15 text-sky-400 border-sky-500/30">{t('shared')}</Badge>}
               </div>
               <div className="text-xs text-muted-foreground mt-2">
                 {(d.spec?.widgets?.length ?? 0)} {(d.spec?.widgets?.length ?? 0) === 1 ? t('widget') : t('widgets')}
@@ -158,7 +158,7 @@ export function DashboardsPage() {
                   to="/dashboards/$name" params={{ name: d.name }}
                   className="text-xs text-primary hover:text-primary inline-flex items-center gap-1"
                 >
-                  Öffnen <ArrowRight size={14} />
+                  {t('open')} <ArrowRight size={14} />
                 </Link>
                 <DeleteButton onDelete={() => remove.mutate(d.name)} />
               </div>
@@ -184,10 +184,10 @@ export function DashboardsPage() {
             <Field label={t('name')} required>
               <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
             </Field>
-            <Field label="Geteilt (für alle sichtbar)">
+            <Field label={t('sharedField')}>
               <Label className="cursor-pointer">
                 <Switch checked={shared} onCheckedChange={setShared} />
-                <span className="text-sm text-foreground/90">{shared ? 'ja' : 'nein'}</span>
+                <span className="text-sm text-foreground/90">{shared ? t('yes') : t('no')}</span>
               </Label>
             </Field>
             <FormError error={create.error} />
@@ -276,7 +276,7 @@ function DashboardEditor({ name, wallboard, doc }: {
       const baseWidgets = cur ?? widgets
       const src = baseWidgets[i]
       if (!src) return baseWidgets
-      return [...baseWidgets, placeNew(baseWidgets, { ...src, title: src.title ? `${src.title} (Kopie)` : undefined })]
+      return [...baseWidgets, placeNew(baseWidgets, { ...src, title: src.title ? `${src.title} ${t('copySuffix')}` : undefined })]
     })
   const addWidget = (wd: DashboardWidget) =>
     setDraft((cur) => { const base = cur ?? widgets; return [...base, placeNew(base, wd)] })
@@ -291,7 +291,7 @@ function DashboardEditor({ name, wallboard, doc }: {
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2 min-w-0">
             {!wallboard && (
-              <Link to="/dashboards" className="text-muted-foreground hover:text-foreground/90 text-sm shrink-0" aria-label="Zurück">
+              <Link to="/dashboards" className="text-muted-foreground hover:text-foreground/90 text-sm shrink-0" aria-label={t('back')}>
                 <ArrowLeft size={16} />
               </Link>
             )}
@@ -313,8 +313,8 @@ function DashboardEditor({ name, wallboard, doc }: {
               {editing ? (
                 <>
                   <Button variant="outline" onClick={() => setAddOpen(true)}>+ {t('addWidget')}</Button>
-                  <Button variant="ghost" onClick={tidyLayout} disabled={widgets.length === 0} title="Layout aufräumen">
-                    <LayoutGrid size={14} /> Aufräumen
+                  <Button variant="ghost" onClick={tidyLayout} disabled={widgets.length === 0} title={t('tidyLayoutTitle')}>
+                    <LayoutGrid size={14} /> {t('tidy')}
                   </Button>
                   <Button variant="ghost" onClick={cancelEdit}>{t('cancel')}</Button>
                   <Button variant="default" onClick={() => save.mutate({ widgets, time: range, refresh })} disabled={save.isPending}>
@@ -337,7 +337,7 @@ function DashboardEditor({ name, wallboard, doc }: {
         {save.error && <FormError error={save.error} />}
 
         {widgets.length === 0 ? (
-          <Empty text={editing ? 'Noch keine Panels — „Panel hinzufügen".' : t('empty')} />
+          <Empty text={editing ? t('noPanelsYet') : t('empty')} />
         ) : (
           <GridLayout
             layout={layout}
@@ -399,8 +399,8 @@ function Panel({ widget, editing, handle, onConfigure, onDuplicate, onRemove }: 
             className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover/panel:opacity-100 focus-within:opacity-100 transition-opacity"
             onPointerDown={(e) => e.stopPropagation()}
           >
-            <PanelBtn label="Konfigurieren" onClick={onConfigure}><Settings2 size={13} /></PanelBtn>
-            <PanelBtn label="Duplizieren" onClick={onDuplicate}><Copy size={13} /></PanelBtn>
+            <PanelBtn label={t('configure')} onClick={onConfigure}><Settings2 size={13} /></PanelBtn>
+            <PanelBtn label={t('duplicate')} onClick={onDuplicate}><Copy size={13} /></PanelBtn>
             <PanelBtn label={t('remove')} onClick={onRemove} danger><X size={13} /></PanelBtn>
           </div>
         )}
@@ -435,19 +435,19 @@ function DashControls({ range, setRange, refresh, setRefresh, onRefreshNow }: {
       <div className="flex items-center gap-1 text-muted-foreground">
         <Clock size={14} className="shrink-0" />
         <Select value={range} onValueChange={setRange}>
-          <SelectTrigger className="h-8 w-[88px]" aria-label="Zeitraum"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="h-8 w-[88px]" aria-label={t('timeRange')}><SelectValue /></SelectTrigger>
           <SelectContent>
             {RANGE_TOKENS.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
       <Select value={refresh} onValueChange={setRefresh}>
-        <SelectTrigger className="h-8 w-[84px]" aria-label="Aktualisierungsintervall"><SelectValue /></SelectTrigger>
+        <SelectTrigger className="h-8 w-[84px]" aria-label={t('refreshInterval')}><SelectValue /></SelectTrigger>
         <SelectContent>
           {REFRESH_TOKENS.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
         </SelectContent>
       </Select>
-      <Button variant="ghost" size="icon" className="h-8 w-8" title="Jetzt aktualisieren" aria-label="Jetzt aktualisieren" onClick={onRefreshNow}>
+      <Button variant="ghost" size="icon" className="h-8 w-8" title={t('refreshNow')} aria-label={t('refreshNow')} onClick={onRefreshNow}>
         <RefreshCw size={14} />
       </Button>
     </div>
@@ -460,7 +460,7 @@ function DashControls({ range, setRange, refresh, setRefresh, onRefreshNow }: {
 function WidgetPreview({ widget }: { widget: DashboardWidget }) {
   return (
     <div>
-      <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1.5">Vorschau</div>
+      <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1.5">{t('preview')}</div>
       <div className="border border-border rounded-lg bg-card/40 p-3 h-56 overflow-auto">
         <WidgetBody widget={widget} />
       </div>
@@ -478,17 +478,17 @@ function WidgetEditDialog({ widget, onChange, onClose }: {
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>Panel bearbeiten — {widgetTypeLabel(widget.type)}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{t('editPanel')} — {widgetTypeLabel(widget.type)}</DialogTitle></DialogHeader>
         <div className="space-y-3">
-          <Field label="Titel">
+          <Field label={t('title')}>
             <Input value={widget.title ?? ''} onChange={(e) => onChange({ title: e.target.value })} placeholder={widgetTypeLabel(widget.type)} />
           </Field>
           <div className="grid grid-cols-2 gap-2">
-            <Field label="Breite (Spalten 1–12)">
+            <Field label={t('widthCols')}>
               <Input type="number" min={1} max={12} value={widget.w ?? 6}
                 onChange={(e) => onChange({ w: clampNum(e.target.value, 1, 12) })} />
             </Field>
-            <Field label="Höhe (Reihen 1–8)">
+            <Field label={t('heightRows')}>
               <Input type="number" min={1} max={8} value={widget.h ?? 1}
                 onChange={(e) => onChange({ h: clampNum(e.target.value, 1, 8) })} />
             </Field>
@@ -496,7 +496,7 @@ function WidgetEditDialog({ widget, onChange, onClose }: {
           <WidgetConfigFields widget={widget} onChange={onChange} />
           <WidgetPreview widget={widget} />
           <div className="flex justify-end pt-2">
-            <Button variant="default" onClick={onClose}>Fertig</Button>
+            <Button variant="default" onClick={onClose}>{t('done')}</Button>
           </div>
         </div>
       </DialogContent>
@@ -511,12 +511,12 @@ function ThresholdFields({ widget, onChange }: {
 }) {
   return (
     <div className="grid grid-cols-2 gap-2">
-      <Field label="Warn (optional)">
-        <Input type="number" value={widget.warn ?? ''} placeholder="z.B. 80"
+      <Field label={t('warnOptional')}>
+        <Input type="number" value={widget.warn ?? ''} placeholder={t('egEighty')}
           onChange={(e) => onChange({ warn: e.target.value ? Number(e.target.value) : undefined })} />
       </Field>
-      <Field label="Crit (optional)">
-        <Input type="number" value={widget.crit ?? ''} placeholder="z.B. 90"
+      <Field label={t('critOptional')}>
+        <Input type="number" value={widget.crit ?? ''} placeholder={t('egNinety')}
           onChange={(e) => onChange({ crit: e.target.value ? Number(e.target.value) : undefined })} />
       </Field>
     </div>
@@ -531,14 +531,14 @@ function WidgetConfigFields({ widget, onChange }: {
     case 'metric':
       return (
         <div className="space-y-2">
-          <Field label="Objekt">
+          <Field label={t('object')}>
             <ObjectPicker value={widget.object} onChange={(object) => onChange({ object, metric: '' })} />
           </Field>
-          <Field label="Selektor (überlagert mehrere Objekte)">
+          <Field label={t('selectorOverlay')}>
             <Input value={widget.selector ?? ''} placeholder="env=prod"
               onChange={(e) => onChange({ selector: e.target.value })} />
           </Field>
-          <Field label="Metrik">
+          <Field label={t('metric')}>
             <MetricPicker objectId={widget.object} value={widget.metric} onChange={(metric) => onChange({ metric })} />
           </Field>
           <ThresholdFields widget={widget} onChange={onChange} />
@@ -547,13 +547,13 @@ function WidgetConfigFields({ widget, onChange }: {
     case 'gauge':
       return (
         <div className="space-y-2">
-          <Field label="Objekt">
+          <Field label={t('object')}>
             <ObjectPicker value={widget.object} onChange={(object) => onChange({ object, metric: '' })} />
           </Field>
-          <Field label="Metrik">
+          <Field label={t('metric')}>
             <MetricPicker objectId={widget.object} value={widget.metric} onChange={(metric) => onChange({ metric })} />
           </Field>
-          <Field label="Skalen-Maximum (leer = auto/crit)">
+          <Field label={t('scaleMax')}>
             <Input type="number" min={1} value={widget.max ?? ''}
               onChange={(e) => onChange({ max: e.target.value ? Number(e.target.value) : undefined })} />
           </Field>
@@ -563,10 +563,10 @@ function WidgetConfigFields({ widget, onChange }: {
     case 'stat':
       return (
         <div className="space-y-2">
-          <Field label="Objekt">
+          <Field label={t('object')}>
             <ObjectPicker value={widget.object} onChange={(object) => onChange({ object, metric: '' })} />
           </Field>
-          <Field label="Metrik">
+          <Field label={t('metric')}>
             <MetricPicker objectId={widget.object} value={widget.metric} onChange={(metric) => onChange({ metric })} />
           </Field>
           <ThresholdFields widget={widget} onChange={onChange} />
@@ -574,7 +574,7 @@ function WidgetConfigFields({ widget, onChange }: {
       )
     case 'donut':
       return (
-        <Field label="Bereich">
+        <Field label={t('scope')}>
           <Select value={widget.scope ?? 'services'}
             onValueChange={(v) => onChange({ scope: v as 'services' | 'hosts' })}>
             <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
@@ -588,26 +588,26 @@ function WidgetConfigFields({ widget, onChange }: {
     case 'table':
       return (
         <div className="space-y-2">
-          <Field label="Bereich">
+          <Field label={t('scope')}>
             <Select value={widget.scope ?? BOTH_SCOPE}
               onValueChange={(v) => onChange({ scope: (v === BOTH_SCOPE ? undefined : v) as 'services' | 'hosts' | undefined })}>
               <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value={BOTH_SCOPE}>Hosts + Services</SelectItem>
+                <SelectItem value={BOTH_SCOPE}>{t('hostsAndServices')}</SelectItem>
                 <SelectItem value="hosts">Hosts</SelectItem>
                 <SelectItem value="services">Services</SelectItem>
               </SelectContent>
             </Select>
           </Field>
-          <Field label="Selector (optional)">
+          <Field label={t('selectorOptional')}>
             <Input value={widget.selector ?? ''} placeholder="env=prod"
               onChange={(e) => onChange({ selector: e.target.value })} />
           </Field>
-          <Field label="Volltext-Filter (optional)">
+          <Field label={t('fulltextFilter')}>
             <Input value={widget.query ?? ''} placeholder="db"
               onChange={(e) => onChange({ query: e.target.value })} />
           </Field>
-          <Field label="Limit">
+          <Field label={t('limit')}>
             <Input type="number" min={1} max={100} value={widget.limit ?? 15}
               onChange={(e) => onChange({ limit: Number(e.target.value) })} />
           </Field>
@@ -616,13 +616,13 @@ function WidgetConfigFields({ widget, onChange }: {
     case 'bar':
       return (
         <div className="space-y-2">
-          <Field label="Objekt">
+          <Field label={t('object')}>
             <ObjectPicker value={widget.object} onChange={(object) => onChange({ object, metric: '' })} />
           </Field>
-          <Field label="Metrik-Filter (optional)">
+          <Field label={t('metricFilter')}>
             <MetricPicker objectId={widget.object} value={widget.metric} onChange={(metric) => onChange({ metric })} />
           </Field>
-          <Field label="Limit">
+          <Field label={t('limit')}>
             <Input type="number" min={1} max={20} value={widget.limit ?? 8}
               onChange={(e) => onChange({ limit: Number(e.target.value) })} />
           </Field>
@@ -633,12 +633,12 @@ function WidgetConfigFields({ widget, onChange }: {
     case 'alerts':
       return (
         <div className="space-y-2">
-          <Field label="Limit">
+          <Field label={t('limit')}>
             <Input type="number" min={1} max={50} value={widget.limit ?? 10}
               onChange={(e) => onChange({ limit: Number(e.target.value) })} />
           </Field>
           {widget.type === 'problems' && (
-            <Field label="Selector (optional)">
+            <Field label={t('selectorOptional')}>
               <Input value={widget.selector ?? ''} placeholder="env=prod"
                 onChange={(e) => onChange({ selector: e.target.value })} />
             </Field>
@@ -647,14 +647,14 @@ function WidgetConfigFields({ widget, onChange }: {
       )
     case 'bpi':
       return (
-        <Field label="Business Service (Name, leer = alle)">
-          <Input value={widget.service ?? ''} placeholder="z.B. Webshop"
+        <Field label={t('bpiServiceField')}>
+          <Input value={widget.service ?? ''} placeholder={t('egWebshop')}
             onChange={(e) => onChange({ service: e.target.value })} />
         </Field>
       )
     case 'markdown':
       return (
-        <Field label="Text">
+        <Field label={t('text')}>
           <Textarea value={widget.text ?? ''} onChange={(e) => onChange({ text: e.target.value })} rows={4} className="font-mono" />
         </Field>
       )
@@ -709,7 +709,7 @@ function AddWidgetDialog({ onClose, onAdd }: {
               })}
             </div>
           </div>
-          <Field label="Titel (optional)">
+          <Field label={t('titleOptional')}>
             <Input value={draft.title ?? ''} onChange={(e) => setDraft({ ...draft, title: e.target.value })}
               placeholder={widgetTypeLabel(draft.type)} />
           </Field>

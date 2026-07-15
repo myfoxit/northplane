@@ -1,7 +1,7 @@
 // Alert-rules tab: CRUD + an in-dialog rule tester (CEL match XOR
 // heartbeat source). SPEC §9.2 / F-05.04 — the tester is a first-class
 // feature: demo event JSON -> POST :test -> matched count + would-open alerts.
-import { useState } from 'react'
+import { useEffect, useState, type RefObject } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { FlaskConical, Loader2 } from 'lucide-react'
 import { post, resourceApi } from '../../api'
@@ -46,7 +46,7 @@ function emptyRule(): AlertRule {
   return { name: '', severity: 'critical', match: '', resolveOnOk: true }
 }
 
-export function RulesTab() {
+export function RulesTab({ createRef }: { createRef?: RefObject<() => void> }) {
   const { data: rules, isError, error, refetch } = useQuery({ queryKey: rulesApi.queryKey, queryFn: rulesApi.list })
   const { data: groups } = useQuery({ queryKey: groupsApi.queryKey, queryFn: groupsApi.list })
   const { data: policies } = useQuery({ queryKey: policiesApi.queryKey, queryFn: policiesApi.list })
@@ -57,6 +57,8 @@ export function RulesTab() {
     const { data, etag } = await rulesApi.get(name)
     setEditing({ rule: data, etag })
   }
+  // Expose "create" to the page header (NP-13).
+  useEffect(() => { if (createRef) createRef.current = () => void open() })
 
   if (isError && !rules) {
     return <div className="p-8"><ErrorState error={error} onRetry={() => refetch()} /></div>
@@ -64,10 +66,7 @@ export function RulesTab() {
 
   return (
     <div className="space-y-3">
-      <div className="flex justify-end">
-        <Button variant="default" onClick={() => open()}>{t('newRule')}</Button>
-      </div>
-      {(rules?.length ?? 0) === 0 ? <Empty text={t('empty')} /> : (
+      {(rules?.length ?? 0) === 0 ? <Empty text={t('noRulesFriendly')} /> : (
         <Table>
           <TableHeader>
             <TableRow>
@@ -145,8 +144,8 @@ function TestResultView({ res }: { res: RuleTestResult }) {
   return (
     <div className="space-y-2 text-sm">
       <p className="text-foreground/90">
-        <span className="font-semibold text-foreground">{res.matched}</span> Events würden matchen,{' '}
-        <span className="font-semibold text-foreground">{res.wouldOpen?.length ?? 0}</span> Alarme entstehen.
+        <span className="font-semibold text-foreground">{res.matched}</span>{' '}{t('eventsWouldMatch')},{' '}
+        <span className="font-semibold text-foreground">{res.wouldOpen?.length ?? 0}</span> {t('alertsWouldOpen')}.
       </p>
       {(res.wouldOpen?.length ?? 0) > 0 && (
         <div className="space-y-1">
@@ -204,7 +203,7 @@ function RuleDialog({ state, groups, policies, onClose }: {
 
           {/* Quelle: CEL match XOR heartbeat */}
           <div>
-            <span className="text-xs text-muted-foreground font-medium">Quelle</span>
+            <span className="text-xs text-muted-foreground font-medium">{t('source')}</span>
             <div className="flex gap-4 mt-1 mb-2">
               <label className="flex items-center gap-1.5 text-sm text-foreground/90 cursor-pointer">
                 <input type="radio" checked={source === 'cel'} onChange={() => setSource('cel')} /> CEL-Match
@@ -227,7 +226,7 @@ function RuleDialog({ state, groups, policies, onClose }: {
                     onChange={(e) => set({ heartbeat: { source: e.target.value, expectEvery: r.heartbeat?.expectEvery ?? '60s' } })}
                     placeholder="backup-job" />
                 </Field>
-                <Field label="Erwartet alle">
+                <Field label={t('expectEvery')}>
                   <DurationInput value={r.heartbeat?.expectEvery ?? ''}
                     onChange={(v) => set({ heartbeat: { source: r.heartbeat?.source ?? '', expectEvery: v } })}
                     placeholder="1h" />
@@ -238,13 +237,13 @@ function RuleDialog({ state, groups, policies, onClose }: {
 
           <div className="grid grid-cols-2 gap-3">
             <SeverityField value={r.severity} onChange={(v: Severity) => set({ severity: v })} label={t('severity')} />
-            <Field label={t('dedupKey')} hint="optional, Go-Template">
+            <Field label={t('dedupKey')} hint={t('optionalGoTemplate')}>
               <Input value={r.dedupKey ?? ''} onChange={(e) => set({ dedupKey: e.target.value || undefined })}
                 placeholder="{{.ObjectID}}" />
             </Field>
           </div>
 
-          <Field label="Titel (Go-Template)" hint="optional">
+          <Field label={t('titleGoTemplate')} hint="optional">
             <Input value={r.title ?? ''} onChange={(e) => set({ title: e.target.value || undefined })}
               placeholder="{{.ObjectName}} ist {{.ToLabel}}" />
           </Field>
@@ -270,7 +269,7 @@ function RuleDialog({ state, groups, policies, onClose }: {
                 </SelectContent>
               </Select>
             </Field>
-            <Field label="Gruppe">
+            <Field label={t('group')}>
               <Select value={r.groupId ?? NONE} onValueChange={(v) => set({ groupId: v === NONE ? undefined : v })}>
                 <SelectTrigger className="w-full">
                   <SelectValue />
@@ -283,13 +282,13 @@ function RuleDialog({ state, groups, policies, onClose }: {
             </Field>
           </div>
 
-          <Field label="Labels setzen">
+          <Field label={t('setLabels')}>
             <KVEditor value={r.setLabels ?? {}} onChange={(v) => set({ setLabels: v })} keyPlaceholder="team" valuePlaceholder="netops" />
           </Field>
 
           <div className="flex gap-6">
-            <ToggleRow label="Bei OK schließen" checked={r.resolveOnOk ?? false} onChange={(v) => set({ resolveOnOk: v })} />
-            <ToggleRow label="Incident anlegen" checked={r.incident ?? false} onChange={(v) => set({ incident: v })} />
+            <ToggleRow label={t('resolveOnOk')} checked={r.resolveOnOk ?? false} onChange={(v) => set({ resolveOnOk: v })} />
+            <ToggleRow label={t('createIncident')} checked={r.incident ?? false} onChange={(v) => set({ incident: v })} />
             <ToggleRow label={t('disabled')} checked={r.disabled ?? false} onChange={(v) => set({ disabled: v })} />
           </div>
 
@@ -316,10 +315,16 @@ function TestPanel({ rule }: { rule: AlertRule }) {
   const [busy, setBusy] = useState(false)
 
   const run = async () => {
+    // Guard the empty rule client-side: without it the backend returns
+    // 'validation failed — rule "": match expression required', leaking an
+    // empty rule name (NP-18). Give a clean, actionable message instead.
+    if (!rule.match?.trim() && !rule.heartbeat?.source?.trim()) {
+      setErr(new Error(t('matchRequired'))); return
+    }
     setBusy(true); setErr(null); setRes(null)
     let event: unknown
     try { event = JSON.parse(json) }
-    catch (e) { setErr(new Error('Ungültiges JSON: ' + String(e))); setBusy(false); return }
+    catch (e) { setErr(new Error(t('invalidJson') + String(e))); setBusy(false); return }
     try {
       setRes(await post<RuleTestResult>('/alert-rules:test', { rule, demoEvents: [event] }))
     } catch (e) { setErr(e) } finally { setBusy(false) }

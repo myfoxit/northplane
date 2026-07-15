@@ -46,7 +46,7 @@ async function addToList(dialog: ReturnType<Page['getByRole']>, label: string, v
 
 test.describe('Admin · Users', () => {
   test('lists the seeded admin / operator / viewer users', async ({ page }) => {
-    await openTab(page, 'Benutzer')
+    await openTab(page, 'Users')
     await expect(page.getByText('admin@e2e.local')).toBeVisible()
     await expect(page.getByText('operator@demo.local')).toBeVisible()
     await expect(page.getByText('viewer@demo.local')).toBeVisible()
@@ -54,11 +54,11 @@ test.describe('Admin · Users', () => {
 
   test('creates a local user that appears in the list', async ({ page }) => {
     const email = `e2e-user-${Date.now()}@test.local`
-    await openTab(page, 'Benutzer')
+    await openTab(page, 'Users')
 
-    await page.getByRole('button', { name: 'Benutzer anlegen' }).click()
+    await page.getByRole('button', { name: 'New user' }).click()
     const dialog = page.getByRole('dialog')
-    await expect(dialog.getByRole('heading', { name: 'Benutzer anlegen' })).toBeVisible()
+    await expect(dialog.getByRole('heading', { name: 'New user' })).toBeVisible()
 
     await fieldInput(dialog, 'Name').fill('E2E Created User')
     await fieldInput(dialog, 'E-Mail').fill(email)
@@ -66,7 +66,7 @@ test.describe('Admin · Users', () => {
     // Assign the viewer role via the ListEditor.
     await addToList(dialog, 'Berechtigungen', 'viewer')
 
-    await dialog.getByRole('button', { name: 'Speichern' }).click()
+    await dialog.getByRole('button', { name: 'Save' }).click()
     await expect(dialog).toBeHidden()
 
     await expect(page.getByText(email)).toBeVisible()
@@ -78,29 +78,29 @@ test.describe('Admin · Users', () => {
 
   test('disables then re-enables a user (toggle reflects state)', async ({ page }) => {
     const email = `e2e-user-${Date.now()}@test.local`
-    await openTab(page, 'Benutzer')
+    await openTab(page, 'Users')
     await createUser(page, email, 'Toggle User', 'viewer')
 
     // Starts enabled.
     await expect(rowWith(page, email)).toContainText('Aktiv')
 
     // Disable via the edit dialog's Switch.
-    await rowWith(page, email).getByRole('button', { name: 'Bearbeiten' }).click()
+    await rowWith(page, email).getByRole('button', { name: 'Edit' }).click()
     let dialog = page.getByRole('dialog')
     await expect(dialog.getByRole('switch')).not.toBeChecked()
     await dialog.getByRole('switch').click()
     await expect(dialog.getByRole('switch')).toBeChecked()
-    await dialog.getByRole('button', { name: 'Speichern' }).click()
+    await dialog.getByRole('button', { name: 'Save' }).click()
     await expect(dialog).toBeHidden()
     await expect(rowWith(page, email)).toContainText('Deaktiviert')
 
     // Re-enable.
-    await rowWith(page, email).getByRole('button', { name: 'Bearbeiten' }).click()
+    await rowWith(page, email).getByRole('button', { name: 'Edit' }).click()
     dialog = page.getByRole('dialog')
     await expect(dialog.getByRole('switch')).toBeChecked()
     await dialog.getByRole('switch').click()
     await expect(dialog.getByRole('switch')).not.toBeChecked()
-    await dialog.getByRole('button', { name: 'Speichern' }).click()
+    await dialog.getByRole('button', { name: 'Save' }).click()
     await expect(dialog).toBeHidden()
     await expect(rowWith(page, email)).toContainText('Aktiv')
 
@@ -110,7 +110,7 @@ test.describe('Admin · Users', () => {
 
   test('admin can reset a user password (set-password)', async ({ page }) => {
     const email = `e2e-user-${Date.now()}@test.local`
-    await openTab(page, 'Benutzer')
+    await openTab(page, 'Users')
     await createUser(page, email, 'Reset User', 'viewer')
 
     await rowWith(page, email).getByRole('button', { name: 'Passwort setzen' }).click()
@@ -129,7 +129,7 @@ test.describe('Admin · Users', () => {
 
   test('deletes a user (two-click confirm) so it disappears', async ({ page }) => {
     const email = `e2e-user-${Date.now()}@test.local`
-    await openTab(page, 'Benutzer')
+    await openTab(page, 'Users')
     await createUser(page, email, 'Delete User', 'viewer')
     await expect(page.getByText(email)).toBeVisible()
 
@@ -138,16 +138,16 @@ test.describe('Admin · Users', () => {
   })
 
   test('last-admin guard: disabling the only admin is rejected', async ({ page }) => {
-    await openTab(page, 'Benutzer')
+    await openTab(page, 'Users')
     const adminRow = rowWith(page, 'admin@e2e.local')
     await expect(adminRow).toContainText('Aktiv')
 
     // Attempt to disable the sole admin via the edit dialog.
-    await adminRow.getByRole('button', { name: 'Bearbeiten' }).click()
+    await adminRow.getByRole('button', { name: 'Edit' }).click()
     const dialog = page.getByRole('dialog')
     await dialog.getByRole('switch').click()
     await expect(dialog.getByRole('switch')).toBeChecked()
-    await dialog.getByRole('button', { name: 'Speichern' }).click()
+    await dialog.getByRole('button', { name: 'Save' }).click()
 
     // Backend returns 409 np:users/last-admin → the FormError banner surfaces
     // ("cannot remove the last enabled local administrator"), the dialog stays
@@ -178,13 +178,13 @@ test.describe('Admin · Roles', () => {
     const name = `e2e-role-${Date.now()}`
     await openTab(page, 'Rollen')
 
-    await page.getByRole('button', { name: 'Anlegen' }).click()
+    await page.getByRole('button', { name: 'Create' }).click()
     const dialog = page.getByRole('dialog')
-    await expect(dialog.getByRole('heading', { name: 'Anlegen' })).toBeVisible()
+    await expect(dialog.getByRole('heading', { name: 'Create' })).toBeVisible()
 
     await fieldInput(dialog, 'Name').fill(name)
     await addToList(dialog, 'Berechtigungen', 'objects:read')
-    await dialog.getByRole('button', { name: 'Speichern' }).click()
+    await dialog.getByRole('button', { name: 'Save' }).click()
     await expect(dialog).toBeHidden()
 
     const row = rowWith(page, name)
@@ -192,8 +192,8 @@ test.describe('Admin · Roles', () => {
     await expect(row).toContainText('objects:read')
 
     // delete (two-click confirm)
-    await row.getByRole('button', { name: 'Löschen' }).click()
-    await row.getByRole('button', { name: 'Wirklich löschen?' }).click()
+    await row.getByRole('button', { name: 'Delete' }).click()
+    await row.getByRole('button', { name: 'Really delete?' }).click()
     await expect(page.getByText(name)).toHaveCount(0)
   })
 })
@@ -203,17 +203,17 @@ test.describe('Admin · Roles', () => {
 test.describe('Admin · Tenants', () => {
   test('renders and creates a tenant', async ({ page }) => {
     const slug = `e2e-tenant-${Date.now()}`
-    await openTab(page, 'Mandanten')
+    await openTab(page, 'Tenants')
 
     // The table header proves the tab rendered.
     await expect(page.getByRole('columnheader', { name: 'Slug' })).toBeVisible()
 
-    await page.getByRole('button', { name: 'Anlegen' }).click()
+    await page.getByRole('button', { name: 'Create' }).click()
     const dialog = page.getByRole('dialog')
     await expect(dialog.getByRole('heading', { name: /Mandanten/ })).toBeVisible()
     await fieldInput(dialog, 'Name').fill('E2E Tenant')
     await fieldInput(dialog, 'Slug').fill(slug)
-    await dialog.getByRole('button', { name: 'Speichern' }).click()
+    await dialog.getByRole('button', { name: 'Save' }).click()
     await expect(dialog).toBeHidden()
 
     // Tenants have no delete surface (API limitation) — just assert it landed.
@@ -230,12 +230,12 @@ test.describe('Admin · Secrets', () => {
 
     await expect(page.getByText(/\$SECRET:name\$/)).toBeVisible()
 
-    await page.getByRole('button', { name: 'Anlegen' }).click()
+    await page.getByRole('button', { name: 'Create' }).click()
     const dialog = page.getByRole('dialog')
     await expect(dialog.getByRole('heading', { name: /Secrets/ })).toBeVisible()
     await fieldInput(dialog, 'Name').fill(key)
     await fieldInput(dialog, 'Wert').fill('top-secret-value')
-    await dialog.getByRole('button', { name: 'Speichern' }).click()
+    await dialog.getByRole('button', { name: 'Save' }).click()
     await expect(dialog).toBeHidden()
 
     const row = rowWith(page, key)
@@ -245,8 +245,8 @@ test.describe('Admin · Secrets', () => {
     await expect(row).not.toContainText('top-secret-value')
 
     // delete (two-click confirm)
-    await row.getByRole('button', { name: 'Löschen' }).click()
-    await row.getByRole('button', { name: 'Wirklich löschen?' }).click()
+    await row.getByRole('button', { name: 'Delete' }).click()
+    await row.getByRole('button', { name: 'Really delete?' }).click()
     await expect(page.getByText(key, { exact: true })).toHaveCount(0)
   })
 })
@@ -254,20 +254,20 @@ test.describe('Admin · Secrets', () => {
 // — shared user create/delete flows ———————————————————————————————————————
 
 async function createUser(page: Page, email: string, name: string, role: string) {
-  await page.getByRole('button', { name: 'Benutzer anlegen' }).click()
+  await page.getByRole('button', { name: 'New user' }).click()
   const dialog = page.getByRole('dialog')
   await fieldInput(dialog, 'Name').fill(name)
   await fieldInput(dialog, 'E-Mail').fill(email)
   await fieldInput(dialog, 'Passwort').fill('super-secret-pw-123')
   await addToList(dialog, 'Berechtigungen', role)
-  await dialog.getByRole('button', { name: 'Speichern' }).click()
+  await dialog.getByRole('button', { name: 'Save' }).click()
   await expect(dialog).toBeHidden()
   await expect(page.getByText(email)).toBeVisible()
 }
 
 async function deleteUser(page: Page, email: string) {
   const row = rowWith(page, email)
-  await row.getByRole('button', { name: 'Löschen' }).click()
-  await row.getByRole('button', { name: 'Wirklich löschen?' }).click()
+  await row.getByRole('button', { name: 'Delete' }).click()
+  await row.getByRole('button', { name: 'Really delete?' }).click()
   await expect(page.getByText(email)).toHaveCount(0)
 }

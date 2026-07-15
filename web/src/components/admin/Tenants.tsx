@@ -45,6 +45,9 @@ export function TenantsTab() {
         </TableBody>
       </Table>
       {!isLoading && (data?.length ?? 0) === 0 && <Empty text={t('empty')} />}
+      {/* No edit/delete API exists for tenants (create-only) — state the
+          constraint on the list rather than implying it (NP-08). */}
+      <p className="text-xs text-muted-foreground">{t('tenantsReadOnly')}</p>
       {creating && <TenantDialog onClose={() => setCreating(false)} />}
     </div>
   )
@@ -67,10 +70,10 @@ function TenantDialog({ onClose }: { onClose: () => void }) {
           <Field label={t('name')} required>
             <Input value={name} onChange={(e) => setName(e.target.value)} required />
           </Field>
-          <Field label="Slug" required hint="URL-tauglicher Kurzname">
+          <Field label="Slug" required hint={t('slugHint')}>
             <Input value={slug} onChange={(e) => setSlug(e.target.value)} required />
           </Field>
-          <Badge variant="outline" className="bg-muted text-muted-foreground border-input">Mandanten können derzeit nicht gelöscht werden</Badge>
+          <Badge variant="outline" className="bg-muted text-muted-foreground border-input">{t('tenantsNoDelete')}</Badge>
           <FormError error={save.error} />
           <SubmitRow onCancel={onClose} saving={save.isPending} disabled={!name || !slug} />
         </form>

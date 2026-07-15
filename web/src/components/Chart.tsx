@@ -8,6 +8,7 @@ import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import type { SeriesResult } from '../types'
 import { alignSeries, effectiveBand, type AlignedSeries } from './dash/series'
+import { t } from '../i18n'
 
 // fmtNum: compact value formatting for tooltip/axis — integers stay integer,
 // fractionals get ≤2 decimals, big numbers get k/M suffixes.
@@ -152,7 +153,7 @@ export function Chart({ result, results, warn, crit, height = 180 }: {
   const all = results ?? (result ? [result] : [])
   const { x, series } = alignSeries(all)
   if (x.length === 0 || series.length === 0) {
-    return <div className="text-muted-foreground text-xs p-4">keine Daten</div>
+    return <div className="text-muted-foreground text-xs p-4">{t('noData')}</div>
   }
   const banded = series.find((s) => s.warn || s.crit)
   const { warn: warnAt, crit: critAt } = effectiveBand(warn, crit, banded?.warn, banded?.crit)

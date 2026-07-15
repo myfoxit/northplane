@@ -34,7 +34,7 @@ describe('<AlertsPage />', () => {
     expect(screen.getByText('critical')).toBeInTheDocument()
     expect(screen.getByText('warning')).toBeInTheDocument()
     // Status line: acked alerts name the acker, dedup key is shown.
-    expect(screen.getByText(/acked von admin/)).toBeInTheDocument()
+    expect(screen.getByText(/acked by admin/)).toBeInTheDocument()
     expect(screen.getByText(/disk-web-01/)).toBeInTheDocument()
     // Header count reflects the filtered row count.
     expect(screen.getByRole('heading')).toHaveTextContent('(2)')
@@ -43,7 +43,7 @@ describe('<AlertsPage />', () => {
   it('shows the empty state when no alerts match', async () => {
     // Default /alerts handler already returns { items: [] }.
     renderWithProviders(<AlertsPage />)
-    expect(await screen.findByText(/no entries|keine einträge/i)).toBeInTheDocument()
+    expect(await screen.findByText(/no active alerts|caught up/i)).toBeInTheDocument()
     expect(screen.getByRole('heading')).toHaveTextContent('(0)')
   })
 

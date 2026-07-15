@@ -13,12 +13,21 @@ export const REDACTED = '•••'
 const SECRET_WORDS = [
   'token', 'password', 'passwd', 'pwd', 'secret', 'apikey',
   'credential', 'passphrase', 'privatekey',
+  // SNMP v1/v2c community is a shared secret; a custom value must not render
+  // in the effective config (default "public" is harmless but still masked).
+  'community',
 ]
+
+// Secret short-flags whose *name* carries no secret word but whose value is a
+// credential. check_snmp's "-C" (community) is the canonical case; matched
+// case-sensitively so it does not collide with a lowercase "-c" (critical).
+const SECRET_FLAGS = new Set(['-C'])
 
 // isSecretName: does this key or CLI flag name denote a secret? Compares the
 // alphanumeric-only, lowercased form so "--api-key", "apiKey" and "API_KEY"
-// all normalise to "apikey".
+// all normalise to "apikey". Also matches the exact secret short-flags above.
 export function isSecretName(raw: string): boolean {
+  if (SECRET_FLAGS.has(raw)) return true
   const norm = raw.toLowerCase().replace(/[^a-z0-9]/g, '')
   if (!norm) return false
   return SECRET_WORDS.some((w) => norm.includes(w))

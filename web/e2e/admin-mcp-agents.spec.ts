@@ -40,7 +40,7 @@ test.describe('admin · MCP', () => {
     await openAdminTab(page, 'MCP')
     const name = `e2e-mcp-${uniq()}`
     await page.getByRole('textbox').first().fill(name)
-    await page.getByRole('button', { name: 'Token erstellen' }).click()
+    await page.getByRole('button', { name: 'Create token' }).click()
 
     // secret shown once and embedded into the snippet
     await expect(page.getByText('Einmalig sichtbar', { exact: false })).toBeVisible()

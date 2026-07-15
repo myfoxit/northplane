@@ -9,13 +9,13 @@ test.describe('harness smoke', () => {
     // Not bounced to the server-rendered login page.
     await expect(page).not.toHaveURL(/\/login/)
     // Sidebar nav renders in German (de is the reference language).
-    await expect(page.getByRole('link', { name: 'Objekte' })).toBeVisible()
-    await expect(page.getByRole('link', { name: 'Alarme' })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Objects' })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Alerts' })).toBeVisible()
   })
 
-  test('navigating to Objekte shows seeded demo objects', async ({ page }) => {
+  test('navigating to Objects shows seeded demo objects', async ({ page }) => {
     await page.goto('/')
-    await page.getByRole('link', { name: 'Objekte' }).click()
+    await page.getByRole('link', { name: 'Objects' }).click()
     await expect(page).toHaveURL(/\/objects/)
     // The demo seed creates demo-gateway / demo-web / demo-dns hosts. Object
     // rows render as links whose accessible name includes the kind + ident.
@@ -38,7 +38,7 @@ test.describe('harness smoke', () => {
     const page = await ctx.newPage()
     await page.goto('/')
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.getByRole('link', { name: 'Objekte' })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Objects' })).toBeVisible()
     await ctx.close()
   })
 })

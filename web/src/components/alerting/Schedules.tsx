@@ -77,7 +77,7 @@ export function SchedulesManager() {
         <CardAction><Button size="sm" variant="default" onClick={() => open()}>{t('create')}</Button></CardAction>
       </CardHeader>
       <CardContent>
-        {(data?.length ?? 0) === 0 ? <Empty text="Keine Dienstpläne." /> : (
+        {(data?.length ?? 0) === 0 ? <Empty text={t('noSchedules')} /> : (
           <Table>
             <TableHeader>
               <TableRow>
@@ -176,37 +176,37 @@ function LayerCard({ index, layer, suggestions, onChange, onRemove }: {
         </div>
         <div className="grid grid-cols-2 gap-3">
           <Field label={t('name')} hint="optional">
-            <Input value={layer.name ?? ''} onChange={(e) => set({ name: e.target.value || undefined })} placeholder="Woche" />
+            <Input value={layer.name ?? ''} onChange={(e) => set({ name: e.target.value || undefined })} placeholder={t('weekPlaceholder')} />
           </Field>
-          <Field label="Rhythmus">
+          <Field label={t('rhythm')}>
             <Select value={layer.unit} onValueChange={(v) => set({ unit: v as Rotation['unit'] })}>
               <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="daily">täglich</SelectItem>
-                <SelectItem value="weekly">wöchentlich</SelectItem>
-                <SelectItem value="custom">benutzerdefiniert</SelectItem>
+                <SelectItem value="daily">{t('daily')}</SelectItem>
+                <SelectItem value="weekly">{t('weekly')}</SelectItem>
+                <SelectItem value="custom">{t('custom')}</SelectItem>
               </SelectContent>
             </Select>
           </Field>
         </div>
-        <Field label="Teilnehmer" className="mt-2">
+        <Field label={t('participants')} className="mt-2">
           <ListEditor value={layer.participants} onChange={(v) => set({ participants: v })}
-            placeholder="Kontakt-Name" suggestions={suggestions} />
+            placeholder={t('contactNamePlaceholder')} suggestions={suggestions} />
         </Field>
         <div className="grid grid-cols-2 gap-3 mt-2">
           {layer.unit === 'custom' && (
-            <Field label="Schichtlänge">
+            <Field label={t('shiftLength')}>
               <DurationInput value={layer.length ?? ''} onChange={(v) => set({ length: v || undefined })} placeholder="12h" />
             </Field>
           )}
-          <Field label="Anker (Start der Rotation)">
+          <Field label={t('anchor')}>
             <DateTimeInput value={isoToLocalInput(layer.anchor)} onChange={(v) => set({ anchor: localInputToIso(v) || layer.anchor })} />
           </Field>
         </div>
-        <Field label="Einschränkung (Wochentag → HH:MM-HH:MM)" className="mt-2"
-          hint="z.B. mon → 08:00-17:00 (CSV für mehrere)">
+        <Field label={t('restriction')} className="mt-2"
+          hint={t('restrictionHint')}>
           <KVEditor
             value={Object.fromEntries(Object.entries(layer.restriction ?? {}).map(([k, v]) => [k, v.join(',')]))}
             onChange={(v) => set({ restriction: Object.fromEntries(Object.entries(v).map(([k, csv]) => [k, csv.split(',').map((x) => x.trim()).filter(Boolean)])) })}
@@ -233,7 +233,7 @@ export function OnCallNowCards() {
           </CardHeader>
           <CardContent>
             {(entry.contacts?.length ?? 0) === 0
-              ? <Empty text="niemand im Dienst" />
+              ? <Empty text={t('nobodyOnDuty')} />
               : entry.contacts.map((c) => (
                 <div key={c.id ?? c.name} className="py-1">
                   <div className="text-base font-semibold text-foreground inline-flex items-center gap-1.5"><Phone size={14} /> {c.name}</div>
@@ -243,7 +243,7 @@ export function OnCallNowCards() {
           </CardContent>
         </Card>
       ))}
-      {(now?.length ?? 0) === 0 && <Empty text="Keine Bereitschaftspläne definiert." />}
+      {(now?.length ?? 0) === 0 && <Empty text={t('noOnCallSchedules')} />}
     </div>
   )
 }
@@ -266,20 +266,20 @@ export function ScheduleDetail({ schedule }: { schedule: string }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{`${schedule} — 14 Tage`}</CardTitle>
+        <CardTitle>{`${schedule} — ${t('days14')}`}</CardTitle>
         <CardAction><OverrideManager schedule={schedule} /></CardAction>
       </CardHeader>
       <CardContent>
         <TimelineBlocks shifts={shifts ?? []} nameOf={nameOf} />
         {(stats?.length ?? 0) > 0 && (
           <div className="mt-3">
-            <div className="text-xs text-muted-foreground font-medium mb-1">{t('hours')} pro Person (30 Tage)</div>
+            <div className="text-xs text-muted-foreground font-medium mb-1">{t('hours')} {t('perPerson30Days')}</div>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Kontakt</TableHead>
+                  <TableHead>{t('contact')}</TableHead>
                   <TableHead>{t('hours')}</TableHead>
-                  <TableHead>Wochenende</TableHead>
+                  <TableHead>{t('weekend')}</TableHead>
                   <TableHead>{t('overrides')}</TableHead>
                 </TableRow>
               </TableHeader>
@@ -303,7 +303,7 @@ export function ScheduleDetail({ schedule }: { schedule: string }) {
 
 // Horizontal day blocks (no chart lib): group shifts by calendar day.
 function TimelineBlocks({ shifts, nameOf }: { shifts: Shift[]; nameOf: (id: string) => string }) {
-  if (shifts.length === 0) return <Empty text="Keine Schichten im Zeitraum." />
+  if (shifts.length === 0) return <Empty text={t('noShifts')} />
   const palette = ['bg-blue-600/40', 'bg-emerald-600/40', 'bg-purple-600/40', 'bg-amber-600/40', 'bg-pink-600/40', 'bg-cyan-600/40']
   const colorByContact: Record<string, string> = {}
   let next = 0
@@ -376,19 +376,19 @@ function OverrideDialog({ schedule, onClose }: { schedule: string; onClose: () =
         <div className="space-y-4">
           <form onSubmit={onSubmit} className="space-y-3 border border-border rounded-lg p-3 bg-card/40">
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Kontakt" required>
+              <Field label={t('contact')} required>
                 <Select value={contactId ? contactId : NONE} onValueChange={(v) => setContactId(v === NONE ? '' : v)}>
                   <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={NONE}>— wählen —</SelectItem>
+                    <SelectItem value={NONE}>{t('selectDash')}</SelectItem>
                     {contacts.map((c) => <SelectItem key={c.name} value={c.id ?? c.name}>{c.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </Field>
               <Field label={t('reason')} hint="optional">
-                <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Urlaub" />
+                <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t('vacationPlaceholder')} />
               </Field>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -400,8 +400,8 @@ function OverrideDialog({ schedule, onClose }: { schedule: string; onClose: () =
           </form>
 
           <div>
-            <div className="text-xs text-muted-foreground font-medium mb-1">Aktive Overrides</div>
-            {overrideShifts.length === 0 ? <Empty text="Keine Overrides." /> : (
+            <div className="text-xs text-muted-foreground font-medium mb-1">{t('activeOverrides')}</div>
+            {overrideShifts.length === 0 ? <Empty text={t('noOverrides')} /> : (
               <div className="space-y-1">
                 {overrideShifts.map((o, i) => (
                   <div key={i} className="flex items-center gap-2 bg-card/60 border border-border rounded-md px-3 py-1.5">

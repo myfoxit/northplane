@@ -26,12 +26,12 @@ const ROOT = '__root__'
 
 const BS_RULES = ['worst', 'best', 'quorum', 'weighted'] as const
 const RULE_DE: Record<string, string> = {
-  worst: 'Schlechtester (worst)', best: 'Bester (best)',
-  quorum: 'Quorum (% gesund)', weighted: 'Gewichtet (weighted)',
+  worst: t('bsRuleWorst'), best: t('bsRuleBest'),
+  quorum: t('bsRuleQuorum'), weighted: t('bsRuleWeighted'),
 }
 const SLA_WINDOWS = [
-  { v: 'month', label: 'Monat (30 T.)' }, { v: 'quarter', label: 'Quartal (90 T.)' },
-  { v: 'year', label: 'Jahr (365 T.)' },
+  { v: 'month', label: t('slaWindowMonth') }, { v: 'quarter', label: t('slaWindowQuarter') },
+  { v: 'year', label: t('slaWindowYear') },
 ]
 
 // SLA response shape (GET /business-services/{name}/sla).
@@ -60,6 +60,9 @@ export function BusinessPage() {
 
   const selectedDef = flat?.find((b) => b.name === selected) ?? null
   const roots = tree ?? []
+  // The live aggregated state of the selected node (0 OK … 3 UNKNOWN); drives
+  // the "no data" treatment for an unconfigured inner node (NP-17).
+  const selectedNode = selected ? findNode(roots, selected) : null
 
   if (isError && !tree) {
     return <div className="p-8"><ErrorState error={error} onRetry={() => refetch()} /></div>
@@ -90,13 +93,14 @@ export function BusinessPage() {
           {selected && selectedDef ? (
             <BSDetail
               def={selectedDef}
+              nodeState={selectedNode?.state}
               onEdit={() => setEditing(selectedDef)}
               onDelete={() => remove.mutate(selectedDef.name)}
             />
           ) : (
             <Card>
-              <CardHeader><CardTitle>Detail</CardTitle></CardHeader>
-              <CardContent><Empty text="Knoten im Baum wählen." /></CardContent>
+              <CardHeader><CardTitle>{t('detail')}</CardTitle></CardHeader>
+              <CardContent><Empty text={t('selectTreeNode')} /></CardContent>
             </Card>
           )}
         </div>
@@ -111,6 +115,16 @@ export function BusinessPage() {
       )}
     </div>
   )
+}
+
+// findNode walks the aggregation tree for the node with a given service name.
+function findNode(nodes: BSNode[], name: string): BSNode | null {
+  for (const n of nodes) {
+    if (n.service.name === name) return n
+    const hit = n.children ? findNode(n.children, name) : null
+    if (hit) return hit
+  }
+  return null
 }
 
 // ——— recursive live tree ———
@@ -149,16 +163,20 @@ function BSTree({ nodes, selected, onSelect, depth = 0 }: {
 
 // ——— detail: SLA card + definition card ———
 
-function BSDetail({ def, onEdit, onDelete }: {
-  def: BusinessService; onEdit: () => void; onDelete: () => void
+function BSDetail({ def, nodeState, onEdit, onDelete }: {
+  def: BusinessService; nodeState?: number; onEdit: () => void; onDelete: () => void
 }) {
   const { data: sla, isLoading } = useQuery({
     queryKey: ['business-sla', def.name],
     queryFn: () => get<SLAResponse>(`/business-services/${encodeURIComponent(def.name)}/sla`),
     refetchInterval: 60_000,
   })
-  const binding = def.objectId ? `Objekt: ${def.objectId}`
-    : def.selector ? `Selector: ${def.selector}` : 'innerer Knoten'
+  // An inner node with no leaf bindings aggregates to UNKNOWN (state 3); its SLA
+  // endpoint returns a vacuous 100% that reads as a contradiction next to the
+  // "?" status. Treat it as "no data / not configured" instead (NP-17).
+  const unconfigured = nodeState === 3 && !def.objectId && !def.selector
+  const binding = def.objectId ? `${t('object')}: ${def.objectId}`
+    : def.selector ? `Selector: ${def.selector}` : t('innerNode')
   return (
     <>
       <Card>
@@ -173,39 +191,40 @@ function BSDetail({ def, onEdit, onDelete }: {
         </CardHeader>
         <CardContent>
           {isLoading && <Spinner />}
-          {sla && (
+          {!isLoading && unconfigured && <Empty text={t('bpiNoData')} />}
+          {!unconfigured && sla && (
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
-                <Tile label="Verfügbarkeit" value={`${sla.availability.toFixed(3)}%`}
+                <Tile label={t('availability')} value={`${sla.availability.toFixed(3)}%`}
                   tone={sla.availability >= sla.target ? 'ok' : 'crit'} />
-                <Tile label="Ziel" value={`${sla.target}%`} />
+                <Tile label={t('target')} value={`${sla.target}%`} />
               </div>
               <div className="grid grid-cols-3 gap-3">
-                <Tile label="Budget" value={sla.budgetTotal} />
-                <Tile label="Verbraucht" value={sla.budgetSpent} tone={sla.budgetSpent !== '0s' ? 'warn' : 'default'} />
-                <Tile label="Verbleibend" value={sla.budgetLeft} tone={sla.budgetLeft === '0s' ? 'crit' : 'ok'} />
+                <Tile label={t('budget')} value={sla.budgetTotal} />
+                <Tile label={t('consumed')} value={sla.budgetSpent} tone={sla.budgetSpent !== '0s' ? 'warn' : 'default'} />
+                <Tile label={t('remaining')} value={sla.budgetLeft} tone={sla.budgetLeft === '0s' ? 'crit' : 'ok'} />
               </div>
-              <div className="text-xs text-muted-foreground">Fenster: {sla.windowDays} Tage</div>
+              <div className="text-xs text-muted-foreground">{t('window')}: {sla.windowDays} {t('days')}</div>
             </div>
           )}
-          {!isLoading && !sla && <Empty text="keine SLA-Daten" />}
+          {!isLoading && !unconfigured && !sla && <Empty text={t('noSlaData')} />}
         </CardContent>
       </Card>
 
       <Card>
-        <CardHeader><CardTitle>Definition</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t('definition')}</CardTitle></CardHeader>
         <CardContent>
           <dl className="text-sm space-y-1.5">
             <Row k={t('name')} v={def.name} />
-            <Row k="Regel" v={RULE_DE[def.rule ?? 'worst'] ?? def.rule ?? 'worst'} />
-            {def.rule === 'quorum' && <Row k="Quorum" v={`${def.quorumPct ?? 50}%`} />}
-            <Row k="Bindung" v={binding} mono={!!def.selector || !!def.objectId} />
-            {def.parentId && <Row k="Parent" v={def.parentId} mono />}
-            {typeof def.weight === 'number' && def.weight > 0 && <Row k="Gewicht" v={String(def.weight)} />}
+            <Row k={t('rule')} v={RULE_DE[def.rule ?? 'worst'] ?? def.rule ?? 'worst'} />
+            {def.rule === 'quorum' && <Row k={t('quorum')} v={`${def.quorumPct ?? 50}%`} />}
+            <Row k={t('binding')} v={binding} mono={!!def.selector || !!def.objectId} />
+            {def.parentId && <Row k={t('parent')} v={def.parentId} mono />}
+            {typeof def.weight === 'number' && def.weight > 0 && <Row k={t('weight')} v={String(def.weight)} />}
             {typeof def.slaTarget === 'number' && def.slaTarget > 0 && (
-              <Row k="SLA-Ziel" v={`${def.slaTarget}% / ${def.slaWindow ?? 'month'}`} />
+              <Row k={t('slaTargetRow')} v={`${def.slaTarget}% / ${def.slaWindow ?? 'month'}`} />
             )}
-            {def.excludeDowntimes && <Row k="Downtimes" v="ausgeschlossen" />}
+            {def.excludeDowntimes && <Row k={t('downtimes')} v={t('excluded')} />}
           </dl>
         </CardContent>
       </Card>
@@ -286,11 +305,11 @@ function BSDialog({ existing, all, onClose }: {
             <Field label={t('name')} required>
               <Input value={name} onChange={(e) => setName(e.target.value)} disabled={editing} autoFocus={!editing} />
             </Field>
-            <Field label="Parent (übergeordnet)">
+            <Field label={t('parentField')}>
               <Select value={parentId || ROOT} onValueChange={(v) => setParentId(v === ROOT ? '' : v)}>
                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={ROOT}>— Wurzel —</SelectItem>
+                  <SelectItem value={ROOT}>{t('rootNode')}</SelectItem>
                   {parentOptions.map((b) => <SelectItem key={b.id ?? b.name} value={b.id ?? b.name}>{b.name}</SelectItem>)}
                 </SelectContent>
               </Select>
@@ -298,7 +317,7 @@ function BSDialog({ existing, all, onClose }: {
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Aggregationsregel">
+            <Field label={t('aggregationRule')}>
               <Select value={rule} onValueChange={setRule}>
                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -307,7 +326,7 @@ function BSDialog({ existing, all, onClose }: {
               </Select>
             </Field>
           {rule === 'quorum' && (
-            <Field label="Quorum % gesund">
+            <Field label={t('quorumHealthy')}>
               <Input type="number" min={1} max={100} value={quorumPct}
                 onChange={(e) => setQuorumPct(Number(e.target.value))} />
             </Field>
@@ -315,12 +334,12 @@ function BSDialog({ existing, all, onClose }: {
         </div>
 
         <div className="border-t border-border pt-3">
-          <div className="text-xs text-muted-foreground font-medium mb-2">Leaf-Bindung</div>
+          <div className="text-xs text-muted-foreground font-medium mb-2">{t('leafBinding')}</div>
           <div className="flex gap-4 text-sm text-foreground/90 mb-2">
             {(['object', 'selector', 'none'] as Binding[]).map((b) => (
               <label key={b} className="flex items-center gap-1.5 cursor-pointer">
                 <input type="radio" name="binding" checked={binding === b} onChange={() => setBinding(b)} />
-                {b === 'object' ? 'Objekt' : b === 'selector' ? 'Selector' : 'keine (innerer Knoten)'}
+                {b === 'object' ? t('object') : b === 'selector' ? 'Selector' : t('noneInnerNode')}
               </label>
             ))}
           </div>
@@ -333,15 +352,15 @@ function BSDialog({ existing, all, onClose }: {
         </div>
 
         <div className="grid grid-cols-3 gap-3 border-t border-border pt-3">
-          <Field label="Gewicht" hint="0 = unbenutzt">
+          <Field label={t('weight')} hint={t('weightHint')}>
             <Input type="number" min={0} step="0.1" value={weight}
               onChange={(e) => setWeight(Number(e.target.value))} />
           </Field>
-          <Field label="SLA-Ziel %" hint="leer = kein SLA">
+          <Field label={t('slaTargetPct')} hint={t('slaTargetHintNoSla')}>
             <Input type="number" step="0.001" value={slaTarget}
               onChange={(e) => setSlaTarget(e.target.value)} placeholder="99.9" />
           </Field>
-            <Field label="SLA-Fenster">
+            <Field label={t('slaWindow')}>
               <Select value={slaWindow} onValueChange={setSlaWindow} disabled={!slaTarget.trim()}>
                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -350,10 +369,10 @@ function BSDialog({ existing, all, onClose }: {
               </Select>
             </Field>
           </div>
-          <Field label="Geplante Downtimes ausschließen">
+          <Field label={t('excludeScheduledDowntimes')}>
             <Label className="cursor-pointer">
               <Switch checked={excludeDowntimes} onCheckedChange={setExcludeDowntimes} />
-              <span className="text-sm text-foreground/90">{excludeDowntimes ? 'ja' : 'nein'}</span>
+              <span className="text-sm text-foreground/90">{excludeDowntimes ? t('yes') : t('no')}</span>
             </Label>
           </Field>
 

@@ -43,10 +43,10 @@ describe('<TemplatesPage />', () => {
     expect(screen.getByText('base')).toBeInTheDocument()       // spec.templates cell
     // A template without kind renders the "beide" (host & service) badge.
     expect(screen.getByText('web-defaults')).toBeInTheDocument()
-    expect(screen.getByText('beide')).toBeInTheDocument()
+    expect(screen.getByText('both')).toBeInTheDocument()
     // All three config tabs are offered.
-    expect(screen.getByRole('tab', { name: 'Check-Kommandos' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Zeiträume' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Check commands' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Time periods' })).toBeInTheDocument()
   })
 
   it('shows the empty state when no templates exist', async () => {
@@ -61,13 +61,13 @@ describe('<TemplatesPage />', () => {
     renderWithProviders(<TemplatesPage />)
 
     await screen.findByText('generic-host')
-    await user.click(screen.getByRole('tab', { name: 'Check-Kommandos' }))
+    await user.click(screen.getByRole('tab', { name: 'Check commands' }))
 
     expect(await screen.findByText('check_postgres')).toBeInTheDocument()
     expect(screen.getByText('exec')).toBeInTheDocument()
     // argv tokens joined into one command line cell.
     expect(screen.getByText('check_postgres -H $HOSTADDRESS$')).toBeInTheDocument()
-    expect(screen.getByText('ja')).toBeInTheDocument()   // env macros enabled
+    expect(screen.getByText('yes')).toBeInTheDocument()   // env macros enabled
     expect(screen.getByText('30s')).toBeInTheDocument()  // timeout
   })
 
@@ -77,14 +77,14 @@ describe('<TemplatesPage />', () => {
     renderWithProviders(<TemplatesPage />)
 
     await screen.findByText('generic-host')
-    await user.click(screen.getByRole('tab', { name: 'Zeiträume' }))
+    await user.click(screen.getByRole('tab', { name: 'Time periods' }))
 
     expect(await screen.findByText('business-hours')).toBeInTheDocument()
     expect(screen.getByText('Geschäftszeiten')).toBeInTheDocument()
     expect(screen.getByText('2')).toBeInTheDocument() // two weekdays configured
     expect(screen.getByText('1')).toBeInTheDocument() // one exception date
     // Column headers of the periods table.
-    expect(screen.getByText('Tage')).toBeInTheDocument()
-    expect(screen.getByText('Ausnahmen')).toBeInTheDocument()
+    expect(screen.getByText('days')).toBeInTheDocument()
+    expect(screen.getByText('Exceptions')).toBeInTheDocument()
   })
 })

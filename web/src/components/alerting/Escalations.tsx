@@ -1,7 +1,7 @@
 // Escalation-policies tab: ordered step editor + dry-run simulator
 // (SPEC §12.3 "Policies mit Simulator"). Each step Card: after, unlessAcked,
 // notify target (schedule/contact/contactGroup), channels, repeat, action.
-import { useState } from 'react'
+import { useEffect, useState, type RefObject } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowUp, ArrowDown, X, RefreshCw, Settings } from 'lucide-react'
 import { post, resourceApi } from '../../api'
@@ -46,7 +46,7 @@ function emptyPolicy(): EscalationPolicy {
   return { name: '', steps: [emptyStep()] }
 }
 
-export function EscalationsTab() {
+export function EscalationsTab({ createRef }: { createRef?: RefObject<() => void> }) {
   const { data: policies, isError, error, refetch } = useQuery({ queryKey: policiesApi.queryKey, queryFn: policiesApi.list })
   const { data: schedules } = useQuery({ queryKey: schedulesApi.queryKey, queryFn: schedulesApi.list })
   const { data: contacts } = useQuery({ queryKey: contactsApi.queryKey, queryFn: contactsApi.list })
@@ -63,6 +63,7 @@ export function EscalationsTab() {
     const { data, etag } = await policiesApi.get(name)
     setEditing({ policy: { ...data, steps: data.steps ?? [] }, etag })
   }
+  useEffect(() => { if (createRef) createRef.current = () => void open() })
 
   if (isError && !policies) {
     return <div className="p-8"><ErrorState error={error} onRetry={() => refetch()} /></div>
@@ -70,16 +71,13 @@ export function EscalationsTab() {
 
   return (
     <div className="space-y-3">
-      <div className="flex justify-end">
-        <Button variant="default" onClick={() => open()}>{t('create')}</Button>
-      </div>
       {(policies?.length ?? 0) === 0 ? <Empty text={t('empty')} /> : (
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>{t('name')}</TableHead>
               <TableHead>{t('steps')}</TableHead>
-              <TableHead>Stufen-Übersicht</TableHead>
+              <TableHead>{t('stepsOverview')}</TableHead>
               <TableHead>{t('actions')}</TableHead>
             </TableRow>
           </TableHeader>
@@ -161,7 +159,7 @@ function PolicyDialog({ state, pickers, onClose }: {
                 onDown={i < p.steps.length - 1 ? () => move(i, 1) : undefined}
               />
             ))}
-            <Button size="sm" variant="outline" type="button" onClick={addStep}>+ Stufe</Button>
+            <Button size="sm" variant="outline" type="button" onClick={addStep}>+ {t('step')}</Button>
           </div>
 
           <FormError error={save.error} />
@@ -169,12 +167,12 @@ function PolicyDialog({ state, pickers, onClose }: {
           {/* Simulator */}
           <div className="border border-border rounded-lg p-3 bg-card/40 space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-foreground/90">{t('simulate')} — wer wird wann benachrichtigt</span>
-              <Button size="sm" variant="outline" type="button" onClick={simulate} disabled={isNew} title={isNew ? 'Erst speichern' : undefined}>
+              <span className="text-xs font-semibold text-foreground/90">{t('simulate')} — {t('whoNotifiedWhen')}</span>
+              <Button size="sm" variant="outline" type="button" onClick={simulate} disabled={isNew} title={isNew ? t('saveFirst') : undefined}>
                 {t('simulate')}
               </Button>
             </div>
-            {isNew && <p className="text-[11px] text-muted-foreground">Policy zuerst speichern, dann simulieren.</p>}
+            {isNew && <p className="text-[11px] text-muted-foreground">{t('savePolicyFirst')}</p>}
             <FormError error={simErr} />
             {sim && <SimTimeline steps={sim.steps} />}
           </div>
@@ -210,31 +208,31 @@ function StepCard({ index, step, pickers, onChange, onRemove, onUp, onDown }: {
     <Card className="border-border/80 py-3 gap-3">
       <CardContent className="px-3">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-semibold text-muted-foreground">Stufe {index + 1}</span>
+          <span className="text-xs font-semibold text-muted-foreground">{t('step')} {index + 1}</span>
           <div className="flex gap-1">
-            {onUp && <Button size="sm" variant="ghost" type="button" onClick={onUp} title="hoch" aria-label="hoch"><ArrowUp size={13} /></Button>}
-            {onDown && <Button size="sm" variant="ghost" type="button" onClick={onDown} title="runter" aria-label="runter"><ArrowDown size={13} /></Button>}
+            {onUp && <Button size="sm" variant="ghost" type="button" onClick={onUp} title={t('up')} aria-label={t('up')}><ArrowUp size={13} /></Button>}
+            {onDown && <Button size="sm" variant="ghost" type="button" onClick={onDown} title={t('down')} aria-label={t('down')}><ArrowDown size={13} /></Button>}
             <Button size="sm" variant="ghost" type="button" onClick={onRemove} title={t('remove')} aria-label={t('remove')}><X size={13} /></Button>
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Nach" hint="Verzögerung ab Alarm">
+          <Field label={t('after')} hint={t('afterHint')}>
             <DurationInput value={step.after} onChange={(v) => set({ after: v })} placeholder="0s" />
           </Field>
           <div className="flex items-end pb-1">
-            <ToggleRow label="Nur falls nicht quittiert" checked={step.unlessAcked ?? false} onChange={(v) => set({ unlessAcked: v })} />
+            <ToggleRow label={t('unlessAcked')} checked={step.unlessAcked ?? false} onChange={(v) => set({ unlessAcked: v })} />
           </div>
         </div>
 
         {/* Notify target */}
         <div className="mt-2">
-          <span className="text-xs text-muted-foreground font-medium">Benachrichtigen</span>
+          <span className="text-xs text-muted-foreground font-medium">{t('notify')}</span>
           <div className="flex gap-4 mt-1 mb-1.5">
             {(['schedule', 'contact', 'contactGroup'] as NotifyKind[]).map((k) => (
               <label key={k} className="flex items-center gap-1.5 text-sm text-foreground/90 cursor-pointer">
                 <input type="radio" checked={notifyKind === k} onChange={() => setNotify(k)} />
-                {k === 'schedule' ? 'Dienstplan' : k === 'contact' ? 'Kontakt' : 'Kontaktgruppe'}
+                {k === 'schedule' ? t('rosterSchedule') : k === 'contact' ? t('contact') : t('contactGroup')}
               </label>
             ))}
           </div>
@@ -246,18 +244,18 @@ function StepCard({ index, step, pickers, onChange, onRemove, onUp, onDown }: {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={NONE}>— Dienstplan wählen —</SelectItem>
+                  <SelectItem value={NONE}>{t('selectSchedule')}</SelectItem>
                   {pickers.schedules.map((s) => <SelectItem key={s.name} value={s.name}>{s.name}</SelectItem>)}
                 </SelectContent>
               </Select>
               <Select value={step.notify?.escalateTo ? step.notify.escalateTo : NONE}
                 onValueChange={(v) => set({ notify: { ...step.notify, escalateTo: v === NONE ? undefined : v } })}>
-                <SelectTrigger className="w-full" title="Wen aus der Rotation">
+                <SelectTrigger className="w-full" title={t('whoFromRotation')}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={NONE}>Primär</SelectItem>
-                  <SelectItem value="backup">Backup (2.)</SelectItem>
+                  <SelectItem value={NONE}>{t('primary')}</SelectItem>
+                  <SelectItem value="backup">{t('backupSecond')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -269,7 +267,7 @@ function StepCard({ index, step, pickers, onChange, onRemove, onUp, onDown }: {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={NONE}>— Kontakt wählen —</SelectItem>
+                <SelectItem value={NONE}>{t('selectContact')}</SelectItem>
                 {pickers.contacts.map((c) => <SelectItem key={c.name} value={c.name}>{c.name}</SelectItem>)}
               </SelectContent>
             </Select>
@@ -281,7 +279,7 @@ function StepCard({ index, step, pickers, onChange, onRemove, onUp, onDown }: {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={NONE}>— Gruppe wählen —</SelectItem>
+                <SelectItem value={NONE}>{t('selectGroup')}</SelectItem>
                 {pickers.groups.map((g) => <SelectItem key={g.name} value={g.name}>{g.name}</SelectItem>)}
               </SelectContent>
             </Select>
@@ -294,10 +292,10 @@ function StepCard({ index, step, pickers, onChange, onRemove, onUp, onDown }: {
         </div>
 
         <div className="grid grid-cols-2 gap-3 mt-2">
-          <Field label="Wiederholen alle" hint="optional">
+          <Field label={t('repeatEvery')} hint="optional">
             <DurationInput value={step.repeatEvery ?? ''} onChange={(v) => set({ repeatEvery: v || undefined })} placeholder="10m" />
           </Field>
-          <Field label="Max. Wiederholungen" hint="optional">
+          <Field label={t('maxRepeats')} hint="optional">
             <Input type="number" value={step.maxRepeats ?? ''} onChange={(e) => set({ maxRepeats: e.target.value ? Number(e.target.value) : undefined })} placeholder="3" />
           </Field>
         </div>
@@ -305,7 +303,7 @@ function StepCard({ index, step, pickers, onChange, onRemove, onUp, onDown }: {
         {/* Action webhook */}
         <div className="mt-2">
           <ToggleRow
-            label="Aktion: Webhook auslösen"
+            label={t('actionTriggerWebhook')}
             checked={showAction}
             onChange={(on) => set({ action: on ? { webhook: '' } : undefined })}
           />
@@ -317,7 +315,7 @@ function StepCard({ index, step, pickers, onChange, onRemove, onUp, onDown }: {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={NONE}>— Webhook-Kanal wählen —</SelectItem>
+                  <SelectItem value={NONE}>{t('selectWebhookChannel')}</SelectItem>
                   {pickers.channels.filter((c) => c.type === 'webhook').map((c) => <SelectItem key={c.name} value={c.name}>{c.name}</SelectItem>)}
                 </SelectContent>
               </Select>
@@ -331,7 +329,7 @@ function StepCard({ index, step, pickers, onChange, onRemove, onUp, onDown }: {
 
 // Render the simulate response: one row per step (who, when, channels).
 function SimTimeline({ steps }: { steps: Record<string, unknown>[] }) {
-  if (steps.length === 0) return <Empty text="Keine Stufen." />
+  if (steps.length === 0) return <Empty text={t('noSteps')} />
   return (
     <ol className="space-y-1.5">
       {steps.map((s, i) => {
@@ -342,13 +340,13 @@ function SimTimeline({ steps }: { steps: Record<string, unknown>[] }) {
             <span className="text-xs font-mono text-primary mt-0.5 shrink-0">+{String(s.after ?? '')}</span>
             <div className="min-w-0 flex-1">
               <div className="text-sm text-foreground">
-                {who.length > 0 ? who.join(', ') : <span className="text-muted-foreground">niemand aufgelöst</span>}
+                {who.length > 0 ? who.join(', ') : <span className="text-muted-foreground">{t('nobodyResolved')}</span>}
                 {s.schedule ? <span className="text-xs text-muted-foreground"> · {String(s.schedule)}</span> : null}
-                {s.unlessAcked ? <span className="text-[11px] text-amber-400"> · nur falls offen</span> : null}
+                {s.unlessAcked ? <span className="text-[11px] text-amber-400"> · {t('onlyIfOpen')}</span> : null}
               </div>
               {channels.length > 0 && <div className="text-[11px] text-muted-foreground font-mono">{channels.join(', ')}</div>}
-              {s.repeatEvery ? <div className="text-[11px] text-muted-foreground inline-flex items-center gap-1"><RefreshCw size={11} /> alle {String(s.repeatEvery)} (max {String(s.maxRepeats ?? '∞')})</div> : null}
-              {s.action ? <div className="text-[11px] text-muted-foreground inline-flex items-center gap-1"><Settings size={11} /> Aktion</div> : null}
+              {s.repeatEvery ? <div className="text-[11px] text-muted-foreground inline-flex items-center gap-1"><RefreshCw size={11} /> {t('every')} {String(s.repeatEvery)} (max {String(s.maxRepeats ?? '∞')})</div> : null}
+              {s.action ? <div className="text-[11px] text-muted-foreground inline-flex items-center gap-1"><Settings size={11} /> {t('action')}</div> : null}
             </div>
           </li>
         )

@@ -4,6 +4,7 @@
 // needs a module to export components OR helpers, not a mix. JSX-returning
 // pieces live in widgets.tsx; this file is pure (.ts, no JSX).
 import type { DashboardWidget } from '../../types'
+import { t } from '../../i18n'
 
 // BPI tree node as returned by GET /business-services:tree.
 export interface BSNode {
@@ -37,17 +38,17 @@ export function rangeFrom(range?: string): string {
 // Human label for a widget type (German-first).
 export function widgetTypeLabel(type: DashboardWidget['type']): string {
   const de: Record<DashboardWidget['type'], string> = {
-    counters: 'Zähler (KPIs)',
-    problems: 'Probleme',
-    alerts: 'Alarme',
-    metric: 'Metrik-Diagramm',
-    gauge: 'Gauge (Tacho)',
-    stat: 'Einzelwert (Stat)',
-    donut: 'Status-Donut',
-    bar: 'Balkendiagramm',
-    table: 'Tabelle (Hosts/Services)',
-    bpi: 'Business Service',
-    markdown: 'Text / Markdown',
+    counters: t('widgetCounters'),
+    problems: t('problems'),
+    alerts: t('alerts'),
+    metric: t('widgetMetric'),
+    gauge: t('widgetGauge'),
+    stat: t('widgetStat'),
+    donut: t('widgetDonut'),
+    bar: t('widgetBar'),
+    table: t('widgetTable'),
+    bpi: t('widgetBpi'),
+    markdown: t('widgetMarkdown'),
   }
   return de[type] ?? type
 }

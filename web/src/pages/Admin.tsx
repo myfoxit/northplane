@@ -109,14 +109,14 @@ function TokensTab() {
         <CardContent>
           <div className="flex gap-2">
             <Input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} className="max-w-48" />
-            <Input placeholder="scopes (kommagetrennt)" value={scopes} onChange={(e) => setScopes(e.target.value)} />
+            <Input placeholder={t('scopesCommaSep')} value={scopes} onChange={(e) => setScopes(e.target.value)} />
             <Button variant="default" onClick={() => create.mutate()} disabled={!name || create.isPending}>
               {t('newToken')}
             </Button>
           </div>
           {minted && (
             <div className="mt-3 bg-amber-950/40 border border-amber-800/50 rounded-lg p-3">
-              <div className="text-xs text-amber-400 mb-1">Einmalig sichtbar — jetzt sichern:</div>
+              <div className="text-xs text-amber-400 mb-1">{t('tokenOnceVisibleSave')}</div>
               <code className="text-sm text-amber-200 break-all select-all">{minted}</code>
             </div>
           )}
@@ -125,7 +125,7 @@ function TokensTab() {
       <Table>
         <TableHeader>
           <TableRow>
-            {['Name', 'Prefix', 'Scopes', 'Zuletzt', ''].map((h, i) => <TableHead key={i}>{h}</TableHead>)}
+            {[t('name'), 'Prefix', 'Scopes', t('lastUsed'), ''].map((h, i) => <TableHead key={i}>{h}</TableHead>)}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -178,7 +178,7 @@ function AuditTab() {
       <Table>
         <TableHeader>
           <TableRow>
-            {['Seq', 'Zeit', 'Akteur', 'Aktion', 'Ressource'].map((h) => <TableHead key={h}>{h}</TableHead>)}
+            {['Seq', t('time'), t('actor'), t('action'), t('resource')].map((h) => <TableHead key={h}>{h}</TableHead>)}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -217,7 +217,7 @@ function AIQueueTab() {
   const rows = data?.items ?? []
   return (
     <div className="space-y-2">
-      {rows.length === 0 && <Empty text="Keine AI-Aktionen." />}
+      {rows.length === 0 && <Empty text={t('noAiActions')} />}
       {rows.map((a) => (
         <div key={a.id} className="bg-card/50 border border-border rounded-lg px-3 py-2 flex items-center gap-3">
           <Badge variant="outline" className={

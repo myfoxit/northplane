@@ -4,7 +4,7 @@
 // backend grammar: daily[@HH:MM] | weekly:<weekday>[@HH:MM] | monthly[:day][@HH:MM].
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Check } from 'lucide-react'
+import { Check, TriangleAlert } from 'lucide-react'
 import { get, post, resourceApi, fmtTime, type ListResponse } from '../api'
 import type { Report, ReportType } from '../types'
 import { Button } from '@/components/ui/button'
@@ -26,27 +26,28 @@ const NONE = '__none__'
 const REPORT_TYPES: ReportType[] = ['availability', 'sla', 'alert-stats', 'oncall', 'audit']
 const WEEKDAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
 const WEEKDAY_DE: Record<string, string> = {
-  monday: 'Montag', tuesday: 'Dienstag', wednesday: 'Mittwoch', thursday: 'Donnerstag',
-  friday: 'Freitag', saturday: 'Samstag', sunday: 'Sonntag',
+  monday: t('weekdayMonday'), tuesday: t('weekdayTuesday'), wednesday: t('weekdayWednesday'), thursday: t('weekdayThursday'),
+  friday: t('weekdayFriday'), saturday: t('weekdaySaturday'), sunday: t('weekdaySunday'),
 }
 const WINDOWS = [
-  { days: 1, label: '24h' }, { days: 7, label: '7 Tage' },
-  { days: 30, label: '30 Tage' }, { days: 90, label: '90 Tage' },
+  { days: 1, label: '24h' }, { days: 7, label: t('days7') },
+  { days: 30, label: t('days30') }, { days: 90, label: t('days90') },
 ]
 
 function typeLabel(ty: ReportType): string {
   const de: Record<ReportType, string> = {
-    availability: 'Verfügbarkeit', sla: 'SLA', 'alert-stats': 'Alarm-Statistik',
-    oncall: 'Bereitschaft', audit: 'Berechtigungen',
+    availability: t('availability'), sla: 'SLA', 'alert-stats': t('alertStats'),
+    oncall: t('oncall'), audit: t('permissions'),
   }
   return de[ty] ?? ty
 }
 
-// download triggers a browser download of a :render result blob.
+// download triggers a browser download of a :render result blob. The render
+// endpoint is POST-only (POST /api/v1/reports/{name}:render) — a GET 404s.
 async function downloadRender(name: string, format: 'csv' | 'json') {
   const res = await fetch(
     `/api/v1/reports/${encodeURIComponent(name)}:render?format=${format}`,
-    { credentials: 'same-origin' },
+    { method: 'POST', credentials: 'same-origin' },
   )
   if (!res.ok) throw new Error(`render failed (${res.status})`)
   const blob = await res.blob()
@@ -113,7 +114,15 @@ export function ReportsPage() {
                       <Badge variant="outline" className="bg-muted text-foreground/90 border-input">{typeLabel(r.type)}</Badge>
                     </TableCell>
                     <TableCell className="text-muted-foreground font-mono text-xs">{r.schedule || '—'}</TableCell>
-                    <TableCell className="text-muted-foreground tabular-nums">{r.email?.length ?? 0}</TableCell>
+                    <TableCell className="tabular-nums">
+                      {r.schedule && (r.email?.length ?? 0) === 0 ? (
+                        <span className="inline-flex items-center gap-1 text-amber-400" title={t('noRecipientsWarn')}>
+                          <TriangleAlert size={12} /> 0
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">{r.email?.length ?? 0}</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-muted-foreground tabular-nums">{r.keep ?? '—'}</TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-1">
@@ -235,12 +244,12 @@ function ReportDialog({ existing, onClose }: { existing: Report | null; onClose:
           </div>
 
         {showSelector && (
-          <Field label="Selector" hint="Label-Filter der einbezogenen Objekte, z.B. env=prod">
+          <Field label={t('selector')} hint={t('selectorFilterHint')}>
             <Input value={selector} onChange={(e) => setSelector(e.target.value)} placeholder="env=prod" />
           </Field>
         )}
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Zeitraum">
+          <Field label={t('timeRange')}>
             <Select value={String(windowDays)} onValueChange={(v) => setWindowDays(Number(v))}>
               <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -249,7 +258,7 @@ function ReportDialog({ existing, onClose }: { existing: Report | null; onClose:
             </Select>
           </Field>
           {showTarget && (
-            <Field label="SLA-Ziel %" hint="leer = 99.9">
+            <Field label={t('slaTargetPct')} hint={t('emptyDefault999')}>
               <Input type="number" step="0.001" value={target}
                 onChange={(e) => setTarget(e.target.value)} placeholder="99.9" />
             </Field>
@@ -259,26 +268,26 @@ function ReportDialog({ existing, onClose }: { existing: Report | null; onClose:
           <label className="flex items-center gap-2 text-sm text-foreground/90 cursor-pointer">
             <input type="checkbox" checked={includeDowntimes}
               onChange={(e) => setIncludeDowntimes(e.target.checked)} />
-            Geplante Downtimes mitzählen
+            {t('countScheduledDowntimes')}
           </label>
         )}
 
         <div className="border-t border-border pt-3">
           <div className="text-xs text-muted-foreground font-medium mb-2">{t('schedule')}</div>
           <div className="grid grid-cols-3 gap-2">
-            <Field label="Frequenz">
+            <Field label={t('frequency')}>
               <Select value={sched.freq || NONE} onValueChange={(v) => setSched({ ...sched, freq: (v === NONE ? '' : v) as ScheduleParts['freq'] })}>
                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value={NONE}>— {t('none')} —</SelectItem>
-                  <SelectItem value="daily">täglich</SelectItem>
-                  <SelectItem value="weekly">wöchentlich</SelectItem>
-                  <SelectItem value="monthly">monatlich</SelectItem>
+                  <SelectItem value="daily">{t('daily')}</SelectItem>
+                  <SelectItem value="weekly">{t('weekly')}</SelectItem>
+                  <SelectItem value="monthly">{t('monthly')}</SelectItem>
                 </SelectContent>
               </Select>
             </Field>
             {sched.freq === 'weekly' && (
-              <Field label="Wochentag">
+              <Field label={t('weekday')}>
                 <Select value={sched.weekday} onValueChange={(v) => setSched({ ...sched, weekday: v })}>
                   <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -288,13 +297,13 @@ function ReportDialog({ existing, onClose }: { existing: Report | null; onClose:
               </Field>
             )}
             {sched.freq === 'monthly' && (
-              <Field label="Tag (1–31)">
+              <Field label={t('dayOfMonth')}>
                 <Input type="number" min={1} max={31} value={sched.day}
                   onChange={(e) => setSched({ ...sched, day: Number(e.target.value) })} />
               </Field>
             )}
             {sched.freq !== '' && (
-              <Field label="Uhrzeit">
+              <Field label={t('timeOfDay')}>
                 <Input type="time" value={sched.time} onChange={(e) => setSched({ ...sched, time: e.target.value })} />
               </Field>
             )}
@@ -305,13 +314,18 @@ function ReportDialog({ existing, onClose }: { existing: Report | null; onClose:
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label={t('recipients')} hint="E-Mail-Adressen für den Versand">
+          <Field label={t('recipients')} hint={t('recipientsHint')}>
             <ListEditor value={email} onChange={setEmail} placeholder="ops@example.com" />
           </Field>
-          <Field label="Archiv behalten" hint="Anzahl gespeicherter Läufe">
+          <Field label={t('keepArchive')} hint={t('keepArchiveHint')}>
             <Input type="number" min={0} value={keep} onChange={(e) => setKeep(Number(e.target.value))} />
           </Field>
         </div>
+        {composeSchedule(sched) && email.length === 0 && (
+          <div className="text-xs text-amber-400 flex items-center gap-1.5">
+            <TriangleAlert size={13} className="shrink-0" /> {t('noRecipientsWarn')}
+          </div>
+        )}
 
           <FormError error={save.error} />
           <SubmitRow onCancel={onClose} saving={save.isPending} label={editing ? t('save') : t('create')} disabled={!name.trim()} />
@@ -327,8 +341,9 @@ function PreviewDialog({ name, onClose }: { name: string; onClose: () => void })
   const { data, isLoading, error } = useQuery({
     queryKey: ['report-preview', name],
     queryFn: async () => {
+      // POST — the :render action is POST-only; a GET returns 404 (NP-02).
       const res = await fetch(`/api/v1/reports/${encodeURIComponent(name)}:render?format=html`,
-        { credentials: 'same-origin' })
+        { method: 'POST', credentials: 'same-origin' })
       if (!res.ok) throw new Error(`render failed (${res.status})`)
       return res.text()
     },
@@ -377,7 +392,7 @@ function ArchiveDialog({ name, onClose }: { name: string; onClose: () => void })
           <Table>
             <TableHeader>
               <TableRow>
-                {['Slot', t('format'), 'Erstellt', ''].map((h, i) => <TableHead key={i}>{h}</TableHead>)}
+                {['Slot', t('format'), t('createdAt'), ''].map((h, i) => <TableHead key={i}>{h}</TableHead>)}
               </TableRow>
             </TableHeader>
             <TableBody>

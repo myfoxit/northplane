@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   alignSeries, groupByUnit, seriesColor, shortId, SERIES_PALETTE,
   nagiosRangeStart, effectiveBand, thresholdTone, fmtMetric,
+  isCounter, rateifyCounters,
 } from './series'
 import type { SeriesResult } from '../../types'
 
@@ -167,5 +168,28 @@ describe('fmtMetric', () => {
   it('handles negatives and non-finite input', () => {
     expect(fmtMetric(-1500)).toBe('-1.5k')
     expect(fmtMetric(NaN)).toBe('—')
+  })
+})
+
+describe('isCounter / rateifyCounters', () => {
+  it('detects a monotonically rising counter', () => {
+    expect(isCounter([{ t: 0, v: 10 }, { t: 1, v: 20 }, { t: 2, v: 30 }, { t: 3, v: 40 }])).toBe(true)
+  })
+  it('rejects gauges (dips) and flat/short series', () => {
+    expect(isCounter([{ t: 0, v: 10 }, { t: 1, v: 5 }, { t: 2, v: 8 }, { t: 3, v: 6 }])).toBe(false)
+    expect(isCounter([{ t: 0, v: 5 }, { t: 1, v: 5 }, { t: 2, v: 5 }, { t: 3, v: 5 }])).toBe(false)
+    expect(isCounter([{ t: 0, v: 1 }, { t: 1, v: 2 }])).toBe(false)
+  })
+  it('converts a counter to a per-second rate and marks the unit', () => {
+    const r = rateifyCounters([s(1, 'o1', 'ifInOctets',
+      [[0, 0], [1000, 100], [2000, 300], [3000, 300]], { unit: 'B', warn: '80' })])
+    expect(r[0]!.series.unit).toBe('B/s')
+    expect(r[0]!.series.warn).toBeUndefined()
+    // Δt is 1s between samples: rates are 100, 200, 0 B/s.
+    expect(r[0]!.points.map((p) => p.v)).toEqual([100, 200, 0])
+  })
+  it('leaves a non-counter series untouched', () => {
+    const gauge = s(2, 'o2', 'load', [[0, 1], [1000, 2], [2000, 1], [3000, 3]])
+    expect(rateifyCounters([gauge])).toEqual([gauge])
   })
 })

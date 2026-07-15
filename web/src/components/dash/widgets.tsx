@@ -176,7 +176,7 @@ function MetricWidget({ widget }: { widget: DashboardWidget }) {
   const groups = useMemo(() => groupByUnit(series), [series])
   if (!widget.object && !widget.selector) return <Empty text={t('empty')} />
   if (isLoading) return <Spinner />
-  if (series.length === 0) return <Empty text="keine Daten" />
+  if (series.length === 0) return <Empty text={t('noData')} />
   return (
     <div className="space-y-4">
       {groups.map((g, i) => <Chart key={i} results={g} warn={widget.warn} crit={widget.crit} height={140} />)}
@@ -238,7 +238,7 @@ function GaugeWidget({ widget }: { widget: DashboardWidget }) {
   if (isLoading) return <Spinner />
   const s = (data ?? []).filter((r) => !r.series.metric.startsWith('np_') && r.points.length > 0)[0]
   const last = s?.points[s.points.length - 1]
-  if (!s || !last) return <Empty text="keine Daten" />
+  if (!s || !last) return <Empty text={t('noData')} />
   const value = last.v
   const warn = widget.warn ?? nagiosRangeStart(s.series.warn)
   const crit = widget.crit ?? nagiosRangeStart(s.series.crit)
@@ -302,7 +302,7 @@ function DonutWidget({ widget }: { widget: DashboardWidget }) {
   })
   if (isLoading) return <Spinner />
   const s = data?.summary
-  if (!s) return <Empty text="keine Daten" />
+  if (!s) return <Empty text={t('noData')} />
   const kind = widget.scope === 'hosts' ? 'host' : 'service'
   const segs = widget.scope === 'hosts'
     ? [
@@ -317,7 +317,7 @@ function DonutWidget({ widget }: { widget: DashboardWidget }) {
       { label: 'Unknown', state: 'unknown', value: s.servicesUnknown, color: '#94a3b8' },
     ]
   const total = segs.reduce((n, x) => n + x.value, 0)
-  if (total === 0) return <Empty text="keine Daten" />
+  if (total === 0) return <Empty text={t('noData')} />
   const R = 40, C = 2 * Math.PI * R
   let offset = 0
   return (
@@ -439,13 +439,18 @@ function BarWidget({ widget }: { widget: DashboardWidget }) {
     }))
     .sort((a, b) => b.value - a.value)
     .slice(0, limit)
-  if (rows.length === 0) return <Empty text="keine Daten" />
-  const scaleMax = Math.max(...rows.map((r) => Math.max(r.value, r.crit ?? 0, r.warn ?? 0))) || 1
+  if (rows.length === 0) return <Empty text={t('noData')} />
+  // Bars need a real scale to mean anything: an explicit widget max, or a
+  // warn/crit threshold on some row. Without one (e.g. a lone unbounded counter
+  // like sysUpTime) a bar just fills to 100% of nothing — so show the values
+  // only (NP-09).
+  const bounded = widget.max != null || rows.some((r) => r.warn !== null || r.crit !== null)
+  const scaleMax = widget.max ?? (Math.max(...rows.map((r) => Math.max(r.value, r.crit ?? 0, r.warn ?? 0))) || 1)
   return (
     <div className="space-y-2 py-1">
       {rows.map((r) => {
         const tone = thresholdTone(r.value, r.warn, r.crit)
-        const pct = Math.max(1.5, (r.value / scaleMax) * 100)
+        const pct = Math.max(1.5, Math.min(100, (r.value / scaleMax) * 100))
         return (
           <div key={r.metric} className="text-xs">
             <div className="flex items-baseline justify-between mb-0.5">
@@ -454,15 +459,17 @@ function BarWidget({ widget }: { widget: DashboardWidget }) {
                 {fmtMetric(r.value)}{r.unit}
               </span>
             </div>
-            <div className="relative h-2.5 bg-slate-800/80 rounded overflow-hidden">
-              <div className="absolute inset-y-0 left-0 rounded" style={{ width: `${pct}%`, background: tone }} />
-              {r.warn !== null && r.warn <= scaleMax && (
-                <div className="absolute inset-y-0 w-px bg-amber-400/70" style={{ left: `${(r.warn / scaleMax) * 100}%` }} />
-              )}
-              {r.crit !== null && r.crit <= scaleMax && (
-                <div className="absolute inset-y-0 w-px bg-red-400/80" style={{ left: `${(r.crit / scaleMax) * 100}%` }} />
-              )}
-            </div>
+            {bounded && (
+              <div className="relative h-2.5 bg-slate-800/80 rounded overflow-hidden">
+                <div className="absolute inset-y-0 left-0 rounded" style={{ width: `${pct}%`, background: tone }} />
+                {r.warn !== null && r.warn <= scaleMax && (
+                  <div className="absolute inset-y-0 w-px bg-amber-400/70" style={{ left: `${(r.warn / scaleMax) * 100}%` }} />
+                )}
+                {r.crit !== null && r.crit <= scaleMax && (
+                  <div className="absolute inset-y-0 w-px bg-red-400/80" style={{ left: `${(r.crit / scaleMax) * 100}%` }} />
+                )}
+              </div>
+            )}
           </div>
         )
       })}
@@ -492,7 +499,7 @@ function StatWidget({ widget }: { widget: DashboardWidget }) {
   if (isLoading) return <Spinner />
   const s = (data ?? []).filter((r) => !r.series.metric.startsWith('np_') && r.points.length > 0)[0]
   const last = s?.points[s.points.length - 1]
-  if (!s || !last) return <Empty text="keine Daten" />
+  if (!s || !last) return <Empty text={t('noData')} />
   const value = last.v
   const warn = widget.warn ?? nagiosRangeStart(s.series.warn)
   const crit = widget.crit ?? nagiosRangeStart(s.series.crit)

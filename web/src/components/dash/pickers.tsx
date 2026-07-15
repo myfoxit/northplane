@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
+import { t } from '../../i18n'
 
 interface SeriesMeta { id: number; objectId: string; metric: string; unit?: string }
 
@@ -34,7 +35,7 @@ export function ObjectPicker({ value, onChange }: {
   const hasValue = !!value && items.some((o) => o.id === value)
   return (
     <div className="space-y-1.5">
-      <Input placeholder="Objekt suchen…" value={q} onChange={(e) => setQ(e.target.value)} />
+      <Input placeholder={t('searchObject')} value={q} onChange={(e) => setQ(e.target.value)} />
       <Select
         value={value || NONE}
         onValueChange={(v) => {
@@ -45,7 +46,7 @@ export function ObjectPicker({ value, onChange }: {
       >
         <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
         <SelectContent>
-          <SelectItem value={NONE}>— Objekt wählen —</SelectItem>
+          <SelectItem value={NONE}>{t('selectObject')}</SelectItem>
           {!hasValue && value && <SelectItem value={value}>{value}</SelectItem>}
           {items.map((o) => (
             <SelectItem key={o.id} value={o.id}>
@@ -77,7 +78,7 @@ export function MetricPicker({ objectId, value, onChange }: {
     >
       <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
       <SelectContent>
-        <SelectItem value={NONE}>— alle Metriken —</SelectItem>
+        <SelectItem value={NONE}>{t('allMetrics')}</SelectItem>
         {value && !series.some((s) => s.metric === value) && <SelectItem value={value}>{value}</SelectItem>}
         {series.map((s) => (
           <SelectItem key={s.id} value={s.metric}>{s.metric}{s.unit ? ` (${s.unit})` : ''}</SelectItem>

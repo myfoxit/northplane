@@ -1,6 +1,6 @@
 // Silences tab (SPEC §9.2): TTL-mandatory mute rules. List + create
 // dialog with quick-select expiry; delete = expire early.
-import { useState } from 'react'
+import { useEffect, useState, type RefObject } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { get, post, del, fmtTime, type ListResponse } from '../../api'
 import type { Silence } from '../../types'
@@ -26,25 +26,23 @@ const quick: { label: string; ms: number }[] = [
   { label: '24h', ms: 24 * 3600_000 },
 ]
 
-export function SilencesTab() {
+export function SilencesTab({ createRef }: { createRef?: RefObject<() => void> }) {
   const { data } = useQuery({ queryKey: KEY, queryFn: fetchSilences })
   const [creating, setCreating] = useState(false)
   const remove = useSave((id: string) => del(`/silences/${encodeURIComponent(id)}`), { invalidate: [KEY] })
+  useEffect(() => { if (createRef) createRef.current = () => setCreating(true) })
 
   return (
     <div className="space-y-3">
-      <div className="flex justify-end">
-        <Button variant="default" onClick={() => setCreating(true)}>{t('create')}</Button>
-      </div>
-      {(data?.length ?? 0) === 0 ? <Empty text="Keine aktiven Silences." /> : (
+      {(data?.length ?? 0) === 0 ? <Empty text={t('noActiveSilences')} /> : (
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Selector</TableHead>
               <TableHead>Regex</TableHead>
               <TableHead>{t('comment')}</TableHead>
-              <TableHead>Läuft ab</TableHead>
-              <TableHead>Von</TableHead>
+              <TableHead>{t('expires')}</TableHead>
+              <TableHead>{t('from')}</TableHead>
               <TableHead>{t('actions')}</TableHead>
             </TableRow>
           </TableHeader>
@@ -94,16 +92,16 @@ function SilenceDialog({ onClose }: { onClose: () => void }) {
           <DialogTitle>{`${t('silences')} ${t('create').toLowerCase()}`}</DialogTitle>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-3">
-          <Field label="Selector" hint="Label-Selector — Selector oder Regex erforderlich">
+          <Field label={t('selector')} hint={t('silenceSelectorHint')}>
             <Input value={selector} onChange={(e) => setSelector(e.target.value)} placeholder="env=prod" />
           </Field>
-          <Field label="Text-Regex" hint="passt auf Alarm-Titel">
+          <Field label={t('textRegex')} hint={t('textRegexHint')}>
             <Input value={textRegex} onChange={(e) => setTextRegex(e.target.value)} placeholder="disk.*full" />
           </Field>
           <Field label={t('comment')} required>
-            <Input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Wartungsfenster DB" />
+            <Input value={comment} onChange={(e) => setComment(e.target.value)} placeholder={t('maintenanceWindowPlaceholder')} />
           </Field>
-          <Field label="Läuft ab">
+          <Field label={t('expires')}>
             <div className="flex gap-1.5 mb-1.5">
               {quick.map((q) => (
                 <Button key={q.label} size="sm" type="button" variant="ghost"

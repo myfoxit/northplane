@@ -71,8 +71,7 @@ export function AISidebar({ onClose }: { onClose: () => void }) {
       <div ref={scrollRef} className="flex-1 overflow-auto p-3 space-y-3">
         {turns.length === 0 && (
           <p className="text-xs text-muted-foreground p-2">
-            Triage, Korrelation, Konfiguration per Sprache. Mutationen laufen
-            über Action-Cards mit Bestätigung — nichts passiert unsichtbar.
+            {t('assistantIntro')}
           </p>
         )}
         {turns.map((turn, i) => (
@@ -101,7 +100,7 @@ export function AISidebar({ onClose }: { onClose: () => void }) {
                 )}
                 {!action.proposed && !action.error && (
                   <div className="text-emerald-500/80 mt-1 flex items-center gap-1">
-                    <Check size={13} /> ausgeführt (auditiert)
+                    <Check size={13} /> {t('executedAudited')}
                   </div>
                 )}
               </div>

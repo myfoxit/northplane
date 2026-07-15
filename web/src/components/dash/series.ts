@@ -152,3 +152,38 @@ export function fmtMetric(v: number): string {
   if (abs === 0) return '0'
   return String(Number(v.toPrecision(2)))
 }
+
+// isCounter detects a monotonically non-decreasing series (a raw counter such
+// as SNMP sysUpTime or interface octets). It requires enough points to be sure
+// and at least one real increase, and rejects any dip (a gauge that fluctuates,
+// or a counter reset — which we deliberately leave to chart raw).
+export function isCounter(points: { t: number; v: number }[]): boolean {
+  if (points.length < 4) return false
+  let increased = false
+  for (let i = 1; i < points.length; i++) {
+    if (points[i]!.v < points[i - 1]!.v) return false
+    if (points[i]!.v > points[i - 1]!.v) increased = true
+  }
+  return increased
+}
+
+// rateifyCounters replaces each counter series' absolute values with a
+// per-second rate of change (Δvalue / Δt), so an ever-rising counter line
+// becomes a meaningful throughput/rate line. The unit gains a "/s" suffix and
+// warn/crit are cleared (thresholds are defined against the raw counter, not
+// its rate). Non-counter series pass through unchanged. (NP-20)
+export function rateifyCounters(results: SeriesResult[]): SeriesResult[] {
+  return results.map((r) => {
+    if (!isCounter(r.points)) return r
+    const points: { t: number; v: number }[] = []
+    for (let i = 1; i < r.points.length; i++) {
+      const dt = (r.points[i]!.t - r.points[i - 1]!.t) / 1000
+      const dv = r.points[i]!.v - r.points[i - 1]!.v
+      points.push({ t: r.points[i]!.t, v: dt > 0 ? Math.max(0, dv / dt) : 0 })
+    }
+    return {
+      series: { ...r.series, unit: r.series.unit ? `${r.series.unit}/s` : '/s', warn: undefined, crit: undefined },
+      points,
+    }
+  })
+}

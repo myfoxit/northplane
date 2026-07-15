@@ -1,14 +1,16 @@
 // Overview / Wallboard (SPEC §12.3): KPI tiles, incidents, on-call
 // widget; ?wallboard=1 renders the fullscreen read-only mode.
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useSearch } from '@tanstack/react-router'
 import { Radar, Maximize2, Phone, Check } from 'lucide-react'
 import { get, fmtAgo, fmtTime } from '../api'
 import type { Overview as OverviewData, OnCallNow, ProblemRow, NPEvent } from '../types'
-import { stateLabel, stateIcon, stateColor, sevColor } from '../types'
+import { stateLabel, stateIcon, stateColor, sevColor, eventBadge } from '../types'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Empty, ErrorState } from '@/components/kit'
+import { humanizeOutput } from '@/lib/humanize'
 import { TileLink } from '../components/dash/widgets'
 import { t } from '../i18n'
 import { useRefreshInterval } from '../settings'
@@ -17,6 +19,14 @@ export function OverviewPage() {
   const search = useSearch({ strict: false }) as Record<string, unknown>
   const wallboard = !!search.wallboard
   const refresh = useRefreshInterval()
+  // Wallboard clock: tick every second so an unattended NOC display never
+  // shows a frozen time (which reads as "the whole board is stale").
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    if (!wallboard) return
+    const id = setInterval(() => setNow(new Date()), 1000)
+    return () => clearInterval(id)
+  }, [wallboard])
   const { data, isError, error, refetch } = useQuery({
     queryKey: ['overview'],
     queryFn: () => get<OverviewData>('/overview'),
@@ -62,7 +72,7 @@ export function OverviewPage() {
       <div className="p-6 space-y-5">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold flex items-center gap-2"><Radar className="text-primary" size={22} /> Northplane {t('wallboard')}</h1>
-          <span className="text-muted-foreground text-sm tabular-nums">{new Date().toLocaleTimeString()}</span>
+          <span className="text-muted-foreground text-sm tabular-nums">{now.toLocaleTimeString()}</span>
         </div>
         {tiles}
         <ProblemList problems={problems?.items ?? []} big />
@@ -124,7 +134,7 @@ export function OverviewPage() {
       {/* Recent events feed — fills the lower viewport with useful context even
           when everything is green (OVW-1). */}
       <Card>
-        <CardHeader><CardTitle>Letzte Ereignisse</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t('recentEvents')}</CardTitle></CardHeader>
         <CardContent>
           {(events?.items?.length ?? 0) === 0 ? (
             <Empty text={t('empty')} />
@@ -134,10 +144,10 @@ export function OverviewPage() {
                 <div key={e.id} className="flex items-center gap-3 py-1.5 text-sm">
                   <span className="text-muted-foreground/70 text-xs tabular-nums w-32 shrink-0">{fmtTime(e.ts)}</span>
                   <Badge variant="outline" className="bg-muted text-muted-foreground border-input shrink-0">{e.type}</Badge>
-                  {e.severity && <Badge variant="outline" className={`${sevColor(e.severity)} shrink-0`}>{e.severity}</Badge>}
+                  {(() => { const b = eventBadge(e); return b && <Badge variant="outline" className={`${b.className} shrink-0`}>{b.label}</Badge> })()}
                   <span className="text-muted-foreground truncate">
-                    {String((e.payload as Record<string, unknown>).output ??
-                      (e.payload as Record<string, unknown>).summary ?? '')}
+                    {humanizeOutput(String((e.payload as Record<string, unknown>).output ??
+                      (e.payload as Record<string, unknown>).summary ?? ''))}
                   </span>
                 </div>
               ))}
@@ -166,7 +176,7 @@ function ProblemList({ problems, big }: { problems: ProblemRow[]; big?: boolean 
           <span className="text-foreground font-medium truncate">
             {p.object.kind === 'service' && p.object.hostName ? `${p.object.hostName} / ` : ''}{p.object.name}
           </span>
-          <span className="text-muted-foreground truncate flex-1">{p.state.output}</span>
+          <span className="text-muted-foreground truncate flex-1">{humanizeOutput(p.state.output)}</span>
           <span className="text-muted-foreground/70 text-xs tabular-nums shrink-0">{fmtAgo(p.state.lastHardChange)}</span>
         </Link>
       ))}

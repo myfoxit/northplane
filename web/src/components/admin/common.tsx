@@ -15,7 +15,7 @@ export function StatusBadge({ kind }: { kind: 'disabled' | 'enabled' | 'system' 
     return <Badge variant="outline" className="bg-muted text-muted-foreground border-input">{t('disabled')}</Badge>
   }
   if (kind === 'system') {
-    return <Badge variant="outline" className="bg-purple-500/10 text-purple-400 border-purple-800">System</Badge>
+    return <Badge variant="outline" className="bg-purple-500/10 text-purple-400 border-purple-800">{t('systemBadge')}</Badge>
   }
   return <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-800">{t('enabled')}</Badge>
 }
@@ -39,11 +39,6 @@ export function TableActions({ onCreate, label, children }: {
     </div>
   )
 }
-
-// The hint rendered on every secret-bearing field: a literal value is
-// accepted, but the recommended form is a $SECRET:name$ reference that is
-// resolved at send time (SPEC §8.2/§13.2).
-export const secretHint = 'Wert oder $SECRET:name$-Referenz'
 
 // Edit/Delete pair for a table row (Delete is the confirm-armed button).
 export function RowActions({ children }: { children: ReactNode }) {

@@ -37,6 +37,10 @@ type SectionProps = {
   patch: (p: Partial<ObjectSpec>) => void
   kind: Kind
   compact?: boolean
+  // Name of the object being edited, so it can be excluded from its own parent
+  // list (a host must not be its own parent — NP-07). Absent in the template
+  // editor, where there is no single self.
+  selfName?: string
 }
 
 // RefPicker: compact chip combobox in a form, full two-pane transfer list on a
@@ -73,7 +77,7 @@ function TriField({ label, value, onChange }: {
       <Select value={triOf(value)} onValueChange={(v) => onChange(triVal(v as Tri))}>
         <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
         <SelectContent>
-          <SelectItem value="inherit">Vererbt</SelectItem>
+          <SelectItem value="inherit">{t('inherited')}</SelectItem>
           <SelectItem value="on">{t('enabled')}</SelectItem>
           <SelectItem value="off">{t('disabled')}</SelectItem>
         </SelectContent>
@@ -110,7 +114,7 @@ function CheckCommandField({ spec, patch }: { spec: ObjectSpec; patch: (p: Parti
       <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
       <SelectContent>
         <SelectItem value="builtin">builtin</SelectItem>
-        <SelectItem value="command">Kommando (definiert)</SelectItem>
+        <SelectItem value="command">{t('commandDefined')}</SelectItem>
         <SelectItem value="exec">exec</SelectItem>
         <SelectItem value="agent:exec">agent:exec</SelectItem>
         <SelectItem value="passive">passive</SelectItem>
@@ -121,7 +125,7 @@ function CheckCommandField({ spec, patch }: { spec: ObjectSpec; patch: (p: Parti
   // with a one-line explanation instead of a redundant disabled field (FORM-6).
   if (kind === 'passive') {
     return (
-      <Field label={t('checkCommand')} hint="Passiv: Ergebnisse werden extern eingespeist (Agent / API) — kein aktiver Check.">
+      <Field label={t('checkCommand')} hint={t('passiveCheckHint')}>
         {kindSelect}
       </Field>
     )
@@ -129,7 +133,7 @@ function CheckCommandField({ spec, patch }: { spec: ObjectSpec; patch: (p: Parti
   return (
     <div className="grid grid-cols-[10rem_1fr] gap-2">
       <Field label={t('checkCommand')}>{kindSelect}</Field>
-      <Field label={kind === 'builtin' ? 'Builtin-Check' : kind === 'command' ? 'Check-Kommando' : 'Kommando / Plugin'}>
+      <Field label={kind === 'builtin' ? t('builtinCheck') : kind === 'command' ? t('checkCommand') : t('commandPlugin')}>
         <Input
           value={rest}
           list={listId}
@@ -207,13 +211,13 @@ export function CheckSection({ spec, patch, compact, hideCommand }: SectionProps
     <div className="space-y-4">
       {!hideCommand && <CheckCommandField spec={spec} patch={patch} />}
 
-      <Field label={t('args')} hint="Ein Argument pro Eintrag ($ARG1$, $ARG2$ …)">
+      <Field label={t('args')} hint={t('argsHint')}>
         <ListEditor value={spec.args ?? []} onChange={(v) => patch({ args: v })} placeholder="--port=5432" />
       </Field>
 
-      <Field label={t('templates')} hint="Vererbung in deklarierter Reihenfolge (später gewinnt)">
+      <Field label={t('templates')} hint={t('templatesHint')}>
         <RefPicker compact={compact} value={spec.templates ?? []} onChange={(v) => patch({ templates: v })}
-          options={templates.data ?? []} placeholder="Template hinzufügen…" />
+          options={templates.data ?? []} placeholder={t('addTemplate')} />
       </Field>
     </div>
   )
@@ -226,7 +230,7 @@ export function IntervalSection({ spec, patch }: SectionProps) {
     <div className="border border-border rounded-lg p-3 space-y-3">
       <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('interval')} &amp; Scheduling</div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-        <Field label={t('interval')} hint="z.B. 60s, 5m">
+        <Field label={t('interval')} hint={t('intervalHint')}>
           <DurationInput value={spec.interval ?? ''} onChange={(v) => patch({ interval: v })} placeholder="60s" />
         </Field>
         <Field label={t('retryInterval')}>
@@ -264,20 +268,20 @@ export function NotifySection({ spec, patch, kind, compact }: SectionProps) {
     <div className="border border-border rounded-lg p-3 space-y-3">
       <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('notifications')}</div>
       <div className={compact ? 'grid grid-cols-1 gap-3' : 'grid grid-cols-1 sm:grid-cols-2 gap-2'}>
-        <Field label="Kontaktgruppen" hint="Direkt benachrichtigt bei harten Statuswechseln">
+        <Field label={t('contactGroups')} hint={t('contactGroupsHint')}>
           <RefPicker compact={compact} value={spec.contactGroups ?? []} onChange={(v) => patch({ contactGroups: v })}
-            options={contactGroups.data ?? []} placeholder="Gruppe hinzufügen…" />
+            options={contactGroups.data ?? []} placeholder={t('addGroup')} />
         </Field>
-        <Field label="Kontakte" hint="Zusätzliche Einzelkontakte">
+        <Field label={t('contacts')} hint={t('contactsHint')}>
           <RefPicker compact={compact} value={spec.contacts ?? []} onChange={(v) => patch({ contacts: v })}
-            options={contacts.data ?? []} placeholder="Kontakt hinzufügen…" />
+            options={contacts.data ?? []} placeholder={t('addContact')} />
         </Field>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <Field label="Benachrichtigen bei" hint="Leer = alle Problemzustände + Recovery">
+        <Field label={t('notifyOn')} hint={t('notifyOnHint')}>
           <NotifyOnChips kind={kind} value={spec.notifyOn} onChange={(v) => patch({ notifyOn: v })} />
         </Field>
-        <Field label="Benachrichtigungszeitraum" hint="Zeitfenster (Time-Period), leer = immer">
+        <Field label={t('notificationPeriod')} hint={t('notificationPeriodHint')}>
           <Input value={spec.notificationPeriod ?? ''} list="sugg-notify-periods" placeholder="24x7"
             onChange={(e) => patch({ notificationPeriod: e.target.value })} />
           <datalist id="sugg-notify-periods">
@@ -291,7 +295,7 @@ export function NotifySection({ spec, patch, kind, compact }: SectionProps) {
 
 // AdvancedSection — parents, behaviour toggles, staleness, zone, vars, runbook
 // (Erweitert). Rarely touched: template inheritance + defaults cover most of it.
-export function AdvancedSection({ spec, patch, kind, compact }: SectionProps) {
+export function AdvancedSection({ spec, patch, kind, compact, selfName }: SectionProps) {
   const hosts = useQuery({
     queryKey: ['objects', 'host-names', 'namesOnly'],
     queryFn: () => get<{ items: { name: string }[] | null }>('/hosts?limit=2000&withState=false')
@@ -300,12 +304,15 @@ export function AdvancedSection({ spec, patch, kind, compact }: SectionProps) {
     enabled: kind !== 'service', // parents apply to hosts (and the catch-all template view)
   })
   const passive = splitRef(spec.checkCommand).kind === 'passive'
+  // A host cannot be its own parent (would create a self-referential
+  // reachability cycle), so drop it from the options (NP-07).
+  const parentOptions = (hosts.data ?? []).filter((h) => h !== selfName)
   return (
     <div className="space-y-4">
       {kind !== 'service' && (
-        <Field label={t('parents')} hint="Hosts für die Erreichbarkeitslogik">
+        <Field label={t('parents')} hint={t('parentsHint')}>
           <RefPicker compact={compact} value={spec.parents ?? []} onChange={(v) => patch({ parents: v })}
-            options={hosts.data ?? []} placeholder="Parent-Host hinzufügen…" />
+            options={parentOptions} placeholder={t('addParentHost')} />
         </Field>
       )}
 
@@ -314,16 +321,16 @@ export function AdvancedSection({ spec, patch, kind, compact }: SectionProps) {
         <TriField label="Checks" value={spec.enableChecks} onChange={(v) => patch({ enableChecks: v })} />
         <TriField label={t('notifications')} value={spec.enableNotifications} onChange={(v) => patch({ enableNotifications: v })} />
         <TriField label={t('flapDetection')} value={spec.enableFlapDetection} onChange={(v) => patch({ enableFlapDetection: v })} />
-        <Field label="Threshold-Modus">
+        <Field label={t('thresholdMode')}>
           <Select
             value={spec.thresholdMode || NONE}
             onValueChange={(v) => patch({ thresholdMode: (v === NONE ? undefined : v) as ObjectSpec['thresholdMode'] })}
           >
             <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value={NONE}>Vererbt</SelectItem>
+              <SelectItem value={NONE}>{t('inherited')}</SelectItem>
               <SelectItem value="static">static</SelectItem>
-              <SelectItem value="adaptive">adaptive (KI)</SelectItem>
+              <SelectItem value="adaptive">{t('adaptiveAi')}</SelectItem>
             </SelectContent>
           </Select>
         </Field>
@@ -331,12 +338,12 @@ export function AdvancedSection({ spec, patch, kind, compact }: SectionProps) {
 
       {(kind === 'service' || kind === '') && (
         <div className="grid grid-cols-2 gap-2">
-          <Field label="Staleness-Frist (passiv)" hint="Frische passiver Ergebnisse">
+          <Field label={t('stalenessDeadline')} hint={t('stalenessDeadlineHint')}>
             <DurationInput value={spec.stalenessAfter ?? ''} onChange={(v) => patch({ stalenessAfter: v })}
               placeholder={passive ? '10m' : '—'} />
           </Field>
-          <Field label="Staleness-Text">
-            <Input value={spec.stalenessText ?? ''} placeholder="Kein Ergebnis erhalten"
+          <Field label={t('stalenessText')}>
+            <Input value={spec.stalenessText ?? ''} placeholder={t('noResultReceived')}
               onChange={(e) => patch({ stalenessText: e.target.value })} />
           </Field>
         </div>
@@ -357,7 +364,7 @@ export function AdvancedSection({ spec, patch, kind, compact }: SectionProps) {
         <Textarea
           value={spec.runbook ?? ''}
           onChange={(e) => patch({ runbook: e.target.value })}
-          placeholder="## Runbook&#10;1. Prüfe …"
+          placeholder={t('runbookPlaceholder')}
           className="font-mono min-h-20"
         />
       </Field>

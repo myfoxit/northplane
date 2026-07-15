@@ -16,7 +16,7 @@ import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Empty, Spinner, Field, FormError, SubmitRow, useSave, DeleteButton, KVEditor, DurationInput } from '@/components/kit'
 import { t } from '../../i18n'
-import { StatusBadge, TableActions, RowActions, secretHint } from './common'
+import { StatusBadge, TableActions, RowActions } from './common'
 import { SeverityField } from '../alerting/common'
 
 // ——————————————————— outgoing webhooks ———————————————————
@@ -34,7 +34,7 @@ export function WebhooksTab() {
           <TableRow>
             <TableHead>{t('name')}</TableHead>
             <TableHead>URL</TableHead>
-            <TableHead>Event-Typen</TableHead>
+            <TableHead>{t('eventTypes')}</TableHead>
             <TableHead>Selector</TableHead>
             <TableHead>{t('status')}</TableHead>
             <TableHead></TableHead>
@@ -45,7 +45,7 @@ export function WebhooksTab() {
             <TableRow key={w.name}>
               <TableCell className="px-3 py-2 text-foreground">{w.name}</TableCell>
               <TableCell className="px-3 py-2 text-xs text-muted-foreground font-mono truncate max-w-64">{w.url}</TableCell>
-              <TableCell className="px-3 py-2 text-xs text-muted-foreground">{w.types?.length ? w.types.join(', ') : 'alle'}</TableCell>
+              <TableCell className="px-3 py-2 text-xs text-muted-foreground">{w.types?.length ? w.types.join(', ') : t('all')}</TableCell>
               <TableCell className="px-3 py-2 text-xs text-muted-foreground font-mono">{w.selector || '—'}</TableCell>
               <TableCell className="px-3 py-2">{w.disabled ? <StatusBadge kind="disabled" /> : <StatusBadge kind="enabled" />}</TableCell>
               <TableCell className="px-3 py-2">
@@ -125,17 +125,17 @@ function WebhookForm({ doc, etag, isNew, onClose }: {
                 placeholder="https://example.net/hook" required />
             </Field>
           </div>
-          <Field label="Event-Typen (kommagetrennt, leer = alle)"
+          <Field label={t('eventTypesField')}
             hint="state_change, alert_opened, alert_resolved, notification, …">
             <Input value={w.types?.join(', ') ?? ''}
               onChange={(e) => set({ types: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} />
           </Field>
           <div className="grid grid-cols-2 gap-2">
-            <Field label="Selector (optional)">
+            <Field label={t('selectorOptional')}>
               <Input value={w.selector ?? ''} placeholder="env=prod"
                 onChange={(e) => set({ selector: e.target.value || undefined })} />
             </Field>
-            <Field label="HMAC-Secret" hint={secretHint}>
+            <Field label={t('hmacSecret')} hint={t('secretHint')}>
               <Input value={w.secret ?? ''} onChange={(e) => set({ secret: e.target.value || undefined })} />
             </Field>
           </div>
@@ -172,10 +172,10 @@ export function HeartbeatsTab() {
         <TableHeader>
           <TableRow>
             <TableHead>{t('name')}</TableHead>
-            <TableHead>Erwartet alle</TableHead>
-            <TableHead>Karenz</TableHead>
+            <TableHead>{t('expectEvery')}</TableHead>
+            <TableHead>{t('grace')}</TableHead>
             <TableHead>{t('severity')}</TableHead>
-            <TableHead>Letzter Beat</TableHead>
+            <TableHead>{t('lastBeat')}</TableHead>
             <TableHead>{t('status')}</TableHead>
             <TableHead></TableHead>
           </TableRow>
@@ -188,11 +188,11 @@ export function HeartbeatsTab() {
               <TableCell className="px-3 py-2 text-xs text-muted-foreground tabular-nums">{h.grace || '—'}</TableCell>
               <TableCell className="px-3 py-2 text-xs text-muted-foreground">{h.severity || 'critical'}</TableCell>
               <TableCell className="px-3 py-2 text-xs text-muted-foreground tabular-nums">
-                {h.lastBeat ? fmtAgo(h.lastBeat) : 'nie'}
+                {h.lastBeat ? fmtAgo(h.lastBeat) : t('never')}
               </TableCell>
               <TableCell className="px-3 py-2">
                 {h.missing
-                  ? <Badge variant="outline" className="bg-red-500/10 text-red-400 border-red-800">fehlt</Badge>
+                  ? <Badge variant="outline" className="bg-red-500/10 text-red-400 border-red-800">{t('missing')}</Badge>
                   : <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-800">ok</Badge>}
               </TableCell>
               <TableCell className="px-3 py-2">
@@ -239,21 +239,21 @@ function HeartbeatForm({ doc, isNew, onClose }: {
               required disabled={!isNew} placeholder="backup-job" />
           </Field>
           <div className="grid grid-cols-2 gap-2">
-            <Field label="Erwartet alle" required>
+            <Field label={t('expectEvery')} required>
               <DurationInput value={h.expectEvery} onChange={(v) => set({ expectEvery: v })} placeholder="1h" />
             </Field>
-            <Field label="Karenz (optional)">
+            <Field label={t('graceOptional')}>
               <DurationInput value={h.grace ?? ''} onChange={(v) => set({ grace: v || undefined })} placeholder="10m" />
             </Field>
           </div>
           <SeverityField value={(h.severity ?? 'critical') as Severity}
             onChange={(v: Severity) => set({ severity: v })} label={t('severity')} />
-          <Field label="Labels">
+          <Field label={t('labels')}>
             <KVEditor value={h.labels ?? {}} onChange={(v) => set({ labels: v })}
               keyPlaceholder="team" valuePlaceholder="netops" />
           </Field>
           <div className="bg-card/60 border border-border rounded-lg p-3">
-            <div className="text-xs text-muted-foreground mb-1">Beat-URL (cron / Skript, Token mit objects:write):</div>
+            <div className="text-xs text-muted-foreground mb-1">{t('beatUrlHint')}</div>
             <code className="text-xs text-foreground/90 break-all select-all">
               curl -H "Authorization: Bearer np_…" {beatURL}
             </code>

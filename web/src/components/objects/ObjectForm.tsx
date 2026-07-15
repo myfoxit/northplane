@@ -91,10 +91,10 @@ export function ObjectForm({ kind, edit, onDone, onCancel }: {
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)} className="flex flex-col min-h-0 flex-1 gap-0">
         <div className="px-6 pt-3 shrink-0">
           <TabsList className="w-full justify-start">
-            <TabsTrigger value="basis">Basis</TabsTrigger>
-            <TabsTrigger value="check">Prüfung</TabsTrigger>
-            <TabsTrigger value="notify">Benachrichtigungen</TabsTrigger>
-            <TabsTrigger value="advanced">Erweitert</TabsTrigger>
+            <TabsTrigger value="basis">{t('tabBasis')}</TabsTrigger>
+            <TabsTrigger value="check">{t('tabCheck')}</TabsTrigger>
+            <TabsTrigger value="notify">{t('notifications')}</TabsTrigger>
+            <TabsTrigger value="advanced">{t('tabAdvanced')}</TabsTrigger>
           </TabsList>
         </div>
 
@@ -107,17 +107,17 @@ export function ObjectForm({ kind, edit, onDone, onCancel }: {
                 <Input value={name} onChange={(e) => setName(e.target.value)}
                   disabled={isEdit} placeholder={kind === 'host' ? 'web01' : 'http'} autoFocus={!isEdit} />
               </Field>
-              <Field label={t('folder')} hint="z.B. /prod/web">
+              <Field label={t('folder')} hint={t('folderHint')}>
                 <Input value={folder} onChange={(e) => setFolder(e.target.value)} placeholder="/" />
               </Field>
             </div>
 
             {kind === 'service' && (
-              <Field label={t('host')} required hint={isEdit ? 'Host kann nicht geändert werden' : undefined}>
+              <Field label={t('host')} required hint={isEdit ? t('hostCannotChange') : undefined}>
                 <Select value={host || NONE} onValueChange={(v) => setHost(v === NONE ? '' : v)} disabled={isEdit} required>
                   <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={NONE}>— {t('host')} wählen —</SelectItem>
+                    <SelectItem value={NONE}>{t('selectHost')}</SelectItem>
                     {(hosts.data ?? []).map((h) => (
                       <SelectItem key={h.id} value={h.id}>{h.name}</SelectItem>
                     ))}
@@ -143,14 +143,14 @@ export function ObjectForm({ kind, edit, onDone, onCancel }: {
           </TabsContent>
 
           <TabsContent value="advanced" className="mt-0">
-            <AdvancedSection spec={spec} patch={patch} kind={kind} compact />
+            <AdvancedSection spec={spec} patch={patch} kind={kind} compact selfName={name} />
           </TabsContent>
         </div>
       </Tabs>
 
       <div className="border-t border-border px-6 py-3 shrink-0 space-y-2">
         {conflict
-          ? <FormError error="Konflikt — bitte neu laden." />
+          ? <FormError error={t('conflictReload')} />
           : <FormError error={err} />}
         <SubmitRow onCancel={onCancel} saving={save.isPending}
           disabled={!name || (kind === 'service' && !host)}
@@ -209,7 +209,7 @@ function parseLine(line: string): ParsedRow | null {
     if (k?.trim()) labels[k.trim()] = rest.join('=').trim()
   }
   const row: ParsedRow = { name, address, templates, labels }
-  if (!name) row.error = 'kein Name'
+  if (!name) row.error = t('noName')
   return row
 }
 
@@ -274,30 +274,30 @@ export function BatchAddDialog({ open, onClose }: { open: boolean; onClose: () =
           <Field label={t('checkCommand')}>
             <Input value={checkCommand} onChange={(e) => setCheckCommand(e.target.value)} placeholder="builtin:icmp" />
           </Field>
-          <Field label="Modus">
+          <Field label={t('mode')}>
             <Select value={mode} onValueChange={(v) => setMode(v as typeof mode)}>
               <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="partial">partiell (Teilerfolg)</SelectItem>
-                <SelectItem value="all-or-nothing">alles-oder-nichts</SelectItem>
+                <SelectItem value="partial">{t('modePartial')}</SelectItem>
+                <SelectItem value="all-or-nothing">{t('modeAllOrNothing')}</SelectItem>
               </SelectContent>
             </Select>
           </Field>
         </div>
 
         {kind === 'service' && (
-          <Field label={t('host')} required hint="Gilt für alle Zeilen">
+          <Field label={t('host')} required hint={t('appliesAllRows')}>
             <Select value={defHost || NONE} onValueChange={(v) => setDefHost(v === NONE ? '' : v)} required>
               <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value={NONE}>— {t('host')} wählen —</SelectItem>
+                <SelectItem value={NONE}>{t('selectHost')}</SelectItem>
                 {(hosts.data ?? []).map((h) => <SelectItem key={h.id} value={h.id}>{h.name}</SelectItem>)}
               </SelectContent>
             </Select>
           </Field>
         )}
 
-        <Field label="Zeilen" hint="name adresse [template,template] [key=value,…] — eine pro Zeile">
+        <Field label={t('lines')} hint={t('linesHint')}>
           <Textarea
             value={text}
             onChange={(e) => { setText(e.target.value); setResult(null) }}
@@ -310,7 +310,7 @@ export function BatchAddDialog({ open, onClose }: { open: boolean; onClose: () =
         {rows.length > 0 && !result && (
           <div className="border border-border rounded-lg overflow-hidden">
             <div className="text-xs text-muted-foreground px-3 py-1.5 border-b border-border">
-              {t('preview')} — {validCount} gültig{rows.length - validCount > 0 ? `, ${rows.length - validCount} fehlerhaft` : ''}
+              {t('preview')} — {validCount} {t('valid')}{rows.length - validCount > 0 ? `, ${rows.length - validCount} ${t('invalid')}` : ''}
             </div>
             <Table>
               <TableHeader>
@@ -342,8 +342,8 @@ export function BatchAddDialog({ open, onClose }: { open: boolean; onClose: () =
         {result && (
           <div className="border border-border rounded-lg overflow-hidden">
             <div className="text-xs px-3 py-1.5 border-b border-border">
-              <span className="text-emerald-400">{result.created} erstellt</span>
-              {result.failed > 0 && <span className="text-red-400 ml-3">{result.failed} fehlgeschlagen</span>}
+              <span className="text-emerald-400">{result.created} {t('created')}</span>
+              {result.failed > 0 && <span className="text-red-400 ml-3">{result.failed} {t('failed')}</span>}
             </div>
             <Table>
               <TableHeader>
@@ -359,7 +359,7 @@ export function BatchAddDialog({ open, onClose }: { open: boolean; onClose: () =
                     <TableCell className="px-3 py-1.5 text-xs">
                       {r.error
                         ? <span className="text-red-400 inline-flex items-center gap-1"><X size={13} /> {r.error}</span>
-                        : <span className="text-emerald-400 inline-flex items-center gap-1"><Check size={13} /> erstellt</span>}
+                        : <span className="text-emerald-400 inline-flex items-center gap-1"><Check size={13} /> {t('created')}</span>}
                     </TableCell>
                   </TableRow>
                 ))}

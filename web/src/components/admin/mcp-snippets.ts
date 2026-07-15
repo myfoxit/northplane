@@ -1,5 +1,6 @@
 // Per-client MCP setup snippets (pure data/functions, separated from the
 // MCP tab component for react-refresh and unit tests).
+import { t } from '../../i18n'
 
 export const TOKEN_PLACEHOLDER = 'np_<TOKEN>'
 
@@ -7,9 +8,9 @@ export const TOKEN_PLACEHOLDER = 'np_<TOKEN>'
 // agents; operate adds ack/recheck/downtime; configure adds the generic
 // config tools' write scopes.
 export const SCOPE_PRESETS = [
-  { key: 'read', label: 'Nur lesen', scopes: 'objects:read,alerts:read,incidents:read,events:read,oncall:read,metrics:read,reports:render' },
-  { key: 'operate', label: 'Lesen + Bedienen', scopes: 'objects:read,alerts:read,incidents:read,events:read,oncall:read,metrics:read,reports:render,alerts:ack,objects:write,maintenance:write' },
-  { key: 'configure', label: 'Lesen + Konfigurieren', scopes: 'objects:read,alerts:read,incidents:read,events:read,oncall:read,metrics:read,reports:render,config:write,oncall:write' },
+  { key: 'read', label: t('scopeRead'), scopes: 'objects:read,alerts:read,incidents:read,events:read,oncall:read,metrics:read,reports:render' },
+  { key: 'operate', label: t('scopeOperate'), scopes: 'objects:read,alerts:read,incidents:read,events:read,oncall:read,metrics:read,reports:render,alerts:ack,objects:write,maintenance:write' },
+  { key: 'configure', label: t('scopeConfigure'), scopes: 'objects:read,alerts:read,incidents:read,events:read,oncall:read,metrics:read,reports:render,config:write,oncall:write' },
 ] as const
 
 export type ClientKey = 'claude-code' | 'claude-desktop' | 'cursor' | 'vscode' | 'windsurf' | 'codex' | 'gemini'
@@ -31,7 +32,7 @@ export function snippetFor(client: ClientKey, mcpUrl: string, token: string): { 
   switch (client) {
     case 'claude-code':
       return {
-        label: 'Ein Befehl im Terminal:',
+        label: t('oneCommandTerminal'),
         code: `claude mcp add --transport http northplane ${mcpUrl} --header "${auth}"`,
       }
     case 'claude-desktop':
@@ -48,7 +49,7 @@ export function snippetFor(client: ClientKey, mcpUrl: string, token: string): { 
       }
     case 'cursor':
       return {
-        label: '~/.cursor/mcp.json (global) oder .cursor/mcp.json (Projekt):',
+        label: t('cursorMcpLabel'),
         code: JSON.stringify({
           mcpServers: {
             northplane: { url: mcpUrl, headers: { Authorization: `Bearer ${token}` } },
@@ -57,7 +58,7 @@ export function snippetFor(client: ClientKey, mcpUrl: string, token: string): { 
       }
     case 'vscode':
       return {
-        label: 'Ein Befehl im Terminal (oder .vscode/mcp.json):',
+        label: t('vscodeMcpLabel'),
         code: `code --add-mcp '${JSON.stringify({ name: 'northplane', type: 'http', url: mcpUrl, headers: { Authorization: `Bearer ${token}` } })}'`,
       }
     case 'windsurf':

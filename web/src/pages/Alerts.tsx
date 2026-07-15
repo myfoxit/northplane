@@ -52,7 +52,7 @@ export function AlertsPage() {
             onValueChange={(v) => patchSearch({ severity: v === '__all__' ? undefined : v })}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="__all__">alle Severities</SelectItem>
+              <SelectItem value="__all__">{t('allSeverities')}</SelectItem>
               <SelectItem value="critical">critical</SelectItem>
               <SelectItem value="warning">warning</SelectItem>
               <SelectItem value="info">info</SelectItem>
@@ -61,15 +61,15 @@ export function AlertsPage() {
           <Select value={status} onValueChange={(v) => patchSearch({ status: v })}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="open,acked">offen + quittiert</SelectItem>
-              <SelectItem value="open">nur offen</SelectItem>
-              <SelectItem value="resolved,expired">geschlossen</SelectItem>
+              <SelectItem value="open,acked">{t('openAcked')}</SelectItem>
+              <SelectItem value="open">{t('onlyOpen')}</SelectItem>
+              <SelectItem value="resolved,expired">{t('closed')}</SelectItem>
             </SelectContent>
           </Select>
         </div>
       </div>
       {isLoading && <Empty text={t('loading')} />}
-      {!isLoading && rows.length === 0 && <Empty text={t('empty')} />}
+      {!isLoading && rows.length === 0 && <Empty text={t('noAlertsFriendly')} />}
       <div className="space-y-1.5">
         {rows.map((a) => (
           <div key={a.id} className="flex items-center gap-3 bg-card/50 border border-border rounded-lg px-3 py-2 group">
@@ -77,7 +77,7 @@ export function AlertsPage() {
             <div className="min-w-0 flex-1">
               <div className="text-sm text-foreground font-medium truncate">{a.title}</div>
               <div className="text-xs text-muted-foreground">
-                {a.status}{a.ackedBy ? ` von ${a.ackedBy}` : ''} · seit {fmtAgo(a.openedAt)}
+                {a.status}{a.ackedBy ? ` ${t('by')} ${a.ackedBy}` : ''} · {t('since')} {fmtAgo(a.openedAt)}
                 {a.dedupKey ? ` · ${a.dedupKey}` : ''}
               </div>
             </div>
@@ -121,7 +121,7 @@ export function IncidentsPage() {
     <div className="space-y-4">
       <h1 className="text-lg font-bold">{t('incidents')}</h1>
       {isLoading && <Empty text={t('loading')} />}
-      {!isLoading && rows.length === 0 && <Empty text={t('empty')} />}
+      {!isLoading && rows.length === 0 && <Empty text={t('noIncidentsFriendly')} />}
       <div className="grid lg:grid-cols-2 gap-3">
         {rows.map((inc) => (
           <Card key={inc.id}>
@@ -136,7 +136,7 @@ export function IncidentsPage() {
                 <CardAction>
                   <div className="flex gap-1">
                     <Button size="sm" variant="ghost" onClick={() => summarize.mutate(inc.id)}
-                      disabled={summarize.isPending} title="AI-Zusammenfassung" aria-label="AI-Zusammenfassung"><Sparkles size={14} /></Button>
+                      disabled={summarize.isPending} title={t('aiSummary')} aria-label={t('aiSummary')}><Sparkles size={14} /></Button>
                     <Button size="sm" onClick={() => resolve.mutate(inc.id)}>{t('resolve')}</Button>
                   </div>
                 </CardAction>

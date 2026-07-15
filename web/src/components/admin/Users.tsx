@@ -137,12 +137,12 @@ function UserDialog({ user, roleNames, onClose }: {
             <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
           </Field>
           {isNew && (
-            <Field label={t('password')} hint="Optional — mind. 12 Zeichen. Leer = nur OIDC-Login.">
+            <Field label={t('password')} hint={t('passwordHintNew')}>
               <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
                 autoComplete="new-password" minLength={12} />
             </Field>
           )}
-          <Field label={t('permissions')} hint="Rollen-Namen">
+          <Field label={t('permissions')} hint={t('roleNamesHint')}>
             <ListEditor value={roles} onChange={setRoles} placeholder="admin" suggestions={roleNames} />
           </Field>
           <div className="flex items-center gap-2">
@@ -170,7 +170,7 @@ function SetPasswordDialog({ user, onClose }: { user: User; onClose: () => void 
           <DialogTitle>{`${t('setPassword')}: ${user.name}`}</DialogTitle>
         </DialogHeader>
         <form onSubmit={(e) => { e.preventDefault(); save.mutate(undefined) }} className="space-y-3">
-          <Field label={t('password')} required hint="Mind. 12 Zeichen. Leer lassen entfernt das Passwort (nur OIDC).">
+          <Field label={t('password')} required hint={t('passwordHintSet')}>
             <Input type="password" value={pw} onChange={(e) => setPw(e.target.value)}
               autoComplete="new-password" />
           </Field>
@@ -195,17 +195,17 @@ function ChangeOwnPassword() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Mein Passwort ändern</CardTitle>
+        <CardTitle>{t('changeOwnPassword')}</CardTitle>
       </CardHeader>
       <CardContent>
         <form
           onSubmit={(e) => { e.preventDefault(); setOk(false); save.mutate(undefined) }}
           className="flex flex-wrap items-end gap-3"
         >
-          <Field label="Aktuelles Passwort" className="flex-1 min-w-40">
+          <Field label={t('currentPassword')} className="flex-1 min-w-40">
             <Input type="password" value={oldPw} onChange={(e) => setOldPw(e.target.value)} autoComplete="current-password" />
           </Field>
-          <Field label="Neues Passwort" hint="Mind. 12 Zeichen" className="flex-1 min-w-40">
+          <Field label={t('newPassword')} hint={t('min12Chars')} className="flex-1 min-w-40">
             <Input type="password" value={newPw} onChange={(e) => setNewPw(e.target.value)} autoComplete="new-password" />
           </Field>
           <Button variant="default" type="submit" disabled={!oldPw || !newPw || save.isPending}>
@@ -249,11 +249,11 @@ function DirectorySyncCard() {
       <CardContent className="space-y-2 text-sm text-muted-foreground">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
           <span className="font-mono text-xs">{data.url}</span>
-          <span>Intervall {data.syncInterval}</span>
-          <span>Letzter Lauf: {data.lastSyncAt ? fmtTime(data.lastSyncAt) : '—'}</span>
+          <span>{t('interval')} {data.syncInterval}</span>
+          <span>{t('lastRun')}: {data.lastSyncAt ? fmtTime(data.lastSyncAt) : '—'}</span>
           {r && (
             <span className="tabular-nums">
-              {r.created} neu · {r.updated} aktualisiert · {r.disabled} deaktiviert · {r.skipped} übersprungen
+              {r.created} {t('newLower')} · {r.updated} {t('updated')} · {r.disabled} {t('deactivated')} · {r.skipped} {t('skipped')}
             </span>
           )}
         </div>
@@ -265,7 +265,7 @@ function DirectorySyncCard() {
         )}
         <div>
           <Button size="sm" variant="outline" onClick={() => sync.mutate(undefined)} disabled={sync.isPending}>
-            {sync.isPending ? 'Synchronisiert…' : 'Jetzt synchronisieren'}
+            {sync.isPending ? t('syncing') : t('syncNow')}
           </Button>
         </div>
         <FormError error={sync.error} />

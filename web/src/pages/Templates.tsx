@@ -24,15 +24,15 @@ const tabs = ['templates', 'check-commands', 'time-periods'] as const
 type Tab = typeof tabs[number]
 const tabLabels: Record<Tab, string> = {
   templates: t('templates'),
-  'check-commands': 'Check-Kommandos',
-  'time-periods': 'Zeiträume',
+  'check-commands': t('checkCommands'),
+  'time-periods': t('timePeriods'),
 }
 
 export function TemplatesPage() {
   const [tab, setTab] = useState<Tab>('templates')
   return (
     <div className="space-y-4">
-      <h1 className="text-lg font-bold">{t('templates')} &amp; Konfiguration</h1>
+      <h1 className="text-lg font-bold">{t('templates')} &amp; {t('configuration')}</h1>
       <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
         <TabsList>
           {tabs.map((tb) => <TabsTrigger key={tb} value={tb}>{tabLabels[tb]}</TabsTrigger>)}
@@ -52,7 +52,7 @@ const BOTH = '__both__'
 // 409/412 → standard German conflict copy.
 function conflictMessage(err: unknown): unknown {
   if (err instanceof APIError && (err.status === 409 || err.status === 412)) {
-    return 'Konflikt — bitte neu laden.'
+    return t('conflictReload')
   }
   return err
 }
@@ -87,7 +87,7 @@ function TemplatesTab() {
                 <TableRow key={tpl.name}>
                   <TableCell className="text-foreground font-medium">{tpl.name}</TableCell>
                   <TableCell>
-                    <Badge variant="outline" className="bg-muted text-muted-foreground border-input">{tpl.kind || 'beide'}</Badge>
+                    <Badge variant="outline" className="bg-muted text-muted-foreground border-input">{tpl.kind || t('both')}</Badge>
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground font-mono">
                     {Object.entries(tpl.labels ?? {}).map(([k, v]) => `${k}=${v}`).join(', ') || '—'}
@@ -159,11 +159,11 @@ function TemplateDialog({ name, onClose }: { name: string | null; onClose: () =>
                 <Input value={isEdit ? name! : draftName} disabled={isEdit}
                   onChange={(e) => setDraftName(e.target.value)} placeholder="generic-host" autoFocus={!isEdit} />
               </Field>
-              <Field label={t('type')} hint="leer = Host & Service">
+              <Field label={t('type')} hint={t('emptyHostService')}>
                 <Select value={kind || BOTH} onValueChange={(v) => setKind((v === BOTH ? '' : v) as Kind | '')}>
                   <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={BOTH}>beide</SelectItem>
+                    <SelectItem value={BOTH}>{t('both')}</SelectItem>
                     <SelectItem value="host">{t('host')}</SelectItem>
                     <SelectItem value="service">{t('service')}</SelectItem>
                   </SelectContent>
@@ -196,7 +196,7 @@ function CheckCommandsTab() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Check-Kommandos</CardTitle>
+        <CardTitle>{t('checkCommands')}</CardTitle>
         <CardAction><Button variant="default" size="sm" onClick={() => setEditing('new')}>+ {t('create')}</Button></CardAction>
       </CardHeader>
       <CardContent>
@@ -204,7 +204,7 @@ function CheckCommandsTab() {
           <Table>
             <TableHeader>
               <TableRow>
-                {[t('name'), t('type'), 'Kommandozeile', 'Env', t('timeout'), ''].map((h, i) => <TableHead key={i}>{h}</TableHead>)}
+                {[t('name'), t('type'), t('commandLine'), 'Env', t('timeout'), ''].map((h, i) => <TableHead key={i}>{h}</TableHead>)}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -213,7 +213,7 @@ function CheckCommandsTab() {
                   <TableCell className="text-foreground font-medium">{cmd.name}</TableCell>
                   <TableCell><Badge variant="outline" className="bg-muted text-muted-foreground border-input">{cmd.type}</Badge></TableCell>
                   <TableCell className="text-xs text-muted-foreground font-mono truncate max-w-md">{(cmd.line ?? []).join(' ') || '—'}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{cmd.env ? 'ja' : '—'}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{cmd.env ? t('yes') : '—'}</TableCell>
                   <TableCell className="text-xs text-muted-foreground font-mono">{cmd.timeout || '—'}</TableCell>
                   <TableCell className="text-right whitespace-nowrap">
                     <Button size="sm" variant="ghost" onClick={() => setEditing({ name: cmd.name })}>{t('edit')}</Button>
@@ -271,7 +271,7 @@ function CheckCommandDialog({ name, onClose }: { name: string | null; onClose: (
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>{isEdit ? `${t('edit')}: ${name}` : `Check-Kommando — ${t('create')}`}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{isEdit ? `${t('edit')}: ${name}` : `${t('checkCommand')} — ${t('create')}`}</DialogTitle></DialogHeader>
         {isEdit && isLoading ? <Spinner /> : (
           <form onSubmit={(e) => { e.preventDefault(); save.mutate() }} className="space-y-4">
             <div className="grid grid-cols-2 gap-2">
@@ -291,7 +291,7 @@ function CheckCommandDialog({ name, onClose }: { name: string | null; onClose: (
                 </Select>
               </Field>
             </div>
-            <Field label="Kommandozeile" hint="Ein Token pro Eintrag; argv[0] = Plugin/Builtin-Name, dann $ARG1$ …">
+            <Field label={t('commandLine')} hint={t('commandLineHint')}>
               <ListEditor value={line} onChange={setLine} placeholder="check_postgres" />
             </Field>
             <div className="grid grid-cols-2 gap-2 items-end">
@@ -301,7 +301,7 @@ function CheckCommandDialog({ name, onClose }: { name: string | null; onClose: (
               <div className="pb-1.5">
                 <Label className="cursor-pointer">
                   <Switch checked={env} onCheckedChange={setEnv} />
-                  <span className="text-sm text-foreground/90">NAGIOS_*/NORTHPLANE_* Umgebungsmakros exportieren</span>
+                  <span className="text-sm text-foreground/90">{t('exportEnvMacros')}</span>
                 </Label>
               </div>
             </div>
@@ -320,8 +320,8 @@ const periodsApi = resourceApi<TimePeriod>('time-periods')
 const periodsInval: string[][] = [[...periodsApi.queryKey], ['resources', 'time-periods', 'names']]
 const WEEKDAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const
 const WEEKDAY_DE: Record<typeof WEEKDAYS[number], string> = {
-  monday: 'Montag', tuesday: 'Dienstag', wednesday: 'Mittwoch', thursday: 'Donnerstag',
-  friday: 'Freitag', saturday: 'Samstag', sunday: 'Sonntag',
+  monday: t('weekdayMonday'), tuesday: t('weekdayTuesday'), wednesday: t('weekdayWednesday'), thursday: t('weekdayThursday'),
+  friday: t('weekdayFriday'), saturday: t('weekdaySaturday'), sunday: t('weekdaySunday'),
 }
 
 function TimePeriodsTab() {
@@ -332,7 +332,7 @@ function TimePeriodsTab() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Zeiträume</CardTitle>
+        <CardTitle>{t('timePeriods')}</CardTitle>
         <CardAction><Button variant="default" size="sm" onClick={() => setEditing('new')}>+ {t('create')}</Button></CardAction>
       </CardHeader>
       <CardContent>
@@ -340,7 +340,7 @@ function TimePeriodsTab() {
           <Table>
             <TableHeader>
               <TableRow>
-                {[t('name'), 'Alias', 'Tage', 'Ausnahmen', ''].map((h, i) => <TableHead key={i}>{h}</TableHead>)}
+                {[t('name'), 'Alias', t('days'), t('exceptions'), ''].map((h, i) => <TableHead key={i}>{h}</TableHead>)}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -417,7 +417,7 @@ function TimePeriodDialog({ name, onClose }: { name: string | null; onClose: () 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>{isEdit ? `${t('edit')}: ${name}` : `Zeitraum — ${t('create')}`}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{isEdit ? `${t('edit')}: ${name}` : `${t('timePeriod')} — ${t('create')}`}</DialogTitle></DialogHeader>
         {isEdit && isLoading ? <Spinner /> : (
           <form onSubmit={(e) => { e.preventDefault(); save.mutate() }} className="space-y-4">
             <div className="grid grid-cols-2 gap-2">
@@ -426,14 +426,14 @@ function TimePeriodDialog({ name, onClose }: { name: string | null; onClose: () 
                   onChange={(e) => setDraftName(e.target.value)} placeholder="business-hours" autoFocus={!isEdit} />
               </Field>
               <Field label="Alias">
-                <Input value={alias} onChange={(e) => setAlias(e.target.value)} placeholder="Geschäftszeiten" />
+                <Input value={alias} onChange={(e) => setAlias(e.target.value)} placeholder={t('businessHoursPlaceholder')} />
               </Field>
             </div>
 
             <div className="border border-border rounded-lg p-3 space-y-2">
-              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Wochentage</div>
+              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('weekdays')}</div>
               {WEEKDAYS.map((wd) => (
-                <Field key={wd} label={WEEKDAY_DE[wd]} hint='Bereiche "HH:MM-HH:MM"'>
+                <Field key={wd} label={WEEKDAY_DE[wd]} hint={t('rangesHint')}>
                   <ListEditor
                     value={days[wd] ?? []}
                     onChange={(v) => setDays((d) => ({ ...d, [wd]: v }))}
@@ -443,11 +443,11 @@ function TimePeriodDialog({ name, onClose }: { name: string | null; onClose: () 
               ))}
             </div>
 
-            <Field label="Ausnahmen" hint='Datum → Bereiche, z.B. "2026-12-24" → "00:00-00:00" (geschlossen)'>
+            <Field label={t('exceptions')} hint={t('exceptionsHint')}>
               <KVEditor value={exceptions} onChange={setExceptions} keyPlaceholder="2026-12-24" valuePlaceholder="00:00-00:00" />
             </Field>
 
-            <Field label="Ausschluss (exclude)" hint="Namen anderer Zeiträume, die abgezogen werden">
+            <Field label={t('exclusion')} hint={t('exclusionHint')}>
               <ListEditor value={exclude} onChange={setExclude} placeholder="holidays" />
             </Field>
 

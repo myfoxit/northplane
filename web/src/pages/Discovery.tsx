@@ -39,9 +39,9 @@ interface BatchResult {
 }
 
 function statusBadge(s: Scan['status']) {
-  if (s === 'running') return <Badge variant="outline" className="bg-sky-500/15 text-sky-400 border-sky-500/30">läuft…</Badge>
-  if (s === 'failed') return <Badge variant="outline" className="bg-red-500/15 text-red-400 border-red-500/30">fehlgeschlagen</Badge>
-  return <Badge variant="outline" className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30">fertig</Badge>
+  if (s === 'running') return <Badge variant="outline" className="bg-sky-500/15 text-sky-400 border-sky-500/30">{t('running')}</Badge>
+  if (s === 'failed') return <Badge variant="outline" className="bg-red-500/15 text-red-400 border-red-500/30">{t('failed')}</Badge>
+  return <Badge variant="outline" className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30">{t('finished')}</Badge>
 }
 
 export function DiscoveryPage() {
@@ -90,7 +90,7 @@ export function DiscoveryPage() {
               <Field label={t('scanRange')} required hint="max. /20">
                 <Input value={cidr} onChange={(e) => setCidr(e.target.value)} placeholder="192.168.1.0/24" />
               </Field>
-              <Field label="Ports (optional)" hint="Standard: 22,80,443,3389,5432,3306,8080">
+              <Field label="Ports (optional)" hint={t('portsHint')}>
                 <Input value={portsStr} onChange={(e) => setPortsStr(e.target.value)} placeholder="22,80,443" />
               </Field>
             </div>
@@ -113,7 +113,7 @@ export function DiscoveryPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  {[t('status'), 'CIDR', 'Gestartet', t('suggestions'), ''].map((h, i) => (
+                  {[t('status'), 'CIDR', t('started'), t('suggestions'), ''].map((h, i) => (
                     <TableHead key={i}>{h}</TableHead>
                   ))}
                 </TableRow>
@@ -130,7 +130,7 @@ export function DiscoveryPage() {
                     <TableCell className="px-3 py-2">
                       <Button size="sm" disabled={(s.found?.length ?? 0) === 0}
                         onClick={() => setOpenScan(openScan === s.id ? null : s.id)}>
-                        {openScan === s.id ? 'schließen' : 'Vorschläge'}
+                        {openScan === s.id ? t('close') : t('suggestions')}
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -202,10 +202,10 @@ function SuggestionPanel({ scan }: { scan: Scan }) {
       <CardHeader><CardTitle>{`${t('suggestions')} — ${scan.cidr}`}</CardTitle></CardHeader>
       <CardContent>
         <div className="grid sm:grid-cols-2 gap-3 mb-3">
-          <Field label={t('folder')} hint="Zielordner der neuen Hosts">
+          <Field label={t('folder')} hint={t('targetFolderHint')}>
             <Input value={folder} onChange={(e) => setFolder(e.target.value)} placeholder="/discovered" />
           </Field>
-          <Field label="Templates (optional)" hint="auf alle Hosts anwenden">
+          <Field label="Templates (optional)" hint={t('applyAllHosts')}>
             <ListEditor value={templates} onChange={setTemplates} placeholder="linux-server" />
           </Field>
         </div>
@@ -213,7 +213,7 @@ function SuggestionPanel({ scan }: { scan: Scan }) {
         <Table>
           <TableHeader>
             <TableRow>
-              {['', 'Adresse', 'Hostname', 'Offene Ports', 'Vorgeschlagene Checks', 'Ergebnis'].map((h, i) => (
+              {['', t('address'), 'Hostname', t('openPorts'), t('suggestedChecks'), t('result')].map((h, i) => (
                 <TableHead key={i}>{h}</TableHead>
               ))}
             </TableRow>
@@ -240,7 +240,7 @@ function SuggestionPanel({ scan }: { scan: Scan }) {
                     {(h.suggest ?? []).join(', ') || '—'}
                   </TableCell>
                   <TableCell className="px-3 py-2 text-xs">
-                    {res?.id && <span className="text-emerald-400 inline-flex items-center gap-1"><Check size={13} /> angelegt</span>}
+                    {res?.id && <span className="text-emerald-400 inline-flex items-center gap-1"><Check size={13} /> {t('created')}</span>}
                     {res?.error && <span className="text-red-400 inline-flex items-center gap-1" title={res.error}><X size={13} /> {res.error}</span>}
                     {!res && <span className="text-muted-foreground/70">—</span>}
                   </TableCell>
@@ -253,11 +253,11 @@ function SuggestionPanel({ scan }: { scan: Scan }) {
         <FormError error={accept.error} />
         {result && (
           <div className="text-sm text-muted-foreground mt-2">
-            {result.created} angelegt · {result.failed} fehlgeschlagen
+            {result.created} {t('created')} · {result.failed} {t('failed')}
           </div>
         )}
         <div className="flex items-center justify-between pt-3">
-          <span className="text-xs text-muted-foreground">{picked.size} von {hits.length} ausgewählt</span>
+          <span className="text-xs text-muted-foreground">{picked.size} {t('of')} {hits.length} {t('selectedLower')}</span>
           <Button variant="default" onClick={submit} disabled={accept.isPending || picked.size === 0}>
             {accept.isPending ? '…' : t('acceptSelected')}
           </Button>

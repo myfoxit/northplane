@@ -39,10 +39,10 @@ describe('<MaintenancePage />', () => {
     expect(screen.getByRole('tab', { name: 'Downtimes' })).toBeInTheDocument()
   })
 
-  it('shows the German empty state when no silences are active', async () => {
+  it('shows the empty state when no silences are active', async () => {
     server.use(handleSilences([]), handleDowntimes([]))
     renderWithProviders(<MaintenancePage />)
-    expect(await screen.findByText('Keine aktiven Silences.')).toBeInTheDocument()
+    expect(await screen.findByText('No active silences.')).toBeInTheDocument()
   })
 
   it('switches to the downtimes tab and lists scheduled downtimes', async () => {
@@ -57,13 +57,13 @@ describe('<MaintenancePage />', () => {
     expect(screen.getByText('FREQ=WEEKLY;BYDAY=SA')).toBeInTheDocument()
   })
 
-  it('shows the German empty state when no downtimes are planned', async () => {
+  it('shows the empty state when no downtimes are planned', async () => {
     server.use(handleSilences([]), handleDowntimes([]))
     const user = userEvent.setup()
     renderWithProviders(<MaintenancePage />)
 
     await user.click(await screen.findByRole('tab', { name: 'Downtimes' }))
-    expect(await screen.findByText('Keine geplanten Downtimes.')).toBeInTheDocument()
+    expect(await screen.findByText('No scheduled downtimes.')).toBeInTheDocument()
   })
 
   it('opens the silence create dialog with selector/regex/expiry fields', async () => {
@@ -71,14 +71,14 @@ describe('<MaintenancePage />', () => {
     const user = userEvent.setup()
     renderWithProviders(<MaintenancePage />)
 
-    await screen.findByText('Keine aktiven Silences.')
+    await screen.findByText('No active silences.')
     await user.click(screen.getByRole('button', { name: /create|anlegen/i }))
 
     const dialog = await screen.findByRole('dialog')
-    expect(dialog).toHaveTextContent('Text-Regex')
-    expect(dialog).toHaveTextContent('Läuft ab')
+    expect(dialog).toHaveTextContent('Text regex')
+    expect(dialog).toHaveTextContent('Expires')
     expect(screen.getByPlaceholderText('disk.*full')).toBeInTheDocument()
-    expect(screen.getByPlaceholderText('Wartungsfenster DB')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('DB maintenance window')).toBeInTheDocument()
     // Quick-expiry presets are offered.
     expect(screen.getByRole('button', { name: '24h' })).toBeInTheDocument()
   })

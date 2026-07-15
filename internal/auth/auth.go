@@ -194,6 +194,9 @@ func (a *Authenticator) session(ctx context.Context, id string) (*Principal, err
 	if err != nil || user.Disabled {
 		return nil, fmt.Errorf("user invalid")
 	}
+	// Record activity so the admin Users view shows a real "last seen" (NP-21).
+	// Fire-and-forget + throttled in the store, like TouchAPIToken above.
+	go a.Store.TouchUserLastSeen(context.WithoutCancel(ctx), user.ID)
 	perms := a.rolePerms(ctx, tenantID, data.Roles)
 	return &Principal{ActorType: model.ActorUser, ActorID: user.ID, Name: user.Name,
 		TenantID: tenantID, Perms: perms, SessionID: id}, nil

@@ -20,7 +20,7 @@ import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Empty, Spinner, Field, FormError, SubmitRow, useSave, DeleteButton, KVEditor, DurationInput } from '@/components/kit'
 import { t } from '../../i18n'
-import { TypeBadge, StatusBadge, TableActions, RowActions, secretHint } from './common'
+import { TypeBadge, StatusBadge, TableActions, RowActions } from './common'
 
 // Radix SelectItem value cannot be "" — sentinel for the "(Standard)"/"—"
 // empty config options. setCfg('', …) deletes the key, matching the old
@@ -185,7 +185,7 @@ function SourceForm({ doc, etag, isNew, onClose }: {
           </div>
 
           <div className="grid grid-cols-2 gap-2">
-            <Field label="Rate-Limit (Events/s)" hint="0/leer = Standard">
+            <Field label={t('rateLimitField')} hint={t('rateLimitHint')}>
               <Input type="number" step="any" value={rateLimit} onChange={(e) => setRateLimit(e.target.value)} />
             </Field>
             <Field label="Burst">
@@ -198,7 +198,7 @@ function SourceForm({ doc, etag, isNew, onClose }: {
             <div className="border border-border rounded-lg p-3 space-y-2">
               <div className="text-xs text-muted-foreground font-medium">Ingress ({type})</div>
               <div className="grid grid-cols-2 gap-2">
-                <Field label="Auth-Modus">
+                <Field label={t('authMode')}>
                   <Select value={authMode} onValueChange={(v) => setAuthMode(v as EventSourceDef['authMode'])}>
                     <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -206,7 +206,7 @@ function SourceForm({ doc, etag, isNew, onClose }: {
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field label="Secret-Referenz" hint={secretHint}>
+                <Field label={t('secretRef')} hint={t('secretHint')}>
                   <Input value={secretRef} onChange={(e) => setSecretRef(e.target.value)} />
                 </Field>
               </div>
@@ -223,11 +223,11 @@ function SourceForm({ doc, etag, isNew, onClose }: {
               <div className="grid grid-cols-2 gap-2">
                 <Field label="Listen" hint="udp://:9162"><Input value={cfg('listen')} onChange={(e) => setCfg('listen', e.target.value)} placeholder="udp://:9162" /></Field>
                 <Field label="Community (v1/v2c)"><Input value={cfg('community')} onChange={(e) => setCfg('community', e.target.value)} /></Field>
-                <Field label="Severity">
+                <Field label={t('severity')}>
                   <Select value={cfg('severity') || CFG_DEFAULT} onValueChange={(v) => setCfg('severity', v === CFG_DEFAULT ? '' : v)}>
                     <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={CFG_DEFAULT}>(Standard)</SelectItem>
+                      <SelectItem value={CFG_DEFAULT}>{t('defaultParen')}</SelectItem>
                       {SEVERITIES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                     </SelectContent>
                   </Select>
@@ -236,7 +236,7 @@ function SourceForm({ doc, etag, isNew, onClose }: {
               <div className="text-xs text-muted-foreground pt-1">SNMPv3</div>
               <div className="grid grid-cols-2 gap-2">
                 <Field label="v3 User"><Input value={cfg('v3User')} onChange={(e) => setCfg('v3User', e.target.value)} /></Field>
-                <Field label="Auth-Protokoll">
+                <Field label={t('authProtocol')}>
                   <Select value={cfg('v3AuthProto') || CFG_DEFAULT} onValueChange={(v) => setCfg('v3AuthProto', v === CFG_DEFAULT ? '' : v)}>
                     <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -245,8 +245,8 @@ function SourceForm({ doc, etag, isNew, onClose }: {
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field label="Auth-Secret-Ref" hint={secretHint}><Input value={cfg('v3AuthSecretRef')} onChange={(e) => setCfg('v3AuthSecretRef', e.target.value)} /></Field>
-                <Field label="Priv-Protokoll">
+                <Field label={t('authSecretRef')} hint={t('secretHint')}><Input value={cfg('v3AuthSecretRef')} onChange={(e) => setCfg('v3AuthSecretRef', e.target.value)} /></Field>
+                <Field label={t('privProtocol')}>
                   <Select value={cfg('v3PrivProto') || CFG_DEFAULT} onValueChange={(v) => setCfg('v3PrivProto', v === CFG_DEFAULT ? '' : v)}>
                     <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -255,7 +255,7 @@ function SourceForm({ doc, etag, isNew, onClose }: {
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field label="Priv-Secret-Ref" hint={secretHint}><Input value={cfg('v3PrivSecretRef')} onChange={(e) => setCfg('v3PrivSecretRef', e.target.value)} /></Field>
+                <Field label={t('privSecretRef')} hint={t('secretHint')}><Input value={cfg('v3PrivSecretRef')} onChange={(e) => setCfg('v3PrivSecretRef', e.target.value)} /></Field>
               </div>
             </div>
           )}
@@ -263,31 +263,31 @@ function SourceForm({ doc, etag, isNew, onClose }: {
           {/* IMAP / e-mail mailbox poller */}
           {isMail && (
             <div className="border border-border rounded-lg p-3 space-y-2">
-              <div className="text-xs text-muted-foreground font-medium">Postfach ({type})</div>
+              <div className="text-xs text-muted-foreground font-medium">{t('mailbox')} ({type})</div>
               <div className="grid grid-cols-2 gap-2">
-                <Field label="Host"><Input value={cfg('host')} onChange={(e) => setCfg('host', e.target.value)} /></Field>
+                <Field label={t('host')}><Input value={cfg('host')} onChange={(e) => setCfg('host', e.target.value)} /></Field>
                 <Field label="Port"><Input type="number" value={cfg('port')} onChange={(e) => setCfg('port', e.target.value)} /></Field>
                 <Field label="TLS">
                   <Select value={cfg('tls') || CFG_DEFAULT} onValueChange={(v) => setCfg('tls', v === CFG_DEFAULT ? '' : v)}>
                     <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={CFG_DEFAULT}>(Standard)</SelectItem>
+                      <SelectItem value={CFG_DEFAULT}>{t('defaultParen')}</SelectItem>
                       <SelectItem value="on">on</SelectItem>
                       <SelectItem value="off">off</SelectItem>
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field label="Benutzername"><Input value={cfg('username')} onChange={(e) => setCfg('username', e.target.value)} /></Field>
-                <Field label="Passwort-Secret-Ref" hint={secretHint}><Input value={cfg('passwordSecretRef')} onChange={(e) => setCfg('passwordSecretRef', e.target.value)} /></Field>
-                <Field label="Ordner"><Input value={cfg('folder')} onChange={(e) => setCfg('folder', e.target.value)} placeholder="INBOX" /></Field>
-                <Field label="Poll-Intervall">
+                <Field label={t('username')}><Input value={cfg('username')} onChange={(e) => setCfg('username', e.target.value)} /></Field>
+                <Field label={t('passwordSecretRef')} hint={t('secretHint')}><Input value={cfg('passwordSecretRef')} onChange={(e) => setCfg('passwordSecretRef', e.target.value)} /></Field>
+                <Field label={t('folder')}><Input value={cfg('folder')} onChange={(e) => setCfg('folder', e.target.value)} placeholder="INBOX" /></Field>
+                <Field label={t('pollInterval')}>
                   <DurationInput value={cfg('pollInterval')} onChange={(v) => setCfg('pollInterval', v)} placeholder="60s" />
                 </Field>
-                <Field label="Severity">
+                <Field label={t('severity')}>
                   <Select value={cfg('severity') || CFG_DEFAULT} onValueChange={(v) => setCfg('severity', v === CFG_DEFAULT ? '' : v)}>
                     <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={CFG_DEFAULT}>(Standard)</SelectItem>
+                      <SelectItem value={CFG_DEFAULT}>{t('defaultParen')}</SelectItem>
                       {SEVERITIES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                     </SelectContent>
                   </Select>
@@ -295,28 +295,28 @@ function SourceForm({ doc, etag, isNew, onClose }: {
               </div>
               <div className="flex items-center gap-2">
                 <Switch id="source-markseen" checked={cfg('markSeen') === 'true'} onCheckedChange={(v) => setCfg('markSeen', v ? 'true' : '')} />
-                <Label htmlFor="source-markseen">Gelesen markieren (markSeen)</Label>
+                <Label htmlFor="source-markseen">{t('markSeen')}</Label>
               </div>
             </div>
           )}
 
           {/* CEL mapping — webhook only */}
           {type === 'webhook' && (
-            <Field label="Mapping (CEL)" hint="NormEvent-Felder aus dem Roh-Payload">
+            <Field label={t('mappingCel')} hint={t('mappingCelHint')}>
               <KVEditor value={mapping} onChange={setMapping} keyPlaceholder="severity" valuePlaceholder='body.level' />
             </Field>
           )}
 
-          <Field label={t('labels')} hint="werden in jedes Event gemerged">
+          <Field label={t('labels')} hint={t('labelsMergedHint')}>
             <KVEditor value={labels} onChange={setLabels} />
           </Field>
 
-          <Field label="Weitere Einstellungen" hint="zusätzliche Config-Schlüssel">
+          <Field label={t('moreSettings')} hint={t('moreSettingsHint')}>
             <KVEditor value={extra} onChange={setExtra} />
           </Field>
 
           {isHTTP && type === 'alertmanager' && (
-            <Badge variant="outline" className="bg-muted text-muted-foreground border-input">Alertmanager-Webhook empfängt Prometheus-Alerts</Badge>
+            <Badge variant="outline" className="bg-muted text-muted-foreground border-input">{t('alertmanagerWebhookInfo')}</Badge>
           )}
 
           <FormError error={save.error} />

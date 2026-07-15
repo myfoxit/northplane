@@ -27,8 +27,8 @@ export function GroupsTab() {
         <TableHeader>
           <TableRow>
             <TableHead>{t('name')}</TableHead>
-            <TableHead>Mitglieder</TableHead>
-            <TableHead>IdP-Gruppe</TableHead>
+            <TableHead>{t('members')}</TableHead>
+            <TableHead>{t('idpGroup')}</TableHead>
             <TableHead></TableHead>
           </TableRow>
         </TableHeader>
@@ -119,10 +119,10 @@ function GroupForm({ doc, etag, isNew, suggestions, onClose }: {
           <Field label={t('name')} required>
             <Input value={name} onChange={(e) => setName(e.target.value)} required disabled={!isNew} />
           </Field>
-          <Field label="Mitglieder" hint="Kontakte (Name)">
-            <ListEditor value={members} onChange={setMembers} placeholder="Kontakt…" suggestions={suggestions} />
+          <Field label={t('members')} hint={t('membersHint')}>
+            <ListEditor value={members} onChange={setMembers} placeholder={t('contactPlaceholder')} suggestions={suggestions} />
           </Field>
-          <Field label="IdP-Gruppe" hint="optional — spiegelt eine Entra/Keycloak-Gruppe">
+          <Field label={t('idpGroup')} hint={t('idpGroupHint')}>
             <Input value={idpGroup} onChange={(e) => setIdpGroup(e.target.value)} />
           </Field>
           <FormError error={save.error} />

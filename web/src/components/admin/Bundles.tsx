@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
 import { FormError } from '@/components/kit'
+import { t } from '../../i18n'
 
 interface PlanAction {
   action: 'create' | 'update' | 'delete'
@@ -50,7 +51,7 @@ export function BundlesTab() {
       method: 'POST',
     }),
     onSuccess: (r) => {
-      setApplied(`✓ angewendet (${r.plan?.length ?? 0} Änderungen)`)
+      setApplied(`✓ ${t('applied')} (${r.plan?.length ?? 0} ${t('changes')})`)
       setPlan(null)
     },
   })
@@ -60,11 +61,11 @@ export function BundlesTab() {
       <Card>
         <CardHeader>
           <CardTitle>Export</CardTitle>
-          <CardDescription>Die komplette Konfiguration als kanonisches YAML-Bundle (Backup, GitOps, Migration).</CardDescription>
+          <CardDescription>{t('bundleExportDesc')}</CardDescription>
         </CardHeader>
         <CardContent>
           <Button asChild variant="outline">
-            <a href="/api/v1/config/bundles:export" download="northplane-bundle.yaml">⇩ bundle.yaml herunterladen</a>
+            <a href="/api/v1/config/bundles:export" download="northplane-bundle.yaml">{t('downloadBundleYaml')}</a>
           </Button>
         </CardContent>
       </Card>
@@ -72,7 +73,7 @@ export function BundlesTab() {
       <Card>
         <CardHeader>
           <CardTitle>Plan &amp; Apply</CardTitle>
-          <CardDescription>Bundle einfügen → Plan prüfen → exakt diesen Plan anwenden (Zwei-Phasen-Token, 10 min gültig).</CardDescription>
+          <CardDescription>{t('bundlePlanDesc')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <Textarea
@@ -82,13 +83,13 @@ export function BundlesTab() {
             className="font-mono text-xs min-h-40"
           />
           <div className="flex gap-2 items-center">
-            <Button onClick={() => doPlan.mutate()} disabled={!yaml.trim() || doPlan.isPending}>Planen (Dry-Run)</Button>
+            <Button onClick={() => doPlan.mutate()} disabled={!yaml.trim() || doPlan.isPending}>{t('planDryRun')}</Button>
             {plan?.applyToken && (
               <Button variant="destructive" onClick={() => doApply.mutate()} disabled={doApply.isPending}>
-                Anwenden ({plan.plan.length} Änderungen)
+                {t('apply')} ({plan.plan.length} {t('changes')})
               </Button>
             )}
-            {plan && plan.plan.length === 0 && <span className="text-sm text-muted-foreground">Keine Änderungen — Konfiguration ist identisch.</span>}
+            {plan && plan.plan.length === 0 && <span className="text-sm text-muted-foreground">{t('noChangesIdentical')}</span>}
             {applied && <span className="text-sm text-emerald-400">{applied}</span>}
           </div>
           <FormError error={doPlan.error ?? doApply.error} />
@@ -101,7 +102,7 @@ export function BundlesTab() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  {['Aktion', 'Kind', 'Name', 'Diff'].map((h) => <TableHead key={h}>{h}</TableHead>)}
+                  {[t('action'), 'Kind', 'Name', 'Diff'].map((h) => <TableHead key={h}>{h}</TableHead>)}
                 </TableRow>
               </TableHeader>
               <TableBody>

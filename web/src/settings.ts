@@ -10,6 +10,7 @@
 // local change is written through to both.
 import { useSyncExternalStore } from 'react'
 import { api } from './api'
+import { t } from './i18n'
 
 export type RefreshValue = number | false // milliseconds, or false = off (manual refresh only)
 
@@ -18,7 +19,7 @@ export const REFRESH_PRESETS: { label: string; value: RefreshValue }[] = [
   { label: '10s', value: 10_000 },
   { label: '30s', value: 30_000 },
   { label: '60s', value: 60_000 },
-  { label: 'Aus', value: false },
+  { label: t('off'), value: false },
 ]
 
 // Mirrors model.Preferences (types.gen.ts Preferences).

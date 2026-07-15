@@ -28,8 +28,8 @@ export function RolesTab() {
           <TableRow>
             <TableHead>{t('name')}</TableHead>
             <TableHead>{t('permissions')}</TableHead>
-            <TableHead>Erbt</TableHead>
-            <TableHead>IdP-Gruppen</TableHead>
+            <TableHead>{t('inherits')}</TableHead>
+            <TableHead>{t('idpGroups')}</TableHead>
             <TableHead></TableHead>
           </TableRow>
         </TableHeader>
@@ -135,19 +135,19 @@ function RoleForm({ doc, etag, isNew, onClose }: {
           <Field label={t('name')} required>
             <Input value={name} onChange={(e) => setName(e.target.value)} required disabled={!isNew} />
           </Field>
-          <Field label={t('permissions')} hint='z.B. objects:read, alerts:ack, "*" für alle'>
+          <Field label={t('permissions')} hint={t('permissionsHint')}>
             <ListEditor value={permissions} onChange={setPermissions} placeholder="objects:read" />
           </Field>
-          <Field label="Erbt von Rollen (includes)">
+          <Field label={t('inheritsFromRoles')}>
             <ListEditor value={includes} onChange={setIncludes} placeholder="viewer" />
           </Field>
-          <Field label="IdP-Gruppen (Auto-Zuweisung)">
+          <Field label={t('idpGroupsAutoAssign')}>
             <ListEditor value={idpGroups} onChange={setIdpGroups} placeholder="np-admins" />
           </Field>
           <div className="grid grid-cols-3 gap-2">
-            <Field label="Scope: Mandant"><Input value={scopeTenant} onChange={(e) => setScopeTenant(e.target.value)} /></Field>
-            <Field label="Scope: Ordner"><Input value={scopeFolder} onChange={(e) => setScopeFolder(e.target.value)} /></Field>
-            <Field label="Scope: Selektor"><Input value={scopeSelector} onChange={(e) => setScopeSelector(e.target.value)} /></Field>
+            <Field label={t('scopeTenant')}><Input value={scopeTenant} onChange={(e) => setScopeTenant(e.target.value)} /></Field>
+            <Field label={t('scopeFolder')}><Input value={scopeFolder} onChange={(e) => setScopeFolder(e.target.value)} /></Field>
+            <Field label={t('scopeSelector')}><Input value={scopeSelector} onChange={(e) => setScopeSelector(e.target.value)} /></Field>
           </div>
           <FormError error={save.error} />
           <SubmitRow onCancel={onClose} saving={save.isPending} disabled={!name} />

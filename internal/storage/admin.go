@@ -379,6 +379,32 @@ func (s *Store) TouchAPIToken(ctx context.Context, id string) {
 	})
 }
 
+// TouchUserLastSeen stamps a user's last_seen_at on authenticated activity so
+// the admin Users view reflects when each account was last active (NP-21).
+// Mirrors TouchAPIToken: throttled to one write per user per minute (keyed
+// under a "user:" prefix so it never collides with a token id) to keep session
+// polling off the write lock. last_seen_at is activity metadata, so this does
+// not bump version/updated_at.
+func (s *Store) TouchUserLastSeen(ctx context.Context, id string) {
+	now := time.Now()
+	key := "user:" + id
+	s.touchMu.Lock()
+	if last, ok := s.lastTouch[key]; ok && now.Sub(last) < time.Minute {
+		s.touchMu.Unlock()
+		return
+	}
+	if s.lastTouch == nil {
+		s.lastTouch = make(map[string]time.Time)
+	}
+	s.lastTouch[key] = now
+	s.touchMu.Unlock()
+	_ = s.Write(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, s.Q(
+			`UPDATE users SET last_seen_at = ? WHERE id = ?`), s.T(time.Now().UTC()), id)
+		return err
+	})
+}
+
 // --- sessions ---
 
 // SessionData carried by UI cookies.

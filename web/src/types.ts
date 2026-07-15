@@ -531,3 +531,20 @@ export function sevColor(sev?: Severity): string {
     default: return 'bg-sky-500/15 text-sky-400 border-sky-500/30'
   }
 }
+
+// UNKNOWN styling (slate) — there is no 'unknown' Severity, so the backend
+// alerts an UNKNOWN state as "warning" (SeverityFromState). Used to badge an
+// event by its actual state rather than that coerced severity.
+const UNKNOWN_BADGE = 'bg-slate-500/15 text-slate-300 border-slate-500/30'
+
+// eventBadge decides the coloured badge for an event row. A state_change into
+// the UNKNOWN state (svcStates[3]) is badged "UNKNOWN" in slate instead of the
+// misleading yellow "warning" the backend assigns it (NP-10); every other event
+// falls back to its severity. Returns null when there is nothing to badge.
+export function eventBadge(e: NPEvent): { label: string; className: string } | null {
+  const p = e.payload as { toState?: number; to?: string } | undefined
+  if (e.type === 'state_change' && p?.toState === 3) {
+    return { label: p.to || 'UNKNOWN', className: UNKNOWN_BADGE }
+  }
+  return e.severity ? { label: e.severity, className: sevColor(e.severity) } : null
+}

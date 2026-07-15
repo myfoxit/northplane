@@ -64,24 +64,24 @@ describe('<ChannelsTab />', () => {
     const dialog = await screen.findByRole('dialog')
 
     // New channels default to type=email, provider=smtp → SMTP key set.
-    expect(within(dialog).getByText('Konfiguration (email)')).toBeInTheDocument()
+    expect(within(dialog).getByText('Configuration (email)')).toBeInTheDocument()
     expect(within(dialog).getByText('SMTP-Host')).toBeInTheDocument()
     expect(within(dialog).getByText('Port')).toBeInTheDocument()
-    expect(within(dialog).getByText('Absender (From)')).toBeInTheDocument()
+    expect(within(dialog).getByText('Sender (From)')).toBeInTheDocument()
 
     // provider → resend: HTTP-API key set replaces the SMTP fields.
     await switchProvider(user, dialog, 'resend')
-    expect(await within(dialog).findByText('API-Key')).toBeInTheDocument()
+    expect(await within(dialog).findByText('API key')).toBeInTheDocument()
     expect(within(dialog).queryByText('SMTP-Host')).not.toBeInTheDocument()
 
     // provider → ses: AWS credential fields appear.
     await switchProvider(user, dialog, 'ses')
     expect(await within(dialog).findByText('AWS-Region')).toBeInTheDocument()
     expect(within(dialog).getByText('Secret-Access-Key')).toBeInTheDocument()
-    expect(within(dialog).queryByText('API-Key')).not.toBeInTheDocument()
+    expect(within(dialog).queryByText('API key')).not.toBeInTheDocument()
 
     // The KVEditor fallback for unknown keys is always reachable.
-    expect(within(dialog).getByText('Weitere Einstellungen')).toBeInTheDocument()
+    expect(within(dialog).getByText('More settings')).toBeInTheDocument()
   })
 
   it('sends a test notification for a channel row', async () => {

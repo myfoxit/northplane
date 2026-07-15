@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { get, fmtTime, type ListResponse } from '../api'
 import type { NPEvent } from '../types'
-import { sevColor } from '../types'
+import { eventBadge } from '../types'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -40,7 +40,7 @@ export function EventsPage() {
         <Select value={type || '__all__'} onValueChange={(v) => setType(v === '__all__' ? '' : v)}>
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
-            {eventTypes.map((et) => <SelectItem key={et} value={et || '__all__'}>{et || 'alle Typen'}</SelectItem>)}
+            {eventTypes.map((et) => <SelectItem key={et} value={et || '__all__'}>{et || t('allTypes')}</SelectItem>)}
           </SelectContent>
         </Select>
         <Input placeholder="Object-ID…" value={objectId} onChange={(e) => setObjectId(e.target.value)}
@@ -54,7 +54,7 @@ export function EventsPage() {
             <summary className="flex items-center gap-3 px-3 py-1.5 cursor-pointer hover:bg-muted/40 list-none">
               <span className="text-muted-foreground/70 text-xs tabular-nums w-36 shrink-0">{fmtTime(e.ts)}</span>
               <Badge variant="outline" className="bg-muted text-muted-foreground border-input w-32 justify-center shrink-0">{e.type}</Badge>
-              {e.severity && <Badge variant="outline" className={sevColor(e.severity)}>{e.severity}</Badge>}
+              {(() => { const b = eventBadge(e); return b && <Badge variant="outline" className={b.className}>{b.label}</Badge> })()}
               <span className="text-muted-foreground text-xs truncate flex-1">
                 {String((e.payload as Record<string, unknown>)?.summary ??
                   (e.payload as Record<string, unknown>)?.output ??

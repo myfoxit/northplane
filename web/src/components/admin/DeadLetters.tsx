@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Empty, Spinner } from '@/components/kit'
+import { t } from '../../i18n'
 
 interface DeadLetter {
   id: string
@@ -28,7 +29,7 @@ export function DeadLettersTab() {
   const replay = useMutation({
     mutationFn: (id: string) => post(`/notifications/dead-letters/${encodeURIComponent(id)}:replay`),
     onSuccess: () => {
-      setNote('✓ erneut eingereiht')
+      setNote(t('requeued'))
       queryClient.invalidateQueries({ queryKey: ['dead-letters'] })
     },
     onError: (e: unknown) => setNote(`✕ ${e instanceof Error ? e.message : String(e)}`),
@@ -37,17 +38,16 @@ export function DeadLettersTab() {
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
-        Endgültig fehlgeschlagene Zustellungen (alle Wiederholungen erschöpft). Replay reiht sie
-        mit frischem Backoff wieder ein.
+        {t('deadLettersIntro')}
         {note && <span className={`ml-2 ${note.startsWith('✓') ? 'text-emerald-400' : 'text-red-400'}`}>{note}</span>}
       </p>
       {isLoading && <Spinner />}
-      {!isLoading && rows.length === 0 && <Empty text="Keine Dead-Letters — alles zugestellt." />}
+      {!isLoading && rows.length === 0 && <Empty text={t('noDeadLetters')} />}
       {rows.length > 0 && (
         <Table>
           <TableHeader>
             <TableRow>
-              {['Zeit', 'Art', 'Versuche', 'Letzter Fehler', ''].map((h, i) => <TableHead key={i}>{h}</TableHead>)}
+              {[t('time'), t('kind'), t('attempts'), t('lastError'), ''].map((h, i) => <TableHead key={i}>{h}</TableHead>)}
             </TableRow>
           </TableHeader>
           <TableBody>

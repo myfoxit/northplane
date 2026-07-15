@@ -31,4 +31,14 @@ describe('redactSecrets', () => {
     const spec = { address: '10.0.0.1', args: ['--port', '5432'], interval: '60s' }
     expect(redactSecrets(spec)).toEqual(spec)
   })
+  it('masks an SNMP community after -C / --community', () => {
+    expect(redactSecrets({ args: ['-H', '10.0.0.1', '-C', 's3cret', '-o', 'sysUpTime'] }))
+      .toEqual({ args: ['-H', '10.0.0.1', '-C', REDACTED, '-o', 'sysUpTime'] })
+    expect(redactSecrets({ args: ['--community=s3cret', '-o', 'sysUpTime'] }))
+      .toEqual({ args: [`--community=${REDACTED}`, '-o', 'sysUpTime'] })
+  })
+  it('does not mask a lowercase -c critical threshold', () => {
+    expect(redactSecrets({ args: ['-w', '80', '-c', '90'] }))
+      .toEqual({ args: ['-w', '80', '-c', '90'] })
+  })
 })

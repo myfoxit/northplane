@@ -67,22 +67,17 @@ export function AgentsTab() {
       <Card>
         <CardHeader>
           <CardTitle>np-agent</CardTitle>
-          <CardDescription>
-            Host-Agent für Linux, macOS und Windows: Load/CPU, Speicher, Disks, Netzwerk,
-            Prozesse plus eigene Nagios-Plugins. Standard ist Passiv-Push (keine offenen Ports,
-            Store-and-Forward bei Ausfällen); optional lauscht er NCPA-artig auf HTTPS und der
-            Server fragt ab (Check-Typ <code className="font-mono">agent</code>).
-          </CardDescription>
+          <CardDescription>{t('agentDesc')}</CardDescription>
         </CardHeader>
         <CardContent>
-          <Snippet label="1. Binary installieren (Linux/macOS; Windows: Release-Zip von GitHub):" code={INSTALL_CMD} testid="agent-install" />
+          <Snippet label={t('agentInstallLabel')} code={INSTALL_CMD} testid="agent-install" />
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>2. Token erstellen</CardTitle>
-          <CardDescription>Der Agent braucht genau einen Scope: objects:write (Ergebnisse einliefern).</CardDescription>
+          <CardTitle>{t('step2CreateToken')}</CardTitle>
+          <CardDescription>{t('agentTokenDesc')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex gap-2 items-end flex-wrap">
@@ -96,7 +91,7 @@ export function AgentsTab() {
           </div>
           {minted && (
             <div className="bg-amber-950/40 border border-amber-800/50 rounded-lg p-3">
-              <div className="text-xs text-amber-400 mb-1">Einmalig sichtbar — die agent.yaml unten enthält es bereits:</div>
+              <div className="text-xs text-amber-400 mb-1">{t('tokenOnceVisibleYaml')}</div>
               <code className="text-sm text-amber-200 break-all select-all">{minted}</code>
             </div>
           )}
@@ -105,8 +100,8 @@ export function AgentsTab() {
 
       <Card>
         <CardHeader>
-          <CardTitle>3. Konfigurieren &amp; starten</CardTitle>
-          <CardDescription>/etc/northplane/agent.yaml (bzw. C:\ProgramData\northplane\agent.yaml) anlegen, Dienst starten — der Host erscheint automatisch unter Objekte.</CardDescription>
+          <CardTitle>{t('step3ConfigureStart')}</CardTitle>
+          <CardDescription>{t('agentConfigDesc')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <Snippet label="agent.yaml:" code={agentYaml(server, token, hostname)} testid="agent-yaml" />
@@ -114,17 +109,17 @@ export function AgentsTab() {
             <TabsList>
               <TabsTrigger value="systemd">Linux (systemd)</TabsTrigger>
               <TabsTrigger value="launchd">macOS (launchd)</TabsTrigger>
-              <TabsTrigger value="windows">Windows (Dienst)</TabsTrigger>
+              <TabsTrigger value="windows">{t('windowsService')}</TabsTrigger>
             </TabsList>
           </Tabs>
           {platform === 'systemd' && (
-            <Snippet label="/etc/systemd/system/np-agent.service — dann: systemctl enable --now np-agent" code={SYSTEMD_UNIT} />
+            <Snippet label={t('systemdLabel')} code={SYSTEMD_UNIT} />
           )}
           {platform === 'launchd' && (
-            <Snippet label="/Library/LaunchDaemons/com.northplane.agent.plist — dann: sudo launchctl load -w …" code={LAUNCHD_PLIST} />
+            <Snippet label={t('launchdLabel')} code={LAUNCHD_PLIST} />
           )}
           {platform === 'windows' && (
-            <Snippet label="PowerShell (als Administrator):" code={WINDOWS_SERVICE} />
+            <Snippet label={t('powershellAdmin')} code={WINDOWS_SERVICE} />
           )}
         </CardContent>
       </Card>
