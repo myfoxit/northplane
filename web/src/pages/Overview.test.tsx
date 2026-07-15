@@ -76,9 +76,10 @@ describe('<OverviewPage />', () => {
     renderWithProviders(<OverviewPage />)
 
     expect(await screen.findByText(/all green|alles grün/i)).toBeInTheDocument()
-    // Incidents card + on-call card both fall back to the generic empty text.
+    // Incidents, on-call and the recent-events feed all fall back to the
+    // generic empty text when nothing is open (OVW-1 added the feed).
     await waitFor(() =>
-      expect(screen.getAllByText(/no entries|keine einträge/i)).toHaveLength(2))
+      expect(screen.getAllByText(/no entries|keine einträge/i)).toHaveLength(3))
   })
 
   it('renders an ErrorState with retry when /overview fails', async () => {

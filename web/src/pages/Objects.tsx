@@ -7,20 +7,22 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { keepPreviousData, useQuery, useMutation } from '@tanstack/react-query'
 import { Link, useParams, useNavigate, useSearch } from '@tanstack/react-router'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { X, RefreshCw } from 'lucide-react'
+import { X, RefreshCw, Tag, Search } from 'lucide-react'
 import { get, post, del, fmtTime, fmtAgo, queryClient, type ListResponse } from '../api'
 import type { NPObject, NPEvent, SeriesResult, ObjectSpec, ObjectsSearch } from '../types'
-import { stateLabel, stateIcon, stateColor } from '../types'
+import { stateLabel, stateIcon, stateColor, sevColor } from '../types'
 import { useRefreshInterval } from '../settings'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Empty, LabelChips, ErrorState } from '@/components/kit'
 import { redactSecrets } from '@/lib/redact'
+import { parsePerfdata } from '@/lib/perfdata'
 import { Chart } from '../components/Chart'
-import { groupByUnit } from '../components/dash/series'
+import { groupByUnit, thresholdTone, fmtMetric } from '../components/dash/series'
 import { DowntimeDialog } from '../components/AckDialog'
 import { ObjectFormDialog, BatchAddDialog } from '../components/objects/ObjectForm'
 import { t } from '../i18n'
@@ -125,8 +127,18 @@ export function ObjectsPage() {
         </div>
       </div>
       <div className="flex gap-2 flex-wrap">
-        <Input placeholder={t('filter')} value={selector} onChange={(e) => setSelector(e.target.value)} className="max-w-xs" />
-        <Input placeholder="Volltext…" value={query} onChange={(e) => setQuery(e.target.value)} className="max-w-xs" />
+        {/* Two distinct search scopes, disambiguated by icon + tooltip (LIST-2):
+            a label selector vs. free-text over name/output. */}
+        <div className="relative max-w-xs w-full">
+          <Tag size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+          <Input placeholder={t('filter')} title="Label-Selektor (z.B. env=prod)"
+            value={selector} onChange={(e) => setSelector(e.target.value)} className="pl-8" />
+        </div>
+        <div className="relative max-w-xs w-full">
+          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+          <Input placeholder="Volltext…" title="Volltext-Suche (Name / Ausgabe)"
+            value={query} onChange={(e) => setQuery(e.target.value)} className="pl-8" />
+        </div>
         <Select value={kindFilter || ALL} onValueChange={(v) => patchSearch({ kind: (v === ALL ? undefined : v) as ObjectsSearch['kind'] })}>
           <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -148,7 +160,15 @@ export function ObjectsPage() {
         )}
       </div>
       {isLoading && <Empty text={t('loading')} />}
-      <div ref={parentRef} className="flex-1 overflow-auto border border-border rounded-xl bg-card/40 min-h-[420px]">
+      {/* Column headers so the flat list reads as a table (LIST-1). */}
+      <div className="flex items-center gap-3 px-3 py-1.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wider border border-b-0 border-border rounded-t-xl bg-muted/30">
+        <span className="w-24 shrink-0">{t('state')}</span>
+        <span className="w-16 shrink-0">{t('type')}</span>
+        <span className="w-28 shrink-0">{t('folder')}</span>
+        <span className="w-56 shrink-0">{t('name')}</span>
+        <span className="flex-1">{t('output')}</span>
+      </div>
+      <div ref={parentRef} className="flex-1 overflow-auto border border-border rounded-b-xl bg-card/40 min-h-[420px]">
         <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
           {virtualizer.getVirtualItems().map((vi) => {
             const o = rows[vi.index]
@@ -169,7 +189,8 @@ export function ObjectsPage() {
                       : `○ ${t('pending')}`}
                   </span>
                   <span className="w-16 shrink-0 text-xs text-muted-foreground uppercase">{o.kind}</span>
-                  <span className="text-foreground font-medium truncate w-64 shrink-0">
+                  <span className="w-28 shrink-0 text-xs text-muted-foreground truncate font-mono" title={o.folder}>{o.folder}</span>
+                  <span className="text-foreground font-medium truncate w-56 shrink-0">
                     {o.kind === 'service' && o.hostName ? `${o.hostName} / ` : ''}{o.name}
                   </span>
                   <span className="text-muted-foreground text-xs truncate flex-1">{o.state?.output}</span>
@@ -229,6 +250,15 @@ export function ObjectDetailPage() {
     refetchInterval: refresh,
   })
   const services = useMemo(() => svcData?.items ?? [], [svcData])
+  // A service's sibling services on the same host (DETAIL-4) — lets you jump
+  // across a host's services without going via the host page.
+  const { data: sibData } = useQuery({
+    queryKey: ['objects', obj?.hostId, 'siblings'],
+    queryFn: () => get<ListResponse<NPObject>>(`/services?hostId=${obj!.hostId}&limit=1000`),
+    enabled: obj?.kind === 'service' && !!obj?.hostId,
+    refetchInterval: refresh,
+  })
+  const siblings = useMemo(() => (sibData?.items ?? []).filter((sv) => sv.id !== id), [sibData, id])
   const { data: series } = useQuery({
     queryKey: ['metrics', id],
     queryFn: () => post<SeriesResult[]>('/metrics/query', {
@@ -265,11 +295,17 @@ export function ObjectDetailPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="text-xs text-muted-foreground">
+        <div className="min-w-0">
+          <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-1">
             <Link to="/objects" className="hover:text-foreground/90">{t('objects')}</Link>
-            {' / '}{obj.folder !== '/' ? `${obj.folder} / ` : ''}
-            {obj.kind === 'service' && obj.hostName ? `${obj.hostName} / ` : ''}
+            {obj.folder !== '/' && (
+              <>{' / '}<Link to="/objects" search={{ q: obj.folder }} className="hover:text-foreground/90">{obj.folder}</Link></>
+            )}
+            {obj.kind === 'service' && obj.hostName && (
+              <>{' / '}{obj.hostId
+                ? <Link to="/objects/$id" params={{ id: obj.hostId }} className="hover:text-foreground/90 font-medium">{obj.hostName}</Link>
+                : <span>{obj.hostName}</span>}</>
+            )}
           </div>
           <h1 className="text-xl font-bold flex items-center gap-3">
             {obj.name}
@@ -282,7 +318,15 @@ export function ObjectDetailPage() {
               </span>
             )}
           </h1>
-          <div className="mt-1"><LabelChips labels={obj.labels} /></div>
+          <div className="mt-1 flex items-center gap-2 flex-wrap">
+            <LabelChips labels={obj.labels} />
+            {obj.kind === 'service' && obj.hostName && obj.hostId && (
+              <Link to="/objects/$id" params={{ id: obj.hostId }}
+                className="text-[11px] bg-muted text-muted-foreground rounded px-1.5 py-0.5 hover:text-foreground">
+                Host: <span className="text-foreground/90 font-medium">{obj.hostName}</span>
+              </Link>
+            )}
+          </div>
         </div>
         <div className="flex gap-2 shrink-0 items-center">
           <Button variant="default" onClick={() => setEditOpen(true)}>{t('edit')}</Button>
@@ -292,116 +336,88 @@ export function ObjectDetailPage() {
         </div>
       </div>
 
-      {/* Interval / scheduling card (CMP Admin parity — check-interval
-          management must be visible at a glance). */}
-      <Card>
-        <CardHeader><CardTitle>{`${t('interval')} & Scheduling`}</CardTitle></CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-4 gap-y-2 text-sm">
-            <Cfg k={t('interval')} v={eff.interval} />
-            <Cfg k={t('retryInterval')} v={eff.retryInterval} />
-            <Cfg k={t('maxAttempts')} v={eff.maxCheckAttempts != null ? String(eff.maxCheckAttempts) : undefined} />
-            <Cfg k={t('timeout')} v={eff.timeout} />
-            <Cfg k={t('checkPeriod')} v={eff.checkPeriod} />
-            <Cfg k={t('checkCommand')} v={eff.checkCommand} mono />
-          </div>
-        </CardContent>
-      </Card>
+      {/* Lead with State + Metrics; raw config moves into its own tab (DETAIL-2). */}
+      <Tabs defaultValue="overview">
+        <TabsList variant="line">
+          <TabsTrigger value="overview">{t('overview')}</TabsTrigger>
+          <TabsTrigger value="history">{t('history')}</TabsTrigger>
+          <TabsTrigger value="config">Konfiguration</TabsTrigger>
+        </TabsList>
 
-      {isHost && (
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              {t('services')} <span className="text-muted-foreground text-sm font-normal">({services.length})</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {services.length === 0 ? (
-              <Empty text={t('noServices')} />
-            ) : (
-              <div className="divide-y divide-border/50">
-                {services.map((s) => (
-                  <Link
-                    key={s.id} to="/objects/$id" params={{ id: s.id }}
-                    className="flex items-center gap-3 py-1.5 px-2 -mx-2 rounded-md hover:bg-muted/40 text-sm group"
-                  >
-                    <span className={`w-28 shrink-0 font-semibold ${s.state ? stateColor(s.kind, s.state.state) : 'text-muted-foreground'}`}>
-                      {s.state?.lastCheck
-                        ? `${stateIcon(s.kind, s.state.state)} ${stateLabel(s.kind, s.state.state)}`
-                        : `○ ${t('pending')}`}
-                    </span>
-                    <span className="font-medium truncate w-56 shrink-0 text-foreground">{s.name}</span>
-                    <span className="text-muted-foreground text-xs truncate flex-1">{s.state?.output}</span>
-                    <LabelChips labels={s.labels} />
-                  </Link>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="grid lg:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader><CardTitle>{t('state')}</CardTitle></CardHeader>
-          <CardContent>
-            <dl className="text-sm space-y-1.5">
-              <Row k={t('output')} v={cs?.output} mono />
-              {cs?.longOutput && <Row k="Long" v={cs.longOutput} mono />}
-              {cs?.perfdata && <Row k="Perfdata" v={cs.perfdata} mono />}
-              <Row k="Last check" v={cs?.lastCheck ? `${fmtTime(cs.lastCheck)} (${fmtAgo(cs.lastCheck)} ago)` : '—'} />
-              <Row k="Next check" v={fmtTime(cs?.nextCheck)} />
-              <Row k="Last hard change" v={fmtTime(cs?.lastHardChange)} />
-              {cs?.ackedBy && <Row k={t('acked')} v={`${cs.ackedBy} — ${cs.ackComment ?? ''}`} />}
-              {(cs?.downtimeDepth ?? 0) > 0 && <Row k={t('downtime')} v="aktiv" />}
-              {cs?.flapping && <Row k="Flapping" v="ja" />}
-            </dl>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader><CardTitle>{`${t('effectiveConfig')}${effective?.templateChain?.length ? ` — ${t('templateChain')}: ${effective.templateChain.join(' → ')}` : ''}`}</CardTitle></CardHeader>
-          <CardContent>
-            <pre className="text-xs text-muted-foreground overflow-auto max-h-64 font-mono">
-              {JSON.stringify(redactSecrets(effective?.spec ?? obj.spec), null, 2)}
-            </pre>
-          </CardContent>
-        </Card>
-      </div>
-
-      {metricGroups.length > 0 && (
-        <Card>
-          <CardHeader><CardTitle>{t('metrics')}</CardTitle></CardHeader>
-          <CardContent>
-            <div className="grid lg:grid-cols-2 gap-6">
-              {metricGroups.map((g, i) => (
-                <Chart key={i} results={g} />
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <Card>
-        <CardHeader><CardTitle>{t('history')}</CardTitle></CardHeader>
-        <CardContent>
-          {(events?.items?.length ?? 0) === 0
-            ? <Empty text={t('empty')} />
-            : (
-              <div className="space-y-1 text-sm">
-                {events!.items!.map((e) => (
-                  <div key={e.id} className="flex gap-3 py-1 border-b border-border/50 last:border-0">
-                    <span className="text-muted-foreground/70 text-xs tabular-nums w-36 shrink-0">{fmtTime(e.ts)}</span>
-                    <Badge variant="outline" className="bg-muted text-muted-foreground border-input">{e.type}</Badge>
-                    <span className="text-muted-foreground text-xs truncate">
-                      {String((e.payload as Record<string, unknown>).output ??
-                        (e.payload as Record<string, unknown>).summary ?? JSON.stringify(e.payload))}
-                    </span>
+        <TabsContent value="overview" className="mt-4 space-y-4">
+          <div className="grid lg:grid-cols-2 gap-4 items-start">
+            <Card>
+              <CardHeader><CardTitle>{t('state')}</CardTitle></CardHeader>
+              <CardContent>
+                <dl className="text-sm space-y-1.5">
+                  <Row k={t('output')} v={cs?.output} mono />
+                  {cs?.longOutput && <Row k="Long" v={cs.longOutput} mono />}
+                  <Row k="Last check" v={cs?.lastCheck ? `${fmtTime(cs.lastCheck)} (${fmtAgo(cs.lastCheck)} ago)` : '—'} />
+                  <Row k="Next check" v={fmtTime(cs?.nextCheck)} />
+                  <Row k="Last hard change" v={fmtTime(cs?.lastHardChange)} />
+                  {cs?.ackedBy && <Row k={t('acked')} v={`${cs.ackedBy} — ${cs.ackComment ?? ''}`} />}
+                  {(cs?.downtimeDepth ?? 0) > 0 && <Row k={t('downtime')} v="aktiv" />}
+                  {cs?.flapping && <Row k="Flapping" v="ja" />}
+                </dl>
+                {cs?.perfdata && (
+                  <div className="mt-3 pt-3 border-t border-border/50">
+                    <div className="text-[11px] text-muted-foreground uppercase tracking-wider mb-2">Perfdata</div>
+                    <PerfMeters perfdata={cs.perfdata} />
                   </div>
-                ))}
-              </div>
-            )}
-        </CardContent>
-      </Card>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader><CardTitle>{`${t('interval')} & Scheduling`}</CardTitle></CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 text-sm">
+                  <Cfg k={t('interval')} v={eff.interval} />
+                  <Cfg k={t('retryInterval')} v={eff.retryInterval} />
+                  <Cfg k={t('maxAttempts')} v={eff.maxCheckAttempts != null ? String(eff.maxCheckAttempts) : undefined} />
+                  <Cfg k={t('timeout')} v={eff.timeout} />
+                  <Cfg k={t('checkPeriod')} v={eff.checkPeriod} />
+                  <Cfg k={t('checkCommand')} v={eff.checkCommand} mono />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {metricGroups.length > 0 && (
+            <Card>
+              <CardHeader><CardTitle>{t('metrics')}</CardTitle></CardHeader>
+              <CardContent>
+                <div className="grid lg:grid-cols-2 gap-6">
+                  {metricGroups.map((g, i) => (
+                    <Chart key={i} results={g} />
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {isHost && <RelatedServicesCard title={t('services')} services={services} />}
+          {obj.kind === 'service' && siblings.length > 0 && (
+            <RelatedServicesCard title="Weitere Services des Hosts" services={siblings} />
+          )}
+        </TabsContent>
+
+        <TabsContent value="history" className="mt-4">
+          <Card>
+            <CardHeader><CardTitle>{t('history')}</CardTitle></CardHeader>
+            <CardContent><HistoryList events={events?.items ?? []} /></CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="config" className="mt-4">
+          <Card>
+            <CardHeader><CardTitle>{t('effectiveConfig')}</CardTitle></CardHeader>
+            <CardContent>
+              <EffectiveConfig spec={(effective?.spec ?? obj.spec) as Record<string, unknown>} templateChain={effective?.templateChain} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
       <DowntimeDialog open={dtOpen} objectId={obj.id} objectName={obj.name} onClose={() => setDtOpen(false)} />
       {editOpen && <ObjectFormDialog open kind={obj.kind} edit={obj} onClose={() => setEditOpen(false)} />}
     </div>
@@ -423,6 +439,153 @@ function Cfg({ k, v, mono }: { k: string; v?: string; mono?: boolean }) {
     <div>
       <div className="text-[11px] text-muted-foreground uppercase tracking-wider">{k}</div>
       <div className={`text-foreground ${mono ? 'font-mono text-xs' : 'tabular-nums'}`}>{v || '—'}</div>
+    </div>
+  )
+}
+
+// PerfMeters: render a check's perfdata string as small labelled bars with
+// warn/crit markers instead of a raw "load1=1.09;3;6;;" blob (DETAIL-5).
+function PerfMeters({ perfdata }: { perfdata: string }) {
+  const perfs = useMemo(() => parsePerfdata(perfdata), [perfdata])
+  if (perfs.length === 0) {
+    return <div className="text-xs text-muted-foreground font-mono break-all">{perfdata}</div>
+  }
+  return (
+    <div className="space-y-2">
+      {perfs.map((p) => {
+        const min = p.min ?? 0
+        const max = p.max ?? (Math.max(p.value, p.crit ?? 0, p.warn ?? 0) || 1)
+        const span = (max - min) || 1
+        const at = (n: number) => ((n - min) / span) * 100
+        const tone = thresholdTone(p.value, p.warn, p.crit)
+        return (
+          <div key={p.label} className="text-xs">
+            <div className="flex items-baseline justify-between mb-0.5 gap-2">
+              <span className="text-muted-foreground font-mono truncate">{p.label}</span>
+              <span className="text-foreground tabular-nums font-semibold shrink-0">{fmtMetric(p.value)}{p.unit}</span>
+            </div>
+            <div className="relative h-2 bg-slate-800/80 rounded overflow-hidden">
+              <div className="absolute inset-y-0 left-0 rounded" style={{ width: `${Math.max(1.5, Math.min(100, at(p.value)))}%`, background: tone }} />
+              {p.warn !== null && p.warn >= min && p.warn <= max && (
+                <div className="absolute inset-y-0 w-px bg-amber-400/70" style={{ left: `${at(p.warn)}%` }} />
+              )}
+              {p.crit !== null && p.crit >= min && p.crit <= max && (
+                <div className="absolute inset-y-0 w-px bg-red-400/80" style={{ left: `${at(p.crit)}%` }} />
+              )}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// RelatedServicesCard: a host's own services, or a service's siblings on the
+// same host (DETAIL-4). Rows drill into the object detail.
+function RelatedServicesCard({ title, services }: { title: string; services: NPObject[] }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>
+          {title} <span className="text-muted-foreground text-sm font-normal">({services.length})</span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {services.length === 0 ? (
+          <Empty text={t('noServices')} />
+        ) : (
+          <div className="divide-y divide-border/50">
+            {services.map((s) => (
+              <Link
+                key={s.id} to="/objects/$id" params={{ id: s.id }}
+                className="flex items-center gap-3 py-1.5 px-2 -mx-2 rounded-md hover:bg-muted/40 text-sm group"
+              >
+                <span className={`w-28 shrink-0 font-semibold ${s.state ? stateColor(s.kind, s.state.state) : 'text-muted-foreground'}`}>
+                  {s.state?.lastCheck
+                    ? `${stateIcon(s.kind, s.state.state)} ${stateLabel(s.kind, s.state.state)}`
+                    : `○ ${t('pending')}`}
+                </span>
+                <span className="font-medium truncate w-56 shrink-0 text-foreground">{s.name}</span>
+                <span className="text-muted-foreground text-xs truncate flex-1">{s.state?.output}</span>
+                <LabelChips labels={s.labels} />
+              </Link>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+// HistoryList: event timeline with severity-coloured badges so CRITICAL vs OK
+// transitions read at a glance (DETAIL-5).
+function HistoryList({ events }: { events: NPEvent[] }) {
+  if (events.length === 0) return <Empty text={t('empty')} />
+  return (
+    <div className="space-y-0.5 text-sm">
+      {events.map((e) => (
+        <div key={e.id} className="flex items-center gap-3 py-1.5 px-2 -mx-2 rounded hover:bg-muted/30 border-b border-border/40 last:border-0">
+          <span className="text-muted-foreground/70 text-xs tabular-nums w-36 shrink-0">{fmtTime(e.ts)}</span>
+          <Badge variant="outline" className="bg-muted text-muted-foreground border-input shrink-0">{e.type}</Badge>
+          {e.severity && <Badge variant="outline" className={`${sevColor(e.severity)} shrink-0`}>{e.severity}</Badge>}
+          <span className="text-muted-foreground text-xs truncate">
+            {String((e.payload as Record<string, unknown>).output ??
+              (e.payload as Record<string, unknown>).summary ?? JSON.stringify(e.payload))}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// EffectiveConfig: the resolved spec as a scannable key/value table (secrets
+// redacted, DETAIL-1) with the template chain and a Raw JSON toggle (DETAIL-3).
+// Per-field origin (own vs which template) isn't exposed by the API, so the
+// chain is surfaced as a whole rather than annotated per row.
+function EffectiveConfig({ spec, templateChain }: {
+  spec: Record<string, unknown>; templateChain?: string[] | null
+}) {
+  const [raw, setRaw] = useState(false)
+  const red = useMemo(() => redactSecrets(spec) as Record<string, unknown>, [spec])
+  const entries = Object.entries(red).filter(([, v]) =>
+    v !== undefined && v !== null && v !== ''
+    && !(Array.isArray(v) && v.length === 0)
+    && !(typeof v === 'object' && !Array.isArray(v) && Object.keys(v as object).length === 0),
+  )
+  const fmtVal = (v: unknown): string => {
+    if (Array.isArray(v)) return v.map((x) => (typeof x === 'object' ? JSON.stringify(x) : String(x))).join(', ')
+    if (v !== null && typeof v === 'object') return JSON.stringify(v)
+    return String(v)
+  }
+  return (
+    <div className="space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        {templateChain?.length ? (
+          <div className="text-xs text-muted-foreground min-w-0">
+            {t('templateChain')}: <span className="text-foreground/80 font-mono break-words">{templateChain.join(' → ')}</span>
+          </div>
+        ) : <span />}
+        <button type="button" onClick={() => setRaw((r) => !r)}
+          className="text-xs text-muted-foreground hover:text-foreground shrink-0">
+          {raw ? 'Tabelle' : 'Raw JSON'}
+        </button>
+      </div>
+      {raw ? (
+        <pre className="text-xs text-muted-foreground overflow-auto max-h-72 font-mono">
+          {JSON.stringify(red, null, 2)}
+        </pre>
+      ) : entries.length === 0 ? (
+        <Empty text={t('empty')} />
+      ) : (
+        <dl className="text-sm">
+          {entries.map(([k, v]) => (
+            <div key={k} className="flex gap-3 py-1 border-b border-border/40 last:border-0">
+              <dt className="text-muted-foreground w-44 shrink-0 font-mono text-xs pt-0.5">{k}</dt>
+              <dd className="text-foreground/90 min-w-0 break-words font-mono text-xs">{fmtVal(v)}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
     </div>
   )
 }

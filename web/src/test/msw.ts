@@ -61,6 +61,7 @@ export const handlers = [
     HttpResponse.json({ items: sampleProblems }),
   ),
   http.get('/api/v1/alerts', () => HttpResponse.json({ items: [] })),
+  http.get('/api/v1/events', () => HttpResponse.json({ items: [] })),
 ]
 
 export const server = setupServer(...handlers)

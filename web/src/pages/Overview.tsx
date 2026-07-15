@@ -3,8 +3,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link, useSearch } from '@tanstack/react-router'
 import { Radar, Maximize2, Phone, Check } from 'lucide-react'
-import { get, fmtAgo } from '../api'
-import type { Overview as OverviewData, OnCallNow, ProblemRow } from '../types'
+import { get, fmtAgo, fmtTime } from '../api'
+import type { Overview as OverviewData, OnCallNow, ProblemRow, NPEvent } from '../types'
 import { stateLabel, stateIcon, stateColor, sevColor } from '../types'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -30,6 +30,11 @@ export function OverviewPage() {
   const { data: problems } = useQuery({
     queryKey: ['problems'],
     queryFn: () => get<{ items: ProblemRow[] | null }>('/problems?limit=15'),
+    refetchInterval: wallboard ? 10_000 : refresh,
+  })
+  const { data: events } = useQuery({
+    queryKey: ['events', 'overview'],
+    queryFn: () => get<{ items: NPEvent[] | null }>('/events?limit=20'),
     refetchInterval: wallboard ? 10_000 : refresh,
   })
 
@@ -115,6 +120,31 @@ export function OverviewPage() {
           </Card>
         </div>
       </div>
+
+      {/* Recent events feed — fills the lower viewport with useful context even
+          when everything is green (OVW-1). */}
+      <Card>
+        <CardHeader><CardTitle>Letzte Ereignisse</CardTitle></CardHeader>
+        <CardContent>
+          {(events?.items?.length ?? 0) === 0 ? (
+            <Empty text={t('empty')} />
+          ) : (
+            <div className="divide-y divide-border/60">
+              {events!.items!.map((e) => (
+                <div key={e.id} className="flex items-center gap-3 py-1.5 text-sm">
+                  <span className="text-muted-foreground/70 text-xs tabular-nums w-32 shrink-0">{fmtTime(e.ts)}</span>
+                  <Badge variant="outline" className="bg-muted text-muted-foreground border-input shrink-0">{e.type}</Badge>
+                  {e.severity && <Badge variant="outline" className={`${sevColor(e.severity)} shrink-0`}>{e.severity}</Badge>}
+                  <span className="text-muted-foreground truncate">
+                    {String((e.payload as Record<string, unknown>).output ??
+                      (e.payload as Record<string, unknown>).summary ?? '')}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }
