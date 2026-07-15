@@ -1,14 +1,12 @@
 name: Deploy
 
-# Continuous deployment to the production host (address in the DEPLOY_HOST repo
-# variable — currently 51.83.96.40).
+# Publish the app image to GHCR on every green build of main.
 #
-# Runs ONLY after the CI workflow succeeds on main (so a red build never
-# ships), plus a manual button. Builds the image, pushes it to GHCR, then
-# SSHes to the server as the unprivileged `deploy` user and rolls the
-# Docker Compose stack (GHCR auth uses the ephemeral GITHUB_TOKEN and is
-# revoked right after the pull). All host/credential config lives in GitHub
-# repo Variables + Secrets — see deploy/README.md.
+# The production host (np-01) PULLS this image itself (a short systemd timer
+# runs `docker compose pull && up -d`), so nothing here ever SSHes into the
+# infrastructure — CI never holds a key with root on a production host.
+# "Deploy" = publish the artifact; the server rolls itself forward within a
+# couple of minutes. See deploy/README.md.
 
 on:
   workflow_run:
@@ -16,14 +14,8 @@ on:
     types: [completed]
     branches: [main]
   workflow_dispatch:
-    inputs:
-      demo:
-        description: "Demo data switch for this deploy"
-        type: choice
-        default: repo-default
-        options: [repo-default, "true", "false"]
 
-# One deploy at a time; never cancel an in-flight rollout.
+# One publish at a time; never cancel an in-flight build.
 concurrency:
   group: deploy-production
   cancel-in-progress: false
@@ -33,13 +25,12 @@ permissions:
   packages: write # push the image to ghcr.io
 
 jobs:
-  deploy:
+  publish:
     # Manual runs always proceed; automatic runs only on a GREEN CI run.
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    environment: production
     steps:
       - uses: actions/checkout@v4
         with:
@@ -56,7 +47,6 @@ jobs:
         id: img
         run: |
           SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
-          echo "ref=ghcr.io/${{ github.repository }}:main-${SHA::12}" >> "$GITHUB_OUTPUT"
           echo "ver=main-${SHA::12}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push image
@@ -66,86 +56,12 @@ jobs:
           push: true
           build-args: VERSION=${{ steps.img.outputs.ver }}
           tags: |
-            ${{ steps.img.outputs.ref }}
+            ghcr.io/${{ github.repository }}:${{ steps.img.outputs.ver }}
             ghcr.io/${{ github.repository }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Resolve demo switch
-        id: demo
-        env:
-          INPUT: ${{ github.event.inputs.demo }}
-          REPO_DEFAULT: ${{ vars.NORTHPLANE_DEMO }}
+      - name: Summary
         run: |
-          VAL="$INPUT"
-          if [ -z "$VAL" ] || [ "$VAL" = "repo-default" ]; then VAL="${REPO_DEFAULT:-false}"; fi
-          echo "value=$VAL" >> "$GITHUB_OUTPUT"
-
-      - name: Deploy over SSH
-        env:
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          DEPLOY_KNOWN_HOSTS: ${{ vars.DEPLOY_KNOWN_HOSTS }}
-          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
-          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
-          IMAGE: ${{ steps.img.outputs.ref }}
-          DEMO: ${{ steps.demo.outputs.value }}
-          DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
-          ACME_EMAIL: ${{ vars.ACME_EMAIL }}
-          BASE_URL: ${{ vars.NORTHPLANE_BASE_URL }}
-          ADMIN_EMAIL: ${{ vars.NP_DEFAULT_ADMIN_EMAIL }}
-          ADMIN_PASSWORD: ${{ secrets.NP_DEFAULT_ADMIN_PASSWORD }}
-          GHCR_USER: ${{ github.actor }}
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          printf '%s\n' "$DEPLOY_SSH_KEY"     > ~/.ssh/id_deploy    && chmod 600 ~/.ssh/id_deploy
-          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts  && chmod 644 ~/.ssh/known_hosts
-          SSHOPTS="-i $HOME/.ssh/id_deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
-          TARGET="$DEPLOY_USER@$DEPLOY_HOST"
-
-          # Demo and real data live in separate dirs of the same volume, so
-          # flipping the switch is non-destructive and never mixes datasets.
-          if [ "$DEMO" = "true" ]; then DATADIR=/var/lib/northplane/demo; else DATADIR=/var/lib/northplane/real; fi
-
-          # Render the server-side runtime config from GitHub vars/secrets.
-          cat > render.env <<EOF
-          NORTHPLANE_IMAGE=$IMAGE
-          DOMAIN=$DOMAIN
-          SERVER_IP=$DEPLOY_HOST
-          ACME_EMAIL=$ACME_EMAIL
-          NORTHPLANE_BASE_URL=$BASE_URL
-          NORTHPLANE_DEMO=$DEMO
-          NORTHPLANE_DATA_DIR=$DATADIR
-          NP_DEFAULT_ADMIN_EMAIL=$ADMIN_EMAIL
-          NP_DEFAULT_ADMIN_PASSWORD=$ADMIN_PASSWORD
-          EOF
-
-          scp $SSHOPTS render.env "$TARGET:$DEPLOY_PATH/.env"
-          scp $SSHOPTS deploy/docker-compose.yml deploy/Caddyfile "$TARGET:$DEPLOY_PATH/"
-
-          # GHCR auth on the server: token piped over stdin, never in argv.
-          printf '%s\n' "$GHCR_TOKEN" | ssh $SSHOPTS "$TARGET" "docker login ghcr.io -u '$GHCR_USER' --password-stdin"
-          ssh $SSHOPTS "$TARGET" "cd '$DEPLOY_PATH' && chmod 600 .env && docker compose pull && docker compose up -d --remove-orphans && docker image prune -f"
-          ssh $SSHOPTS "$TARGET" "docker logout ghcr.io || true"
-
-          echo "Deployed $IMAGE (demo=$DEMO) to $DEPLOY_HOST"
-
-      - name: Health check
-        env:
-          DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
-          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
-        run: |
-          set -uo pipefail
-          # Prefer the domain (real cert); fall back to the IP (self-signed).
-          for i in $(seq 1 20); do
-            if curl -fsS --max-time 5 "https://${DOMAIN}/healthz" >/dev/null 2>&1; then
-              echo "healthy via https://${DOMAIN}"; exit 0
-            fi
-            if curl -fsSk --max-time 5 "https://${DEPLOY_HOST}/healthz" >/dev/null 2>&1; then
-              echo "healthy via https://${DEPLOY_HOST} (IP / self-signed)"; exit 0
-            fi
-            echo "waiting for the stack to come up ($i/20)…"; sleep 6
-          done
-          echo "::warning::health check did not pass within ~2min — check 'docker compose logs' on the host"
+          echo "Published ghcr.io/${{ github.repository }}:${{ steps.img.outputs.ver }} (and :latest)." >> "$GITHUB_STEP_SUMMARY"
+          echo "np-01 auto-pulls :latest within ~2 min (northplane-pull.timer)." >> "$GITHUB_STEP_SUMMARY"
