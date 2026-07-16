@@ -9,20 +9,16 @@ import (
 	"github.com/northplane/northplane/internal/model"
 )
 
-func bootStore(t *testing.T) (*Store, context.Context) {
-	t.Helper()
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	s, err := Open(ctx, Options{DataDir: t.TempDir()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { s.Close() })
-	return s, ctx
-}
+// Both suites run on the full storage matrix (SQLite always, PostgreSQL
+// when NORTHPLANE_TEST_PG_DSN is set) — the agent-chat tables must be
+// first-class on both dialects like every other table.
 
 func TestAIConnectionCRUDAndScoping(t *testing.T) {
-	s, ctx := bootStore(t)
+	matrix(t, testAIConnectionCRUDAndScoping)
+}
+
+func testAIConnectionCRUDAndScoping(t *testing.T, s *Store) {
+	ctx := context.Background()
 	tenant := model.DefaultTenant
 
 	own := &AIProviderConnection{TenantID: tenant, UserID: "alice", Name: "mine",
@@ -88,7 +84,11 @@ func TestAIConnectionCRUDAndScoping(t *testing.T) {
 }
 
 func TestAIChatMessagesLifecycle(t *testing.T) {
-	s, ctx := bootStore(t)
+	matrix(t, testAIChatMessagesLifecycle)
+}
+
+func testAIChatMessagesLifecycle(t *testing.T, s *Store) {
+	ctx := context.Background()
 	tenant := model.DefaultTenant
 
 	chat := &AIChat{TenantID: tenant, UserID: "alice", Title: "test"}

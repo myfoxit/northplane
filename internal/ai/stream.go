@@ -168,7 +168,8 @@ func sseScan(ctx context.Context, r io.Reader, handle func(event string, data []
 				data.WriteByte('\n')
 			}
 			data.WriteString(strings.TrimPrefix(strings.TrimPrefix(line, "data:"), " "))
-		case strings.HasPrefix(line, ":"): // comment/heartbeat
+			// Lines with other prefixes (":" comments/heartbeats, "id:",
+			// "retry:") are ignored.
 		}
 	}
 	if err := flush(); err != nil {
