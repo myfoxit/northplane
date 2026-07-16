@@ -12,6 +12,8 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -81,16 +83,7 @@ func New(ctx context.Context, cfg config.Config, store *storage.Store, ts *tsdb.
 	}
 	s.metrics = metrics.NewRegistry()
 
-	// secret box (optional)
-	var box *auth.SecretBox
-	if cfg.SecretKeyFile != "" {
-		b, err := auth.LoadMasterKey(cfg.SecretKeyFile)
-		if err != nil {
-			log.Warn("server: secret store disabled", "err", err)
-		} else {
-			box = b
-		}
-	}
+	box := resolveSecretBox(cfg, log)
 	secrets := auth.SecretsResolver(store, box)
 
 	s.sched = scheduler.New(s.cat, log)
@@ -171,6 +164,50 @@ func New(ctx context.Context, cfg config.Config, store *storage.Store, ts *tsdb.
 		MaxHeaderBytes:    1 << 20, // 1 MiB — reject oversized header floods
 	}
 	return s, nil
+}
+
+// resolveSecretBox makes the secret store self-provisioning so
+// encrypted-at-rest features (secrets, AI provider keys) work out of
+// the box instead of silently disabling:
+//
+//  1. an explicitly configured secretKeyFile is used when loadable; if
+//     the file simply does not exist yet, the key is generated there
+//     (first boot with a fresh config);
+//  2. when the explicit path is unusable (read-only mount, a directory
+//     left behind by a missing bind-mount source, bad contents) — or no
+//     path is configured — the key lives at <dataDir>/secret.key, which
+//     persists on the data volume across image pulls.
+//
+// The fallback is loud: sealing against a different key than the
+// operator intended must be visible in the logs.
+func resolveSecretBox(cfg config.Config, log *slog.Logger) *auth.SecretBox {
+	tryPath := func(path string) *auth.SecretBox {
+		if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+			if err := auth.GenerateMasterKey(path); err != nil {
+				log.Warn("server: cannot create master key", "path", path, "err", err)
+				return nil
+			}
+			log.Info("server: generated secret-store master key", "path", path)
+		}
+		box, err := auth.LoadMasterKey(path)
+		if err != nil {
+			log.Warn("server: master key unusable", "path", path, "err", err)
+			return nil
+		}
+		return box
+	}
+	if cfg.SecretKeyFile != "" {
+		if box := tryPath(cfg.SecretKeyFile); box != nil {
+			return box
+		}
+		log.Warn("server: configured secretKeyFile unusable — falling back to the data directory",
+			"configured", cfg.SecretKeyFile, "fallback", filepath.Join(cfg.DataDir, "secret.key"))
+	}
+	box := tryPath(filepath.Join(cfg.DataDir, "secret.key"))
+	if box == nil {
+		log.Warn("server: secret store disabled (no usable master key)")
+	}
+	return box
 }
 
 // rootHandler routes between API, SSE, server-rendered pages and the SPA.
