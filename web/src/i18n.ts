@@ -672,6 +672,16 @@ const de = {
   modeLight: 'Hell',
   modeDark: 'Dunkel',
   modeHint: 'Hell/Dunkel — jedes Thema gibt es in beiden Modi.',
+  // — overview cards —
+  activeProblems: 'Aktive Probleme',
+  serviceStatus: 'Service-Status',
+  stOk: 'OK',
+  stWarning: 'Warnung',
+  stCritical: 'Kritisch',
+  stUnknown: 'Unbekannt',
+  subDown: 'ausgefallen',
+  subUnreachable: 'unerreichbar',
+  subAcked: 'quittiert',
 } as const
 
 const en: Record<keyof typeof de, string> = {
@@ -1343,6 +1353,16 @@ const en: Record<keyof typeof de, string> = {
   modeLight: 'Light',
   modeDark: 'Dark',
   modeHint: 'Light/dark — every theme comes in both modes.',
+  // — overview cards —
+  activeProblems: 'Active problems',
+  serviceStatus: 'Service status',
+  stOk: 'OK',
+  stWarning: 'Warning',
+  stCritical: 'Critical',
+  stUnknown: 'Unknown',
+  subDown: 'down',
+  subUnreachable: 'unreachable',
+  subAcked: 'acked',
 }
 
 const lang = (typeof navigator !== 'undefined' && navigator.language.startsWith('de')) ? de : en

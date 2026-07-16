@@ -11,9 +11,13 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Empty, ErrorState } from '@/components/kit'
 import { humanizeOutput } from '@/lib/humanize'
-import { TileLink } from '../components/dash/widgets'
+import { StatCard, StatusDonut } from '../components/dash/overview-cards'
+import { useSparkHistory } from '../components/dash/spark'
 import { t } from '../i18n'
 import { useRefreshInterval } from '../settings'
+
+// One-decimal percentage; empty denominator reads as 100% healthy.
+const pct = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 1000) / 10 : 100)
 
 export function OverviewPage() {
   const search = useSearch({ strict: false }) as Record<string, unknown>
@@ -52,14 +56,44 @@ export function OverviewPage() {
   const critAlerts = data?.openAlerts?.critical ?? 0
   const warnAlerts = data?.openAlerts?.warning ?? 0
 
+  const hostsTotal = (s?.hostsUp ?? 0) + (s?.hostsDown ?? 0) + (s?.hostsUnreachable ?? 0)
+  const svcTotal = (s?.servicesOk ?? 0) + (s?.servicesWarning ?? 0) + (s?.servicesCritical ?? 0) + (s?.servicesUnknown ?? 0)
+  const problemCount = (s?.hostsDown ?? 0) + (s?.hostsUnreachable ?? 0) + (s?.servicesCritical ?? 0) + (s?.servicesWarning ?? 0) + (s?.servicesUnknown ?? 0)
+  const alertCount = critAlerts + warnAlerts
+
+  // Live sparkline history — accumulates real samples across polls (seeded so
+  // the first paint has a baseline). Hooks stay above every early return.
+  const hHostsUp = useSparkHistory('ov.hostsUp', s?.hostsUp)
+  const hSvcOk = useSparkHistory('ov.svcOk', s?.servicesOk)
+  const hProblems = useSparkHistory('ov.problems', s ? problemCount : undefined)
+  const hAlerts = useSparkHistory('ov.alerts', s ? alertCount : undefined)
+  // "since last poll" delta badge; rising problems/alerts read as bad (crit).
+  const deltaBadge = (h: number[]): { badge?: string; badgeTone?: 'ok' | 'crit' } => {
+    const a = h[h.length - 1], b = h[h.length - 2]
+    const d = a != null && b != null ? a - b : 0
+    return d === 0 ? {} : { badge: `${d > 0 ? '+' : ''}${d}`, badgeTone: d > 0 ? 'crit' : 'ok' }
+  }
+
   const tiles = (
-    <div className={`grid gap-3 ${wallboard ? 'grid-cols-3 lg:grid-cols-6' : 'grid-cols-2 lg:grid-cols-6'}`}>
-      <TileLink to="/objects" search={{ kind: 'host', state: 'up' }} label={t('hostsUp')} value={s?.hostsUp ?? '—'} tone="ok" />
-      <TileLink to="/objects" search={{ kind: 'host', state: 'down' }} label={t('hostsDown')} value={s?.hostsDown ?? '—'} tone={s?.hostsDown ? 'crit' : 'default'} />
-      <TileLink to="/objects" search={{ kind: 'service', state: 'ok' }} label={t('servicesOk')} value={s?.servicesOk ?? '—'} tone="ok" />
-      <TileLink to="/objects" search={{ kind: 'service', state: 'warning' }} label={t('servicesWarning')} value={s?.servicesWarning ?? '—'} tone={s?.servicesWarning ? 'warn' : 'default'} />
-      <TileLink to="/objects" search={{ kind: 'service', state: 'critical' }} label={t('servicesCritical')} value={s?.servicesCritical ?? '—'} tone={s?.servicesCritical ? 'crit' : 'default'} />
-      <TileLink to="/alerts" label={t('openAlerts')} value={`${critAlerts + warnAlerts}`} tone={critAlerts ? 'crit' : warnAlerts ? 'warn' : 'default'} />
+    <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+      <StatCard label={t('hostsUp')} value={s?.hostsUp ?? '—'} total={hostsTotal || undefined} tone="ok"
+        badge={hostsTotal ? `${pct(s?.hostsUp ?? 0, hostsTotal)}%` : undefined}
+        badgeTone={(s?.hostsDown || s?.hostsUnreachable) ? 'crit' : 'ok'}
+        sublabel={`${s?.hostsDown ?? 0} ${t('subDown')} · ${s?.hostsUnreachable ?? 0} ${t('subUnreachable')}`}
+        series={hHostsUp} to="/objects" search={{ kind: 'host', state: 'up' }} />
+      <StatCard label={t('servicesOk')} value={s?.servicesOk ?? '—'} total={svcTotal || undefined} tone="ok"
+        badge={svcTotal ? `${pct(s?.servicesOk ?? 0, svcTotal)}%` : undefined}
+        badgeTone={s?.servicesCritical ? 'crit' : s?.servicesWarning ? 'warn' : 'ok'}
+        sublabel={`${s?.servicesCritical ?? 0} ${t('stCritical')} · ${s?.servicesWarning ?? 0} ${t('stWarning')}`}
+        series={hSvcOk} to="/objects" search={{ kind: 'service', state: 'ok' }} />
+      <StatCard label={t('activeProblems')} value={s ? problemCount : '—'} tone={problemCount ? 'crit' : 'default'}
+        {...deltaBadge(hProblems)}
+        sublabel={`${s?.acked ?? 0} ${t('subAcked')} · ${s?.inDowntime ?? 0} ${t('inDowntime')}`}
+        series={hProblems} to="/problems" />
+      <StatCard label={t('openAlerts')} value={alertCount} tone={critAlerts ? 'crit' : warnAlerts ? 'warn' : 'default'}
+        {...deltaBadge(hAlerts)}
+        sublabel={`${critAlerts} ${t('stCritical')} · ${warnAlerts} ${t('stWarning')}`}
+        series={hAlerts} to="/alerts" />
     </div>
   )
 
@@ -97,6 +131,18 @@ export function OverviewPage() {
           </CardContent>
         </Card>
         <div className="space-y-4">
+          <Card>
+            <CardHeader><CardTitle>{t('serviceStatus')}</CardTitle></CardHeader>
+            <CardContent>
+              <StatusDonut total={svcTotal} healthyPct={pct(s?.servicesOk ?? 0, svcTotal)}
+                segments={[
+                  { label: t('stOk'), value: s?.servicesOk ?? 0, color: 'var(--success)' },
+                  { label: t('stWarning'), value: s?.servicesWarning ?? 0, color: 'var(--warning)' },
+                  { label: t('stCritical'), value: s?.servicesCritical ?? 0, color: 'var(--danger)' },
+                  { label: t('stUnknown'), value: s?.servicesUnknown ?? 0, color: 'var(--muted-foreground)' },
+                ]} />
+            </CardContent>
+          </Card>
           <Card>
             <CardHeader><CardTitle>{t('openIncidents')}</CardTitle></CardHeader>
             <CardContent>

@@ -40,13 +40,17 @@ describe('<OverviewPage />', () => {
     )
     renderWithProviders(<OverviewPage />)
 
-    // Tiles render their labels before data arrives — await a summary value
-    // (12 = hostsUp) so the /overview query has resolved before asserting.
+    // Stat cards render their labels before data arrives — await a summary
+    // value (12 = hostsUp) so the /overview query has resolved before asserting.
     expect(await screen.findByText('12')).toBeInTheDocument()
     expect(screen.getByText('Hosts UP')).toBeInTheDocument()
-    expect(screen.getByText('80')).toBeInTheDocument() // servicesOk
-    // Open-alerts tile sums critical (2) + warning (3).
-    expect(screen.getByText('5')).toBeInTheDocument()
+    // servicesOk (80) now appears in both the stat card and the status-donut
+    // legend, so assert at least one occurrence.
+    expect(screen.getAllByText('80').length).toBeGreaterThan(0)
+    expect(screen.getByText('Active problems')).toBeInTheDocument()
+    expect(screen.getByText('Service status')).toBeInTheDocument()
+    // Open-alerts card sums critical (2) + warning (3).
+    expect(screen.getAllByText('5').length).toBeGreaterThan(0)
 
     // Problem list rows come from the default /problems handler.
     expect(await screen.findByText(/web-01 \/ http/)).toBeInTheDocument()

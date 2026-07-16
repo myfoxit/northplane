@@ -24,22 +24,26 @@ export type ThemeId = string
 
 const IDS = new Set<string>(THEMES.map((t) => t.id))
 const KEY = 'np.theme'
-const DEFAULT: ThemeId = 'northplane'
+// BASE is the :root fallback (Northplane) — selecting it clears the attribute.
+// INITIAL is what a user with no saved preference gets: Obsidian & Fire is the
+// product default. (Kept distinct so BASE stays the attribute-cleared sentinel.)
+const BASE: ThemeId = 'northplane'
+const INITIAL: ThemeId = 'obsidianFire'
 
 function readCache(): ThemeId {
   try {
     const raw = localStorage.getItem(KEY)
     if (raw && IDS.has(raw)) return raw
   } catch { /* localStorage may be unavailable (private mode) — fall back */ }
-  return DEFAULT
+  return INITIAL
 }
 
-// applyTheme reflects the choice onto <html>. Northplane is the :root default,
-// so it clears the attribute rather than setting an (empty) override block.
+// applyTheme reflects the choice onto <html>. Northplane (BASE) is the :root
+// default, so it clears the attribute rather than setting an override block.
 function applyTheme(v: ThemeId): void {
   if (typeof document === 'undefined') return
   const root = document.documentElement
-  if (v === DEFAULT) delete root.dataset.theme
+  if (v === BASE) delete root.dataset.theme
   else root.dataset.theme = v
 }
 
@@ -72,5 +76,5 @@ function subscribe(cb: () => void): () => void {
 
 // Reactive read: the switcher (and anything else) re-renders on change.
 export function useTheme(): ThemeId {
-  return useSyncExternalStore(subscribe, () => current, () => DEFAULT)
+  return useSyncExternalStore(subscribe, () => current, () => INITIAL)
 }
