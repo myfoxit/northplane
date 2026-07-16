@@ -35,6 +35,7 @@ const BusinessPage = lazy(() => import('./pages/Business').then((m) => ({ defaul
 const DiscoveryPage = lazy(() => import('./pages/Discovery').then((m) => ({ default: m.DiscoveryPage })))
 const MaintenancePage = lazy(() => import('./pages/Maintenance').then((m) => ({ default: m.MaintenancePage })))
 const TemplatesPage = lazy(() => import('./pages/Templates').then((m) => ({ default: m.TemplatesPage })))
+const AgentChatPage = lazy(() => import('./pages/AgentChat').then((m) => ({ default: m.AgentChatPage })))
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -51,6 +52,7 @@ const str = (v: unknown) => (typeof v === 'string' && v !== '' ? v : undefined)
 
 const routes = [
   createRoute({ getParentRoute: () => rootRoute, path: '/', component: OverviewPage }),
+  createRoute({ getParentRoute: () => rootRoute, path: '/agent', component: AgentChatPage }),
   createRoute({ getParentRoute: () => rootRoute, path: '/problems', component: ProblemsPage }),
   createRoute({
     getParentRoute: () => rootRoute, path: '/objects', component: ObjectsPage,

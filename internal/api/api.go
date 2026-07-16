@@ -641,6 +641,7 @@ func (a *API) registerAll() {
 	a.registerReportsDashboards()
 	a.registerAdmin()
 	a.registerAI()
+	a.registerAIChat()
 	a.registerSystem()
 	a.registerOpenAPI()
 	a.registerDiscovery()

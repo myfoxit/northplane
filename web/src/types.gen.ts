@@ -75,6 +75,147 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ai/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stream an agent turn (SSE) */
+        post: operations["post_ai_chat"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai/chats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List my agent chats */
+        get: operations["get_ai_chats"];
+        put?: never;
+        /** Create an agent chat */
+        post: operations["post_ai_chats"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai/chats/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Chat with messages */
+        get: operations["get_ai_chats_id"];
+        /** Update chat settings */
+        put: operations["put_ai_chats_id"];
+        post?: never;
+        /** Delete a chat */
+        delete: operations["delete_ai_chats_id"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai/chats/{id}/messages/{msgId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete one chat message */
+        delete: operations["delete_ai_chats_id_messages_msgId"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai/connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List AI provider connections */
+        get: operations["get_ai_connections"];
+        put?: never;
+        /** Create AI provider connection */
+        post: operations["post_ai_connections"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai/connections/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update AI provider connection */
+        put: operations["put_ai_connections_id"];
+        post?: never;
+        /** Delete AI provider connection */
+        delete: operations["delete_ai_connections_id"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai/connections/{id}/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List models of a connection */
+        get: operations["get_ai_connections_id_models"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai/connections/{id}:test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test an AI provider connection */
+        post: operations["post_ai_connections_id_test"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ai/conversations": {
         parameters: {
             query?: never;
@@ -102,6 +243,58 @@ export interface paths {
         };
         /** Conversation transcript */
         get: operations["get_ai_conversations_id"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai/policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Agent tool policy */
+        get: operations["get_ai_policy"];
+        /** Update agent tool policy */
+        put: operations["put_ai_policy"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** AI provider catalog */
+        get: operations["get_ai_providers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Agent tool catalog with policy state */
+        get: operations["get_ai_tools"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2356,6 +2549,18 @@ export interface components {
             state: number;
             stateType: string;
         };
+        ConnectionInput: {
+            apiKey?: string;
+            defaultModel?: string;
+            disabled?: boolean;
+            endpoint?: string;
+            extra?: {
+                [key: string]: string;
+            };
+            name: string;
+            provider: string;
+            shared?: boolean;
+        };
         Contact: {
             /** Format: date-time */
             createdAt: string;
@@ -2840,6 +3045,12 @@ export interface components {
             updatedAt: string;
             version: number;
         };
+        ToolPolicy: {
+            autoApprove?: string[];
+            disabled?: string[];
+            maxRounds?: number;
+            version?: number;
+        };
         User: {
             /** Format: date-time */
             createdAt: string;
@@ -2886,6 +3097,13 @@ export interface components {
         changePassword: {
             newPassword: string;
             oldPassword: string;
+        };
+        chatInput: {
+            connectionId?: string;
+            model?: string;
+            /** Format: byte */
+            settings?: string;
+            title?: string;
         };
         converseRequest: {
             conversationId?: string;
@@ -3032,6 +3250,12 @@ export interface components {
         };
         secretBody: {
             value: string;
+        };
+        sendInput: {
+            chatId: string;
+            message?: string;
+            messageId?: string;
+            trigger?: string;
         };
         setPassword: {
             password: string;
@@ -3241,6 +3465,416 @@ export interface operations {
             };
         };
     };
+    post_ai_chat: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["sendInput"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    get_ai_chats: {
+        parameters: {
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["listResponse"];
+                };
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    post_ai_chats: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["chatInput"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    get_ai_chats_id: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    put_ai_chats_id: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["chatInput"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    delete_ai_chats_id: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    delete_ai_chats_id_messages_msgId: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                msgId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    get_ai_connections: {
+        parameters: {
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["listResponse"];
+                };
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    post_ai_connections: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ConnectionInput"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    put_ai_connections_id: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ConnectionInput"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    delete_ai_connections_id: {
+        parameters: {
+            query?: {
+                /** @description delete a tenant-wide connection (admin:ai) */
+                shared?: boolean;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    get_ai_connections_id_models: {
+        parameters: {
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["listResponse"];
+                };
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    post_ai_connections_id_test: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
     get_ai_conversations: {
         parameters: {
             query?: {
@@ -3323,6 +3957,132 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    get_ai_policy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    put_ai_policy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ToolPolicy"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    get_ai_providers: {
+        parameters: {
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["listResponse"];
+                };
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    get_ai_tools: {
+        parameters: {
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["listResponse"];
+                };
             };
             /** @description Problem Details (RFC 9457) */
             default: {

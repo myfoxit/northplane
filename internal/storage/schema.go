@@ -391,6 +391,53 @@ var migrations = []migration{
 		// in a specific tenant logs into that tenant and sees only its data.
 		`ALTER TABLE users ADD COLUMN tenant_id TEXT NOT NULL DEFAULT '00000000-0000-7000-8000-000000000001'`,
 	}},
+	{8, "ai_agent_chat", []string{
+		// Multi-provider agent chat (SPEC §10.4 evolution): per-user provider
+		// connections with SecretBox-sealed keys, chats and per-message rows
+		// (deletable individually — the old ai_conversations blob stays for
+		// the legacy assistant transcript format).
+		`CREATE TABLE ai_provider_connections (
+			id            TEXT PRIMARY KEY,
+			tenant_id     TEXT NOT NULL,
+			user_id       TEXT NOT NULL DEFAULT '',
+			name          TEXT NOT NULL,
+			provider      TEXT NOT NULL,
+			endpoint      TEXT NOT NULL DEFAULT '',
+			api_key       {{BLOB}},
+			key_hint      TEXT NOT NULL DEFAULT '',
+			default_model TEXT NOT NULL DEFAULT '',
+			extra         {{JSON}} NOT NULL DEFAULT '{}',
+			disabled      {{BOOL}} NOT NULL DEFAULT false,
+			version       {{BIGINT}} NOT NULL DEFAULT 1,
+			created_at    {{TIMESTAMP}} NOT NULL,
+			updated_at    {{TIMESTAMP}} NOT NULL
+		)`,
+		`CREATE UNIQUE INDEX ai_provider_conn_ident ON ai_provider_connections (tenant_id, user_id, name)`,
+		`CREATE TABLE ai_chats (
+			id              TEXT PRIMARY KEY,
+			tenant_id       TEXT NOT NULL,
+			user_id         TEXT NOT NULL,
+			title           TEXT NOT NULL DEFAULT '',
+			connection_id   TEXT NOT NULL DEFAULT '',
+			model           TEXT NOT NULL DEFAULT '',
+			settings        {{JSON}} NOT NULL DEFAULT '{}',
+			version         {{BIGINT}} NOT NULL DEFAULT 1,
+			created_at      {{TIMESTAMP}} NOT NULL,
+			updated_at      {{TIMESTAMP}} NOT NULL
+		)`,
+		`CREATE INDEX ai_chats_user ON ai_chats (tenant_id, user_id, updated_at)`,
+		`CREATE TABLE ai_chat_messages (
+			id         TEXT PRIMARY KEY,
+			chat_id    TEXT NOT NULL REFERENCES ai_chats(id) ON DELETE CASCADE,
+			tenant_id  TEXT NOT NULL,
+			role       TEXT NOT NULL,
+			parts      {{JSON}} NOT NULL DEFAULT '[]',
+			model      TEXT NOT NULL DEFAULT '',
+			usage      {{JSON}} NOT NULL DEFAULT '{}',
+			created_at {{TIMESTAMP}} NOT NULL
+		)`,
+		`CREATE INDEX ai_chat_messages_chat ON ai_chat_messages (chat_id, id)`,
+	}},
 }
 
 func (s *Store) migrate(ctx context.Context) error {

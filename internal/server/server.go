@@ -152,7 +152,7 @@ func New(ctx context.Context, cfg config.Config, store *storage.Store, ts *tsdb.
 	s.api.AI = ai.New(ai.Deps{
 		Cfg: cfg.AI, Store: store, Catalog: s.cat, Sched: s.sched,
 		Escal: s.escal, Bus: s.bus, TSDB: ts, BaseURL: cfg.BaseURL,
-		Planner: s.api, Reports: s.api, Resources: s.api, Log: log,
+		Box: box, Planner: s.api, Reports: s.api, Resources: s.api, Log: log,
 	})
 
 	apiHandler := api.New(s.api)
@@ -233,6 +233,9 @@ func isStreamingPath(path string) bool {
 	case path == "/api/v1/stream":
 		return true
 	case path == "/api/v1/events:export":
+		return true
+	case path == "/api/v1/ai/chat":
+		// Agent-chat SSE turn: long-lived while the model streams.
 		return true
 	case path == "/mcp" || strings.HasPrefix(path, "/mcp/"):
 		return true

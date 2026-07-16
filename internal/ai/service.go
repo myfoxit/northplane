@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/northplane/northplane/internal/auth"
@@ -36,6 +37,10 @@ type Service struct {
 	tsdb     *tsdb.DB
 	log      *slog.Logger
 	baseURL  string
+	box      *auth.SecretBox // seals provider connection keys (nil = disabled)
+
+	// chatStreams guards one live stream per chat (chat id → cancel).
+	chatStreams sync.Map
 
 	tools     []Tool
 	byName    map[string]*Tool
@@ -82,6 +87,7 @@ type Deps struct {
 	Bus       *eventbus.Bus
 	TSDB      *tsdb.DB
 	BaseURL   string
+	Box       *auth.SecretBox // master-key box for provider connection keys
 	Planner   BundlePlanner
 	Reports   ReportRenderer
 	Resources ResourceAdmin
@@ -99,7 +105,7 @@ func New(d Deps) *Service {
 		cfg: d.Cfg, provider: NewProvider(d.Cfg),
 		redactor: NewRedactor(d.Cfg.Redaction),
 		store:    d.Store, cat: d.Catalog, sched: d.Sched, escal: d.Escal,
-		bus: d.Bus, tsdb: d.TSDB, log: d.Log, baseURL: d.BaseURL,
+		bus: d.Bus, tsdb: d.TSDB, log: d.Log, baseURL: d.BaseURL, box: d.Box,
 		planner:          d.Planner,
 		reports:          d.Reports,
 		resources:        d.Resources,
@@ -127,6 +133,17 @@ func (s *Service) RunTool(ctx context.Context, p *auth.Principal, name string,
 	if tool == nil {
 		return nil, false, fmt.Errorf("unknown tool %q", name)
 	}
+	// Tenant tool policy: a disabled tool is not executable at all —
+	// checked before RBAC so the answer is stable for every caller.
+	pol, polErr := s.Policy(ctx, p.TenantID)
+	if polErr != nil {
+		s.log.Warn("ai: policy load failed, using defaults", "err", polErr)
+		pol = &ToolPolicy{}
+	}
+	if pol.disabled(name) {
+		s.audit(ctx, p, "ai.disabled."+name, "", input)
+		return nil, false, fmt.Errorf("tool %q is disabled by policy", name)
+	}
 	// RBAC: the AI/MCP session is a privilegeless client — it may only do
 	// what the calling token's scopes permit (SPEC §10.3). Enforce the
 	// same permission the equivalent REST route requires.
@@ -134,7 +151,7 @@ func (s *Service) RunTool(ctx context.Context, p *auth.Principal, name string,
 		s.audit(ctx, p, "ai.denied."+name, "", input)
 		return nil, false, fmt.Errorf("permission denied: %s required", perm)
 	}
-	if tool.Mutating && !tool.AutoOK {
+	if tool.Mutating && !tool.AutoOK && !pol.autoApproved(name) {
 		// propose: queue for human approval
 		action := &storage.AIAction{TenantID: p.TenantID, Tool: name, Args: input,
 			Summary: summarizeAction(name, input), Actor: p.Name}
