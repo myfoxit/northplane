@@ -12,7 +12,7 @@ export function RefreshControl() {
   const value = useRefreshInterval()
   return (
     <div className="flex items-center justify-between gap-2 px-1">
-      <span className="flex items-center gap-1.5 text-xs text-muted-foreground" title={t('refreshTitle')}>
+      <span className="flex items-center gap-1.5 text-xs text-sidebar-foreground/70" title={t('refreshTitle')}>
         <RefreshCw size={12} className="shrink-0" /> {t('refresh')}
       </span>
       <Select value={toKey(value)} onValueChange={(k) => setRefreshInterval(fromKey(k))}>

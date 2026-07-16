@@ -76,9 +76,12 @@ export function Layout({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background text-foreground flex">
-      <aside className="w-52 shrink-0 border-r border-border/80 flex flex-col">
-        <div className="px-4 py-4 flex items-center gap-2 border-b border-border/80">
-          <Radar className="text-primary" size={20} />
+      {/* The shell rail reads the --sidebar* tokens so a colour theme can give
+          it its own palette (incl. a dark sidebar over a light body). Defaults
+          match the previous flat look — see :root in index.css. */}
+      <aside className="w-52 shrink-0 bg-sidebar text-sidebar-foreground border-r border-sidebar-border flex flex-col">
+        <div className="px-4 py-4 flex items-center gap-2 border-b border-sidebar-border">
+          <Radar className="text-sidebar-primary" size={20} />
           <span className="font-bold tracking-tight">Northplane</span>
         </div>
         <TenantSwitcher />
@@ -92,8 +95,8 @@ export function Layout({ children }: { children: ReactNode }) {
               <Link
                 key={item.to} to={item.to}
                 className={`flex items-center gap-2.5 px-4 py-2 text-sm transition-colors ${
-                  active ? 'text-primary bg-primary/10 border-r-2 border-primary'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-card'}`}
+                  active ? 'text-sidebar-primary bg-sidebar-primary/10 border-r-2 border-sidebar-primary'
+                    : 'text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent'}`}
               >
                 <Icon size={16} className="shrink-0" />
                 {item.label}
@@ -101,21 +104,21 @@ export function Layout({ children }: { children: ReactNode }) {
             )
           })}
         </nav>
-        <div className="p-3 border-t border-border/80 space-y-2">
+        <div className="p-3 border-t border-sidebar-border space-y-2">
           <RefreshControl />
           <button
             onClick={() => setPaletteOpen(true)}
-            className="w-full flex items-center gap-2 text-xs text-muted-foreground bg-card border border-border rounded-lg px-3 py-1.5 hover:border-input cursor-pointer transition-colors"
+            className="w-full flex items-center gap-2 text-xs text-sidebar-foreground/80 bg-sidebar-accent border border-sidebar-border rounded-lg px-3 py-1.5 hover:border-sidebar-ring hover:text-sidebar-foreground cursor-pointer transition-colors"
           >
             <Search size={13} /> {t('search')}
           </button>
           <button
             onClick={() => setAIOpen((v) => !v)}
-            className="w-full flex items-center gap-2 text-xs text-muted-foreground bg-card border border-border rounded-lg px-3 py-1.5 hover:border-primary cursor-pointer transition-colors"
+            className="w-full flex items-center gap-2 text-xs text-sidebar-foreground/80 bg-sidebar-accent border border-sidebar-border rounded-lg px-3 py-1.5 hover:border-sidebar-primary hover:text-sidebar-foreground cursor-pointer transition-colors"
           >
             <Sparkles size={13} /> {t('assistant')} (⌘I)
           </button>
-          <a href="/auth/logout" className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground px-1">
+          <a href="/auth/logout" className="flex items-center gap-1.5 text-xs text-sidebar-foreground/70 hover:text-sidebar-foreground px-1">
             <LogOut size={12} /> Logout
           </a>
         </div>

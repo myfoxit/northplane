@@ -64,7 +64,7 @@ export function TenantSwitcher() {
   const homeName = me?.tenantId ? (tenants?.find((c) => c.id === me.tenantId)?.name ?? null) : null
 
   return (
-    <div className="px-3 py-2 border-b border-border/80">
+    <div className="px-3 py-2 border-b border-sidebar-border">
       <Select value={active ?? HOME} onValueChange={onChange}>
         <SelectTrigger
           size="sm"
