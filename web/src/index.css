@@ -8,6 +8,27 @@
 @custom-variant dark (&:where(:root:not(.light), :root:not(.light) *));
 
 /*
+ * Default border colour (SPEC §12.1). Tailwind v4 changed the bare width
+ * utilities — `border`, `border-b/t/l/r`, `divide-*` — to fall back to
+ * `currentColor` (v3 used gray-200). Without this rule every un-coloured
+ * border renders as the FOREGROUND: stark white in dark mode, black in light.
+ * That's why cards/panels and table rows read as hard mono lines while the
+ * status tiles look soft — the tiles pass an explicit border colour, these
+ * don't. Bind the default to the theme's `--border` token so all of them read
+ * as nuanced as the status cards. Explicit `border-<colour>` utilities (e.g.
+ * `border-input`, `border-success/45`) still override this.
+ */
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--border);
+  }
+}
+
+/*
  * Design tokens (SPEC §12.1). shadcn-style two layers: raw values live on
  * :root — swap them (or add a light theme) to re-theme — and the @theme
  * inline block exposes them to Tailwind so `bg-card`, `text-muted-
