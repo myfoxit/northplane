@@ -23,6 +23,14 @@ const toneText: Record<Tone, string> = {
   warn: 'text-warning',
   crit: 'text-danger',
 }
+// Status-coloured card border so each KPI reads its health at a glance (a plain
+// neutral border made every card look the same). Works in light + dark.
+const toneBorder: Record<Tone, string> = {
+  default: 'border-border',
+  ok: 'border-success/45',
+  warn: 'border-warning/50',
+  crit: 'border-danger/50',
+}
 
 function Sparkline({ data, color, width = 240, height = 40 }: { data: number[]; color: string; width?: number; height?: number }) {
   const pts = data.length ? data : [0]
@@ -56,7 +64,9 @@ export function StatCard({
   series?: number[]; to?: '/objects' | '/alerts' | '/problems'; search?: ObjectsSearch
 }) {
   const inner = (
-    <div className="relative overflow-hidden rounded-xl border border-border bg-card px-4 pt-3 pb-9 shadow-sm transition-colors hover:border-input">
+    <div className={cn('relative overflow-hidden rounded-xl border bg-card px-4 pt-3 pb-9 shadow-sm transition-shadow hover:shadow-md', toneBorder[tone])}>
+      {/* Solid status stripe on the left edge (reference-style accent). */}
+      {tone !== 'default' && <span className="absolute inset-y-0 left-0 w-1" style={{ backgroundColor: toneVar[tone] }} aria-hidden />}
       <div className="flex items-start justify-between gap-2">
         <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{label}</div>
         {badge != null && (
