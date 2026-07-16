@@ -52,8 +52,22 @@ func Build(svc *ai.Service, principal *auth.Principal, version string) *sdk.Serv
 		"create_silence":      true,
 	}
 
+	// Tenant tool policy: disabled tools are not advertised (RunTool
+	// enforces the same policy on execution as defense in depth).
+	pol, err := svc.Policy(context.Background(), principal.TenantID)
+	if err != nil {
+		pol = &ai.ToolPolicy{}
+	}
+	disabled := map[string]bool{}
+	for _, name := range pol.Disabled {
+		disabled[name] = true
+	}
+
 	for _, tool := range svc.Tools() {
 		t := tool // capture
+		if disabled[t.Def.Name] {
+			continue
+		}
 		desc := t.Def.Description
 		if t.Mutating && !t.AutoOK {
 			desc += " (mutating: returns a proposal that requires human approval)"

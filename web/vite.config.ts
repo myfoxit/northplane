@@ -23,6 +23,7 @@ const PROXY_TIMEOUT_MS = 2500
 type ProxyEntry = { target: string; changeOrigin: boolean; timeout?: number; proxyTimeout?: number }
 const proxy: Record<string, ProxyEntry> = {
   '/api/v1/stream': { target, changeOrigin: true }, // SSE: no timeout (listed first so it wins over /api)
+  '/api/v1/ai/chat': { target, changeOrigin: true }, // agent-turn SSE: model streams exceed 2.5 s
 }
 for (const path of ['/api', '/auth', '/login', '/setup', '/status', '/mcp', '/metrics', '/healthz', '/readyz']) {
   proxy[path] = { target, changeOrigin: true, timeout: PROXY_TIMEOUT_MS, proxyTimeout: PROXY_TIMEOUT_MS }

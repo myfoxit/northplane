@@ -26,6 +26,14 @@ type Message struct {
 	// ToolCalls present on assistant turns; ToolResults on tool turns.
 	ToolCalls   []ToolCall   `json:"toolCalls,omitempty"`
 	ToolResults []ToolResult `json:"toolResults,omitempty"`
+	// Reasoning is the visible thinking text of an assistant turn (some
+	// providers require it echoed back in tool loops — DeepSeek 400s
+	// without it).
+	Reasoning string `json:"reasoning,omitempty"`
+	// Meta carries provider-specific round-trip state for assistant turns
+	// (Anthropic raw content blocks incl. thinking signatures, OpenRouter
+	// reasoning_details). Adapters ignore meta written by other dialects.
+	Meta json.RawMessage `json:"meta,omitempty"`
 }
 
 // ToolDef describes a callable tool (MCP tool surfaced to the model).

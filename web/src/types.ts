@@ -548,3 +548,79 @@ export function eventBadge(e: NPEvent): { label: string; className: string } | n
   }
   return e.severity ? { label: e.severity, className: sevColor(e.severity) } : null
 }
+
+// --- Agent chat (SPEC §10.4 evolution) ---
+
+export interface AIProviderType {
+  id: string
+  label: string
+  endpoint: string
+  needsKey: boolean
+  keyUrl?: string
+  models: AIModelInfo[] | null
+}
+
+export interface AIModelInfo {
+  id: string
+  label?: string
+  curated?: boolean
+}
+
+export interface AIConnection {
+  id: string
+  shared: boolean
+  name: string
+  provider: string
+  endpoint?: string
+  keyHint?: string
+  hasKey: boolean
+  defaultModel?: string
+  disabled?: boolean
+  version: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AIChatMeta {
+  id: string
+  title: string
+  connectionId?: string
+  model?: string
+  settings?: AIChatSettings
+  version: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AIChatSettings {
+  toolsEnabled?: boolean
+  allowedTools?: string[]
+  effort?: string
+  maxTokens?: number
+}
+
+export interface AIChatMessage {
+  id: string
+  chatId: string
+  role: 'user' | 'assistant'
+  parts: unknown[]
+  model?: string
+  usage?: { inputTokens?: number; outputTokens?: number; stopReason?: string }
+  createdAt: string
+}
+
+export interface AIToolInfo {
+  name: string
+  description: string
+  mutating: boolean
+  autoOk: boolean
+  disabled: boolean
+  autoApprove: boolean
+}
+
+export interface AIPolicy {
+  disabled?: string[]
+  autoApprove?: string[]
+  maxRounds?: number
+  version?: number
+}

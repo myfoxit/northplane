@@ -36,6 +36,7 @@ const NAV: { label: string; path: string; heading: RegExp }[] = [
   { label: 'Wartung', path: '/maintenance', heading: /^Wartung$/ },
   { label: 'Templates', path: '/templates', heading: /^Templates/ },
   { label: 'Discovery', path: '/discovery', heading: /^Discovery$/ },
+  { label: 'KI-Agent', path: '/agent', heading: /^KI-Agent$/ },
   { label: 'Administration', path: '/admin', heading: /^Administration$/ },
 ]
 

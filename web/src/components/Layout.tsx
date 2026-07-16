@@ -5,6 +5,7 @@ import { Link, useRouterState, useNavigate } from '@tanstack/react-router'
 import {
   Radar, LayoutDashboard, TriangleAlert, Server, Bell, Siren, Activity, LayoutGrid,
   Network, FileText, Zap, Phone, Wrench, Files, Telescope, Settings, Sparkles, Search, LogOut,
+  Bot,
 } from 'lucide-react'
 import { t } from '../i18n'
 import { syncPreferencesFromServer } from '../settings'
@@ -30,6 +31,7 @@ const nav: { to: string; label: string; icon: IconType }[] = [
   { to: '/maintenance', label: t('maintenance'), icon: Wrench },
   { to: '/templates', label: t('templates'), icon: Files },
   { to: '/discovery', label: t('discovery'), icon: Telescope },
+  { to: '/agent', label: t('agent'), icon: Bot },
   { to: '/admin', label: t('admin'), icon: Settings },
 ]
 
