@@ -668,6 +668,10 @@ const de = {
   appearance: 'Darstellung',
   colorTheme: 'Farbschema',
   colorThemeHint: 'Komplettes Farbschema der Oberfläche. Gilt nur für diesen Browser.',
+  modeSystem: 'System',
+  modeLight: 'Hell',
+  modeDark: 'Dunkel',
+  modeHint: 'Hell/Dunkel — jedes Thema gibt es in beiden Modi.',
 } as const
 
 const en: Record<keyof typeof de, string> = {
@@ -1335,6 +1339,10 @@ const en: Record<keyof typeof de, string> = {
   appearance: 'Appearance',
   colorTheme: 'Colour theme',
   colorThemeHint: 'Full interface palette. Applies to this browser only.',
+  modeSystem: 'System',
+  modeLight: 'Light',
+  modeDark: 'Dark',
+  modeHint: 'Light/dark — every theme comes in both modes.',
 }
 
 const lang = (typeof navigator !== 'undefined' && navigator.language.startsWith('de')) ? de : en

@@ -10,9 +10,10 @@ import { Layout } from './components/Layout'
 import { ErrorState, Spinner } from '@/components/kit'
 import { t } from './i18n'
 import './index.css'
-// Side-effect import: applies the saved colour theme (<html data-theme>)
-// before first paint so there's no flash of the default palette.
+// Side-effect imports: apply the saved colour theme (<html data-theme>) and
+// light/dark mode (<html class="light">) before first paint — no flash.
 import './theme'
+import './mode'
 
 // Route-level code splitting (SPEC §12.2): each page is a separate chunk
 // loaded on demand. In dev this means visiting a route only transforms that

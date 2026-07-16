@@ -1,9 +1,9 @@
-// GENERATED — do not edit by hand. Source: the Ondoki design-system themes
-// in ondoki-explorer.jsx (light / dark / dark-sidebar variants) plus the
-// built-in Northplane default. Each entry's tokens live in index.css under
-// :root[data-theme="<id>"]; here we carry only id + label + swatch preview
-// (sidebar / accent / background, mirroring the Ondoki picker). Regenerate
-// with scratchpad/gen-ondoki.mjs.
+// GENERATED — do not edit by hand. Source: the Ondoki design-system themes in
+// ondoki-explorer.jsx plus the built-in Northplane default. Each theme has a
+// light AND a dark variant (natural Ondoki design + a derived counterpart);
+// the light/dark MODE is a separate axis (see mode.ts). Tokens live in
+// index.css under :root[data-theme] / :root.light[data-theme]. Regenerate with
+// scratchpad/gen-modes.mjs.
 export interface ThemeDef { id: string; label: string; swatch: string[] }
 
 export const THEMES: readonly ThemeDef[] = [
