@@ -1,13 +1,25 @@
-// Appearance (Admin → Darstellung): a colour-theme switcher. The app ships
-// the Northplane dark palette; this tab lets a user re-skin the accent (or
-// pick the stock shadcn neutral palette) via a swatch grid. The choice is a
-// per-browser preference (localStorage) applied by toggling <html data-theme>
-// — see theme.ts and the :root[data-theme] blocks in index.css.
+// Appearance (Admin → Darstellung): a colour-theme switcher. The app ships the
+// Northplane dark palette; this tab lets a user swap the whole palette for the
+// stock shadcn neutral theme or any tweakcn preset, via a swatch grid where
+// each tile previews the theme's colours. The choice is a per-browser
+// preference (localStorage) applied by toggling <html data-theme> — see
+// theme.ts and the :root[data-theme] blocks in index.css.
 import { Check } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 import { t } from '../../i18n'
 import { THEMES, useTheme, setTheme } from '../../theme'
+
+// A compact palette preview: the theme's representative colours as a strip.
+function Swatch({ colors }: { colors: string[] }) {
+  return (
+    <span className="flex h-6 w-11 shrink-0 overflow-hidden rounded-md border border-border/60" aria-hidden>
+      {colors.map((c, i) => (
+        <span key={i} className="flex-1" style={{ backgroundColor: c }} />
+      ))}
+    </span>
+  )
+}
 
 export function AppearanceTab() {
   const active = useTheme()
@@ -15,7 +27,7 @@ export function AppearanceTab() {
     <Card>
       <CardHeader>
         <CardTitle>{t('colorTheme')}</CardTitle>
-        <CardDescription>{t('colorThemeHint')}</CardDescription>
+        <CardDescription>{t('colorThemeHint')} · {THEMES.length}</CardDescription>
       </CardHeader>
       <CardContent>
         {/* Swatch grid — one selectable tile per theme. radiogroup semantics
@@ -30,20 +42,17 @@ export function AppearanceTab() {
                 type="button"
                 role="radio"
                 aria-checked={selected}
+                title={theme.label}
                 onClick={() => setTheme(theme.id)}
                 className={cn(
-                  'flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors cursor-pointer',
+                  'flex items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left text-sm transition-colors cursor-pointer',
                   selected
                     ? 'border-primary bg-primary/10 text-foreground'
                     : 'border-border bg-card text-muted-foreground hover:border-input hover:text-foreground',
                 )}
               >
-                <span
-                  className="size-5 shrink-0 rounded-full border border-border/60"
-                  style={{ backgroundColor: theme.swatch }}
-                  aria-hidden
-                />
-                <span className="flex-1 truncate">{t(theme.labelKey)}</span>
+                <Swatch colors={theme.swatch} />
+                <span className="min-w-0 flex-1 truncate">{theme.label}</span>
                 {selected && <Check size={15} className="shrink-0 text-primary" />}
               </button>
             )

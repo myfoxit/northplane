@@ -667,18 +667,7 @@ const de = {
   // — appearance / colour theme (Admin → Darstellung) —
   appearance: 'Darstellung',
   colorTheme: 'Farbschema',
-  colorThemeHint: 'Akzentfarbe der Oberfläche. Gilt nur für diesen Browser.',
-  themeNorthplane: 'Northplane (Standard)',
-  themeShadcn: 'shadcn (Standard)',
-  themeBlue: 'Blau',
-  themeEmerald: 'Smaragd',
-  themeCyan: 'Türkis',
-  themeViolet: 'Violett',
-  themeRose: 'Rosé',
-  themeRed: 'Rot',
-  themeOrange: 'Orange',
-  themeAmber: 'Bernstein',
-  themeZinc: 'Zink',
+  colorThemeHint: 'Komplettes Farbschema der Oberfläche. Gilt nur für diesen Browser.',
 } as const
 
 const en: Record<keyof typeof de, string> = {
@@ -1345,18 +1334,7 @@ const en: Record<keyof typeof de, string> = {
   // — appearance / colour theme (Admin → Appearance) —
   appearance: 'Appearance',
   colorTheme: 'Colour theme',
-  colorThemeHint: 'Accent colour of the interface. Applies to this browser only.',
-  themeNorthplane: 'Northplane (default)',
-  themeShadcn: 'shadcn (default)',
-  themeBlue: 'Blue',
-  themeEmerald: 'Emerald',
-  themeCyan: 'Cyan',
-  themeViolet: 'Violet',
-  themeRose: 'Rose',
-  themeRed: 'Red',
-  themeOrange: 'Orange',
-  themeAmber: 'Amber',
-  themeZinc: 'Zinc',
+  colorThemeHint: 'Full interface palette. Applies to this browser only.',
 }
 
 const lang = (typeof navigator !== 'undefined' && navigator.language.startsWith('de')) ? de : en

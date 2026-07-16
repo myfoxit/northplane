@@ -1,10 +1,10 @@
 // Colour-theme switch (Admin → Darstellung). The app ships one dark palette
 // (Northplane: slate surfaces + blue accent, defined on :root in index.css);
-// this store lets a user re-skin the accent (and, for the stock "shadcn"
-// theme, the neutral surfaces) by toggling a `data-theme` attribute on
-// <html>. Each theme's concrete token values live in index.css under
-// :root[data-theme="…"]; here we only carry the id + display label + swatch
-// so the switcher and the boot-time apply stay in sync with that CSS.
+// this store lets a user pick a completely different palette — the stock
+// shadcn neutral theme or any of the tweakcn presets — by toggling a
+// `data-theme` attribute on <html>. Each theme re-skins the full token
+// surface via the :root[data-theme="…"] blocks in index.css; the registry of
+// ids + labels + swatch previews lives in theme-data.ts (generated).
 //
 // Deliberately localStorage-only (unlike settings.ts, which is server-backed):
 // a colour theme is a per-browser cosmetic choice, and keeping it off the
@@ -12,36 +12,15 @@
 // on the same doc (a PUT there replaces the whole document). Instant boot,
 // no network, no contract change.
 import { useSyncExternalStore } from 'react'
-import type { TKey } from './i18n'
+import { THEMES } from './theme-data'
 
-// ThemeId is the value written to <html data-theme>. 'northplane' is the
+export { THEMES } from './theme-data'
+export type { ThemeDef } from './theme-data'
+
+// The attribute value written to <html data-theme>. 'northplane' is the
 // built-in :root default and intentionally has NO override block in index.css
 // (selecting it just falls back to the stock palette → current UX unchanged).
-export type ThemeId =
-  | 'northplane' | 'shadcn' | 'blue' | 'emerald' | 'violet' | 'rose'
-  | 'orange' | 'amber' | 'red' | 'cyan' | 'zinc'
-
-export interface ThemeDef {
-  id: ThemeId
-  labelKey: TKey // resolved through i18n t() in the switcher
-  swatch: string // representative colour for the picker dot
-}
-
-// Order = display order in the switcher. Northplane (current default) first,
-// then the stock shadcn neutral theme, then the accent colours.
-export const THEMES: readonly ThemeDef[] = [
-  { id: 'northplane', labelKey: 'themeNorthplane', swatch: '#3b82f6' },
-  { id: 'shadcn', labelKey: 'themeShadcn', swatch: '#e5e5e5' },
-  { id: 'blue', labelKey: 'themeBlue', swatch: '#3b82f6' },
-  { id: 'emerald', labelKey: 'themeEmerald', swatch: '#10b981' },
-  { id: 'cyan', labelKey: 'themeCyan', swatch: '#06b6d4' },
-  { id: 'violet', labelKey: 'themeViolet', swatch: '#8b5cf6' },
-  { id: 'rose', labelKey: 'themeRose', swatch: '#f43f5e' },
-  { id: 'red', labelKey: 'themeRed', swatch: '#ef4444' },
-  { id: 'orange', labelKey: 'themeOrange', swatch: '#f97316' },
-  { id: 'amber', labelKey: 'themeAmber', swatch: '#f59e0b' },
-  { id: 'zinc', labelKey: 'themeZinc', swatch: '#d4d4d8' },
-] as const
+export type ThemeId = string
 
 const IDS = new Set<string>(THEMES.map((t) => t.id))
 const KEY = 'np.theme'
@@ -50,7 +29,7 @@ const DEFAULT: ThemeId = 'northplane'
 function readCache(): ThemeId {
   try {
     const raw = localStorage.getItem(KEY)
-    if (raw && IDS.has(raw)) return raw as ThemeId
+    if (raw && IDS.has(raw)) return raw
   } catch { /* localStorage may be unavailable (private mode) — fall back */ }
   return DEFAULT
 }
