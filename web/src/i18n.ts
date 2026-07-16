@@ -664,6 +664,21 @@ const de = {
   noIncidentsFriendly: 'Keine offenen Incidents. Incidents entstehen automatisch aus Alarm-Regeln oder werden manuell angelegt.',
   noRulesFriendly: 'Noch keine Alarm-Regeln — leg eine an, um aus Events Alarme zu machen.',
   copySuffix: '(Kopie)',
+  // — appearance / colour theme (Admin → Darstellung) —
+  appearance: 'Darstellung',
+  colorTheme: 'Farbschema',
+  colorThemeHint: 'Akzentfarbe der Oberfläche. Gilt nur für diesen Browser.',
+  themeNorthplane: 'Northplane (Standard)',
+  themeShadcn: 'shadcn (Standard)',
+  themeBlue: 'Blau',
+  themeEmerald: 'Smaragd',
+  themeCyan: 'Türkis',
+  themeViolet: 'Violett',
+  themeRose: 'Rosé',
+  themeRed: 'Rot',
+  themeOrange: 'Orange',
+  themeAmber: 'Bernstein',
+  themeZinc: 'Zink',
 } as const
 
 const en: Record<keyof typeof de, string> = {
@@ -1327,10 +1342,29 @@ const en: Record<keyof typeof de, string> = {
   noIncidentsFriendly: 'No open incidents. Incidents form automatically from alert rules, or you can open one manually.',
   noRulesFriendly: 'No alert rules yet — create one to turn events into alerts.',
   copySuffix: '(copy)',
+  // — appearance / colour theme (Admin → Appearance) —
+  appearance: 'Appearance',
+  colorTheme: 'Colour theme',
+  colorThemeHint: 'Accent colour of the interface. Applies to this browser only.',
+  themeNorthplane: 'Northplane (default)',
+  themeShadcn: 'shadcn (default)',
+  themeBlue: 'Blue',
+  themeEmerald: 'Emerald',
+  themeCyan: 'Cyan',
+  themeViolet: 'Violet',
+  themeRose: 'Rose',
+  themeRed: 'Red',
+  themeOrange: 'Orange',
+  themeAmber: 'Amber',
+  themeZinc: 'Zinc',
 }
 
 const lang = (typeof navigator !== 'undefined' && navigator.language.startsWith('de')) ? de : en
 
-export function t(key: keyof typeof de): string {
+// Exported so other modules (e.g. theme.ts) can type a value as "some catalog
+// key" without re-deriving `keyof typeof de`.
+export type TKey = keyof typeof de
+
+export function t(key: TKey): string {
   return lang[key]
 }

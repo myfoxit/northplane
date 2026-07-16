@@ -32,11 +32,12 @@ import { MCPTab } from '../components/admin/MCP'
 import { AgentsTab } from '../components/admin/Agents'
 import { DeadLettersTab } from '../components/admin/DeadLetters'
 import { BundlesTab } from '../components/admin/Bundles'
+import { AppearanceTab } from '../components/admin/Appearance'
 
 const tabs = [
   'users', 'roles', 'contacts', 'contactGroups', 'channels', 'eventSources',
   'webhooks', 'heartbeats', 'tenants', 'sites', 'secrets', 'tokens', 'mcp', 'agents',
-  'deadLetters', 'bundles', 'audit', 'aiQueue', 'health',
+  'deadLetters', 'bundles', 'audit', 'aiQueue', 'health', 'appearance',
 ] as const
 type Tab = typeof tabs[number]
 
@@ -74,6 +75,7 @@ export function AdminPage() {
       {tab === 'audit' && <AuditTab />}
       {tab === 'aiQueue' && <AIQueueTab />}
       {tab === 'health' && <HealthTab />}
+      {tab === 'appearance' && <AppearanceTab />}
     </div>
   )
 }

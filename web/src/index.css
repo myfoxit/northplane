@@ -118,6 +118,93 @@
   --sidebar-ring: #3b82f6;        /* blue-500 */
 }
 
+/*
+ * Colour themes (Admin → Darstellung / Appearance). Selecting a theme sets
+ * <html data-theme="…">; these blocks re-point the accent tokens at runtime.
+ * :root above is the built-in Northplane default, so the "northplane" choice
+ * needs no block (the switch clears the attribute → stock palette, current
+ * UX unchanged). Accent themes keep the slate surfaces and only swap the
+ * accent (--primary + focus ring + sidebar accent + first chart series);
+ * "shadcn" additionally reskins the surfaces to the stock neutral palette so
+ * it matches a fresh shadcn/ui install. Foregrounds are chosen for contrast
+ * against their primary (dark text on light accents, light text on dark).
+ * The values here are kept in lockstep with THEMES in theme.ts.
+ */
+:root[data-theme="blue"] {
+  --primary: #3b82f6; --primary-foreground: #f8fafc; --ring: #3b82f6;
+  --sidebar-primary: #3b82f6; --sidebar-primary-foreground: #f8fafc; --sidebar-ring: #3b82f6;
+  --chart-1: #3b82f6;
+}
+:root[data-theme="emerald"] {
+  --primary: #10b981; --primary-foreground: #022c22; --ring: #10b981;
+  --sidebar-primary: #10b981; --sidebar-primary-foreground: #022c22; --sidebar-ring: #10b981;
+  --chart-1: #10b981;
+}
+:root[data-theme="cyan"] {
+  --primary: #06b6d4; --primary-foreground: #083344; --ring: #06b6d4;
+  --sidebar-primary: #06b6d4; --sidebar-primary-foreground: #083344; --sidebar-ring: #06b6d4;
+  --chart-1: #06b6d4;
+}
+:root[data-theme="violet"] {
+  --primary: #8b5cf6; --primary-foreground: #faf5ff; --ring: #8b5cf6;
+  --sidebar-primary: #8b5cf6; --sidebar-primary-foreground: #faf5ff; --sidebar-ring: #8b5cf6;
+  --chart-1: #8b5cf6;
+}
+:root[data-theme="rose"] {
+  --primary: #f43f5e; --primary-foreground: #fff1f2; --ring: #f43f5e;
+  --sidebar-primary: #f43f5e; --sidebar-primary-foreground: #fff1f2; --sidebar-ring: #f43f5e;
+  --chart-1: #f43f5e;
+}
+:root[data-theme="red"] {
+  --primary: #ef4444; --primary-foreground: #fef2f2; --ring: #ef4444;
+  --sidebar-primary: #ef4444; --sidebar-primary-foreground: #fef2f2; --sidebar-ring: #ef4444;
+  --chart-1: #ef4444;
+}
+:root[data-theme="orange"] {
+  --primary: #f97316; --primary-foreground: #431407; --ring: #f97316;
+  --sidebar-primary: #f97316; --sidebar-primary-foreground: #431407; --sidebar-ring: #f97316;
+  --chart-1: #f97316;
+}
+:root[data-theme="amber"] {
+  --primary: #f59e0b; --primary-foreground: #451a03; --ring: #f59e0b;
+  --sidebar-primary: #f59e0b; --sidebar-primary-foreground: #451a03; --sidebar-ring: #f59e0b;
+  --chart-1: #f59e0b;
+}
+:root[data-theme="zinc"] {
+  --primary: #d4d4d8; --primary-foreground: #18181b; --ring: #a1a1aa;
+  --sidebar-primary: #d4d4d8; --sidebar-primary-foreground: #18181b; --sidebar-ring: #a1a1aa;
+  --chart-1: #d4d4d8;
+}
+
+/* Stock shadcn/ui dark palette: neutral surfaces + near-white primary. */
+:root[data-theme="shadcn"] {
+  --background: #0a0a0a;           /* neutral-950 */
+  --foreground: #fafafa;          /* neutral-50 */
+  --card: #171717;                /* neutral-900 */
+  --card-foreground: #fafafa;
+  --popover: #171717;
+  --popover-foreground: #fafafa;
+  --primary: #fafafa;             /* near-white accent (shadcn default) */
+  --primary-foreground: #171717;
+  --secondary: #262626;           /* neutral-800 */
+  --secondary-foreground: #fafafa;
+  --muted: #262626;
+  --muted-foreground: #a1a1aa;    /* neutral-400 */
+  --accent: #262626;
+  --accent-foreground: #fafafa;
+  --border: #262626;
+  --input: #404040;               /* neutral-700 */
+  --ring: #737373;                /* neutral-500 */
+  --sidebar: #171717;
+  --sidebar-foreground: #fafafa;
+  --sidebar-primary: #fafafa;
+  --sidebar-primary-foreground: #171717;
+  --sidebar-accent: #262626;
+  --sidebar-accent-foreground: #fafafa;
+  --sidebar-border: #262626;
+  --sidebar-ring: #737373;
+}
+
 html, body, #root { height: 100%; }
 
 body {
