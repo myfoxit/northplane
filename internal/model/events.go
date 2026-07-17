@@ -105,7 +105,7 @@ type EventSource struct {
 	ID       string `json:"id"`
 	TenantID string `json:"tenantId"`
 	Name     string `json:"name"`
-	Type     string `json:"type"` // webhook|alertmanager|email|snmp-trap|mqtt|espa|espa-x|voice-inbound|sms-inbound|heartbeat|agent|…
+	Type     string `json:"type"` // webhook|alertmanager|email|snmp-trap|mqtt|espa|espa-x|voice-inbound|sms-inbound|asterisk-inbound|heartbeat|agent|…
 	Enabled  bool   `json:"enabled"`
 	// Auth: token (hashed at rest), hmac secret, or basic credentials.
 	AuthMode  string `json:"authMode"` // token|hmac|basic|none

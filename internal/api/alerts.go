@@ -564,6 +564,60 @@ func (a *API) RaiseAlert(ctx context.Context, tenantID string, p RaiseParams) (*
 	return alert, true, nil
 }
 
+// AckAlertVia acknowledges an alert for non-HTTP callers (FastAGI phone
+// line): store transition, chain stop, sticky object ack, audit + event
+// — the same effects as POST /alerts/{id}:ack.
+func (a *API) AckAlertVia(ctx context.Context, tenantID, alertID, by, via string) error {
+	alert, err := a.Store.AckAlert(ctx, tenantID, alertID, by)
+	if err != nil {
+		return err
+	}
+	_ = a.Escal.StopChain(ctx, alertID)
+	if alert.ObjectID != "" {
+		_ = a.Store.SetAck(ctx, alert.ObjectID, by, "acknowledged via "+via)
+	}
+	_, _ = a.Store.AppendAudit(ctx, &model.AuditEntry{
+		TenantID: tenantID, ActorType: model.ActorUser, ActorID: by,
+		Action: "alert.ack", Resource: alertID,
+		AfterJSON: `{"via":` + jsonString(via) + `}`,
+	})
+	raw, _ := json.Marshal(map[string]any{"alertId": alertID, "by": by, "via": via})
+	ev := &model.Event{ID: model.NewID(), TenantID: tenantID, TS: time.Now().UTC(),
+		Type: model.EventAck, ObjectID: alert.ObjectID, Severity: model.SevInfo, Payload: raw}
+	a.insertEvents(ctx, ev)
+	a.Bus.FanoutOnly(ev)
+	return nil
+}
+
+// ResolveAlertVia resolves an alert for non-HTTP callers, mirroring
+// POST /alerts/{id}:resolve.
+func (a *API) ResolveAlertVia(ctx context.Context, tenantID, alertID, by, via string) error {
+	alert, err := a.Store.ResolveAlert(ctx, tenantID, alertID, model.AlertResolved)
+	if err != nil {
+		return err
+	}
+	_ = a.Escal.StopChain(ctx, alertID)
+	if a.Alert != nil {
+		a.Alert.MaybeResolveIncident(ctx, alert)
+	}
+	_, _ = a.Store.AppendAudit(ctx, &model.AuditEntry{
+		TenantID: tenantID, ActorType: model.ActorUser, ActorID: by,
+		Action: "alert.resolve", Resource: alertID,
+		AfterJSON: `{"via":` + jsonString(via) + `}`,
+	})
+	raw, _ := json.Marshal(map[string]any{"alertId": alertID, "title": alert.Title, "by": by, "via": via})
+	ev := &model.Event{ID: model.NewID(), TenantID: tenantID, TS: time.Now().UTC(),
+		Type: model.EventAlertResolved, ObjectID: alert.ObjectID, Severity: model.SevOK, Payload: raw}
+	a.insertEvents(ctx, ev)
+	a.Bus.FanoutOnly(ev)
+	return nil
+}
+
+func jsonString(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
+}
+
 // ackAlert is shared by :ack, :snooze and ack links.
 func (a *API) ackAlert(r *http.Request, tenantID, alertID, by, comment string, p *auth.Principal) (*model.Alert, error) {
 	alert, err := a.Store.AckAlert(r.Context(), tenantID, alertID, by)
