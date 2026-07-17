@@ -104,14 +104,13 @@ type PushSubscription struct {
 	} `json:"keys"`
 }
 
-// sendPush delivers to every subscription of the contact's user.
+// sendPush delivers to every subscription of the contact's user: Web
+// Push endpoints (https://…) and mobile devices (fcm://…, apns://…) live
+// in the same table; each row is routed by its endpoint scheme.
 func (m *Manager) sendPush(ctx context.Context, ch *model.NotificationChannel,
 	userID, body string, rc *RenderContext) (string, error) {
-	if vapid == nil {
-		return "", fmt.Errorf("web push: VAPID keys not initialised")
-	}
 	if userID == "" {
-		return "", fmt.Errorf("web push: contact is not linked to a user")
+		return "", fmt.Errorf("push: contact is not linked to a user (or API-token id)")
 	}
 	rows, err := m.store.DB().QueryContext(ctx, m.store.Q(
 		`SELECT id, endpoint, keys FROM push_subscriptions WHERE user_id = ?`), userID)
@@ -147,13 +146,23 @@ func (m *Manager) sendPush(ctx context.Context, ch *model.NotificationChannel,
 	var lastErr error
 	delivered := 0
 	for _, s := range subs {
-		if err := webPushSend(ctx, vapid, &s.sub, payload); err != nil {
-			lastErr = err
-			// 404/410 = subscription gone: clean up
-			if strings.Contains(err.Error(), "HTTP 404") || strings.Contains(err.Error(), "HTTP 410") {
+		var err error
+		if strings.HasPrefix(s.sub.Endpoint, "fcm://") || strings.HasPrefix(s.sub.Endpoint, "apns://") {
+			err = m.sendMobilePush(ctx, ch, s.sub.Endpoint, body, rc)
+		} else if vapid == nil {
+			err = fmt.Errorf("web push: VAPID keys not initialised")
+		} else {
+			err = webPushSend(ctx, vapid, &s.sub, payload)
+		}
+		if err != nil {
+			// gone = provider says the device/browser unregistered: clean up
+			gone := err == errSubGone ||
+				strings.Contains(err.Error(), "HTTP 404") || strings.Contains(err.Error(), "HTTP 410")
+			if gone {
 				_, _ = m.store.DB().ExecContext(ctx, m.store.Q(
 					`DELETE FROM push_subscriptions WHERE id = ?`), s.id)
 			}
+			lastErr = err
 			continue
 		}
 		delivered++

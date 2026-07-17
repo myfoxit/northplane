@@ -8,7 +8,7 @@ export const severities: Severity[] = ['critical', 'warning', 'info', 'ok']
 
 // Channel types the notifier supports (mirror ChannelType in types.ts).
 export const channelTypes: ChannelType[] = [
-  'email', 'webhook', 'slack', 'teams', 'ntfy', 'sms', 'push', 'voice',
+  'email', 'webhook', 'slack', 'teams', 'ntfy', 'sms', 'push', 'voice', 'mqtt',
 ]
 
 // <input type="datetime-local"> needs "YYYY-MM-DDTHH:mm" in LOCAL time.

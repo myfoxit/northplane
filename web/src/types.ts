@@ -207,7 +207,7 @@ export interface AlertGroup {
 }
 
 export type ChannelType = 'email' | 'webhook' | 'slack' | 'teams' | 'ntfy' | 'sms' | 'push' | 'voice'
-  | 'servicenow' | 'zendesk' | 'jira' | 'ticket'
+  | 'mqtt' | 'servicenow' | 'zendesk' | 'jira' | 'ticket'
 
 export interface Channel {
   id?: string
@@ -259,6 +259,37 @@ export interface EscalationPolicy {
   id?: string
   name: string
   steps: EscalationStep[]
+  version?: number
+}
+
+// Wire shape of internal/model.IVROption (DTMF phone menus, SPEC §9.6
+// evolution). Local interface — types.gen.ts has not been regenerated yet.
+export type IVRAction = 'trigger-alarm' | 'list-alerts' | 'ack-alert' | 'resolve-alert' | 'say'
+
+export interface IVROption {
+  digit: string // "0"-"9", "*", "#"
+  action: IVRAction
+  label?: string
+  // trigger-alarm parameters:
+  severity?: Severity
+  title?: string
+  labels?: Record<string, string>
+  escalationPolicy?: string
+  record?: boolean
+  // say parameters:
+  text?: string
+}
+
+// Wire shape of internal/model.IVRMenu (named CRUD /api/v1/ivr-menus).
+export interface IVRMenu {
+  id?: string
+  name: string
+  language?: string
+  voice?: string
+  greeting?: string
+  pin?: string
+  trustCallerId?: boolean
+  options: IVROption[]
   version?: number
 }
 

@@ -38,7 +38,44 @@ const (
 	KindStaticGroup      = "static-group" // Nagios import fidelity (SPEC §6.2)
 	KindPreference       = "preference"   // per-actor UI settings (name = actor ID)
 	KindSite             = "site"         // connected edge instances (SPEC §7.7)
+	KindIVRMenu          = "ivr-menu"     // DTMF phone menus for alarm lines
+
 )
+
+// EnsureSystemRolePermission adds a permission to a system role in every
+// tenant when it is missing — an additive boot-time reconcile for
+// permission-model upgrades. Customised permission lists keep their
+// other entries; non-system roles are never touched.
+func (s *Store) EnsureSystemRolePermission(ctx context.Context, roleName string, perm model.Permission) error {
+	tenants, err := s.Tenants(ctx)
+	if err != nil {
+		return err
+	}
+	for _, t := range tenants {
+		role, err := LoadOne[model.Role](ctx, s, t.ID, KindRole, roleName)
+		if err != nil {
+			continue // tenant without the role: nothing to reconcile
+		}
+		if !role.System {
+			continue
+		}
+		has := false
+		for _, p := range role.Permissions {
+			if p == perm {
+				has = true
+				break
+			}
+		}
+		if has {
+			continue
+		}
+		role.Permissions = append(role.Permissions, perm)
+		if _, err := s.PutResource(ctx, t.ID, KindRole, roleName, role, 0); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // ResourceEnvelope wraps a stored document.
 type ResourceEnvelope struct {

@@ -74,6 +74,9 @@ var senders = map[model.ChannelType]SenderFunc{
 	model.ChannelTicket: func(m *Manager, ctx context.Context, ch *model.NotificationChannel, _, subject, body string, rc *RenderContext) (string, error) {
 		return m.sendTicket(ctx, ch, subject, body, rc, nil)
 	},
+	model.ChannelMQTT: func(m *Manager, ctx context.Context, ch *model.NotificationChannel, _, _, body string, rc *RenderContext) (string, error) {
+		return m.sendMQTT(ctx, ch, body, rc)
+	},
 }
 
 // RegisterSender adds (or replaces) a transport for a channel type.
@@ -260,10 +263,10 @@ func (m *Manager) sendSMS(ctx context.Context, ch *model.NotificationChannel, to
 
 func (m *Manager) sendTwilioSMS(ctx context.Context, ch *model.NotificationChannel, to, text string) (string, error) {
 	sid := ch.Config["accountSid"]
-	token := m.resolveSecret(ch.TenantID, ch.Config["authToken"])
 	from := ch.Config["from"]
-	if sid == "" || token == "" || from == "" {
-		return "", fmt.Errorf("twilio: accountSid, authToken, from required")
+	user, pass := m.twilioCreds(ch)
+	if sid == "" || user == "" || pass == "" || from == "" {
+		return "", fmt.Errorf("twilio: accountSid, authToken (or apiKeySid+apiKeySecret), from required")
 	}
 	form := url.Values{"To": {to}, "From": {from}, "Body": {text}}
 	apiBase := strings.TrimSuffix(ch.Config["apiBase"], "/")
@@ -276,7 +279,7 @@ func (m *Manager) sendTwilioSMS(ctx context.Context, ch *model.NotificationChann
 	if err != nil {
 		return "", err
 	}
-	req.SetBasicAuth(sid, token)
+	req.SetBasicAuth(user, pass)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := hookClient.Do(req)
 	if err != nil {

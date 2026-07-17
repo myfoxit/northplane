@@ -91,6 +91,7 @@ func bootAPI(t *testing.T) *testAPI {
 	a.registerContacts()
 	a.registerEvents()
 	a.registerIngress()
+	a.registerTelephony()
 	a.registerSystem()
 	a.registerSites()
 	a.registerAgentConfig()

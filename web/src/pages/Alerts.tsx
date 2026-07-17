@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { keepPreviousData, useQuery, useMutation } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
-import { Sparkles } from 'lucide-react'
+import { Check, Siren, Sparkles } from 'lucide-react'
 import { get, post, queryClient, fmtAgo, type ListResponse } from '../api'
 import type { Alert, AlertsSearch, Incident, Severity } from '../types'
 import { sevColor } from '../types'
@@ -12,6 +12,7 @@ import { Card, CardHeader, CardTitle, CardAction, CardContent } from '@/componen
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Empty, ErrorState } from '@/components/kit'
 import { AckDialog } from '../components/AckDialog'
+import { TriggerAlertDialog } from '../components/TriggerAlertDialog'
 import { t } from '../i18n'
 import { useRefreshInterval } from '../settings'
 
@@ -28,6 +29,8 @@ export function AlertsPage() {
       replace: true,
     })
   const [ackTarget, setAckTarget] = useState<Alert | null>(null)
+  const [triggerOpen, setTriggerOpen] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
   const refresh = useRefreshInterval()
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['alerts', status],
@@ -48,6 +51,9 @@ export function AlertsPage() {
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-lg font-bold">{t('alerts')} <span className="text-muted-foreground text-sm">({rows.length})</span></h1>
         <div className="flex gap-2">
+          <Button variant="destructive" onClick={() => setTriggerOpen(true)}>
+            <Siren size={14} /> {t('triggerAlert')}
+          </Button>
           <Select value={severity || '__all__'}
             onValueChange={(v) => patchSearch({ severity: v === '__all__' ? undefined : v })}>
             <SelectTrigger><SelectValue /></SelectTrigger>
@@ -68,6 +74,11 @@ export function AlertsPage() {
           </Select>
         </div>
       </div>
+      {toast && (
+        <div className="text-sm text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-3 py-2 flex items-center gap-1.5">
+          <Check size={14} /> {toast}
+        </div>
+      )}
       {isLoading && <Empty text={t('loading')} />}
       {!isLoading && rows.length === 0 && <Empty text={t('noAlertsFriendly')} />}
       <div className="space-y-1.5">
@@ -94,6 +105,15 @@ export function AlertsPage() {
       </div>
       <AckDialog open={!!ackTarget} alertId={ackTarget?.id ?? ''} objectName={ackTarget?.title}
         onClose={() => setAckTarget(null)} />
+      {triggerOpen && (
+        <TriggerAlertDialog
+          onClose={() => setTriggerOpen(false)}
+          onRaised={() => {
+            setToast(t('alertRaised'))
+            setTimeout(() => setToast(null), 2500)
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -421,7 +421,8 @@ export interface paths {
         /** List alerts */
         get: operations["get_alerts"];
         put?: never;
-        post?: never;
+        /** Raise an alarm manually (starts escalation) */
+        post: operations["post_alerts"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1361,6 +1362,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ivr-menus": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List ivr-menus */
+        get: operations["get_ivr_menus"];
+        put?: never;
+        /** Create ivr-menu */
+        post: operations["post_ivr_menus"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ivr-menus/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get ivr-menu */
+        get: operations["get_ivr_menus_name"];
+        /** Update ivr-menu (If-Match) */
+        put: operations["put_ivr_menus_name"];
+        post?: never;
+        /** Delete ivr-menu */
+        delete: operations["delete_ivr_menus_name"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/metrics/query": {
         parameters: {
             query?: never;
@@ -1593,9 +1631,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Register Web Push subscription */
+        /** Register push subscription (Web Push / FCM / APNs) */
         post: operations["post_push_subscriptions"];
-        delete?: never;
+        /** Unregister a push subscription */
+        delete: operations["delete_push_subscriptions"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2435,6 +2474,8 @@ export interface components {
             resolvedAt?: string;
             ruleId?: string;
             severity: string;
+            /** Format: date-time */
+            snoozedUntil?: string;
             status: string;
             tenantId: string;
             ticket?: components["schemas"]["TicketRef"];
@@ -2710,6 +2751,35 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
             version: number;
+        };
+        IVRMenu: {
+            /** Format: date-time */
+            createdAt: string;
+            greeting?: string;
+            id: string;
+            language?: string;
+            name: string;
+            options: components["schemas"]["IVROption"][];
+            pin?: string;
+            tenantId: string;
+            trustCallerId?: boolean;
+            /** Format: date-time */
+            updatedAt: string;
+            version: number;
+            voice?: string;
+        };
+        IVROption: {
+            action: string;
+            digit: string;
+            escalationPolicy?: string;
+            label?: string;
+            labels?: {
+                [key: string]: string;
+            };
+            record?: boolean;
+            severity?: string;
+            text?: string;
+            title?: string;
         };
         Incident: {
             createdBy: string;
@@ -3228,6 +3298,17 @@ export interface components {
             endpoint: string;
             /** Format: byte */
             keys: string;
+        };
+        raiseAlertRequest: {
+            dedupKey?: string;
+            escalationPolicy?: string;
+            labels?: {
+                [key: string]: string;
+            };
+            message?: string;
+            objectId?: string;
+            severity?: string;
+            title: string;
         };
         resultsRequest: {
             results: components["schemas"]["passiveResult"][];
@@ -4510,6 +4591,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["listResponse"];
+                };
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    post_alerts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["raiseAlertRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Alert"];
                 };
             };
             /** @description Problem Details (RFC 9457) */
@@ -7243,6 +7357,168 @@ export interface operations {
             };
         };
     };
+    get_ivr_menus: {
+        parameters: {
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["listResponse"];
+                };
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    post_ivr_menus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["IVRMenu"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IVRMenu"];
+                };
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    get_ivr_menus_name: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IVRMenu"];
+                };
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    put_ivr_menus_name: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["IVRMenu"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IVRMenu"];
+                };
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    delete_ivr_menus_name: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
     post_metrics_query: {
         parameters: {
             query?: never;
@@ -7738,6 +8014,37 @@ export interface operations {
         responses: {
             /** @description Created */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    delete_push_subscriptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["pushSub"];
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };

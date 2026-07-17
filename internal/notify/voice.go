@@ -29,6 +29,13 @@ import (
 //     (POST /api/v1/voice/gather/{token}) and acknowledges the alert.
 func (m *Manager) sendVoice(ctx context.Context, ch *model.NotificationChannel,
 	to, text string, rc *RenderContext) (string, error) {
+	// Per-alarm spoken text: a rule (or manual trigger) that sets the
+	// np.tts label overrides the channel template for this call.
+	if rc != nil && rc.Alert != nil {
+		if tts := rc.Alert.Labels["np.tts"]; tts != "" {
+			text = tts
+		}
+	}
 	switch ch.Config["provider"] {
 	case "asterisk":
 		return m.sendAsteriskVoice(ctx, ch, to, text, rc)
@@ -47,10 +54,10 @@ func (m *Manager) sendVoice(ctx context.Context, ch *model.NotificationChannel,
 func (m *Manager) sendTwilioVoice(ctx context.Context, ch *model.NotificationChannel,
 	to, text string, rc *RenderContext) (string, error) {
 	sid := ch.Config["accountSid"]
-	token := m.resolveSecret(ch.TenantID, ch.Config["authToken"])
 	from := ch.Config["from"]
-	if sid == "" || token == "" || from == "" {
-		return "", fmt.Errorf("twilio voice: accountSid, authToken, from required")
+	user, pass := m.twilioCreds(ch)
+	if sid == "" || user == "" || pass == "" || from == "" {
+		return "", fmt.Errorf("twilio voice: accountSid, authToken (or apiKeySid+apiKeySecret), from required")
 	}
 	lang := ch.Config["language"]
 	if lang == "" {
@@ -67,7 +74,7 @@ func (m *Manager) sendTwilioVoice(ctx context.Context, ch *model.NotificationCha
 	if err != nil {
 		return "", err
 	}
-	req.SetBasicAuth(sid, token)
+	req.SetBasicAuth(user, pass)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := hookClient.Do(req)
 	if err != nil {
@@ -83,6 +90,18 @@ func (m *Manager) sendTwilioVoice(ctx context.Context, ch *model.NotificationCha
 	}
 	_ = json.Unmarshal(body, &out)
 	return out.Sid, nil
+}
+
+// twilioCreds picks the REST credentials: a standalone API key
+// (apiKeySid/apiKeySecret — recommended, revocable per SIP/number
+// setup) when configured, otherwise the account SID + auth token.
+// Multiple numbers/SIP trunks = multiple channels, each with its own
+// credentials and caller ID.
+func (m *Manager) twilioCreds(ch *model.NotificationChannel) (user, pass string) {
+	if keySid := ch.Config["apiKeySid"]; keySid != "" {
+		return keySid, m.resolveSecret(ch.TenantID, ch.Config["apiKeySecret"])
+	}
+	return ch.Config["accountSid"], m.resolveSecret(ch.TenantID, ch.Config["authToken"])
 }
 
 // gatherURL builds the signed DTMF-ack callback for a real alert call;

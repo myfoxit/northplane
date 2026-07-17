@@ -13,17 +13,17 @@ import (
 
 const alertCols = `id, tenant_id, rule_id, object_id, incident_id, status, severity, title,
 	dedup_key, labels, event_ids, opened_at, acked_at, acked_by, resolved_at, payload,
-	ticket_url, ticket_meta`
+	ticket_url, ticket_meta, snoozed_until`
 
 func scanAlert(sc interface{ Scan(...any) error }) (*model.Alert, error) {
 	var a model.Alert
 	var ruleID, objectID, incidentID, dedup NullStr
 	var labels, eventIDs, payload, ticketURL, ticketMeta string
-	var opened, acked, resolved ScanTime
+	var opened, acked, resolved, snoozed ScanTime
 	if err := sc.Scan(&a.ID, &a.TenantID, &ruleID, &objectID, &incidentID,
 		(*string)(&a.Status), (*string)(&a.Severity), &a.Title, &dedup,
 		&labels, &eventIDs, &opened, &acked, &a.AckedBy, &resolved, &payload,
-		&ticketURL, &ticketMeta); err != nil {
+		&ticketURL, &ticketMeta, &snoozed); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrNotFound
 		}
@@ -31,7 +31,7 @@ func scanAlert(sc interface{ Scan(...any) error }) (*model.Alert, error) {
 	}
 	a.RuleID, a.ObjectID, a.IncidentID, a.DedupKey = string(ruleID), string(objectID), string(incidentID), string(dedup)
 	a.OpenedAt = opened.T
-	a.AckedAt, a.ResolvedAt = acked.Ptr(), resolved.Ptr()
+	a.AckedAt, a.ResolvedAt, a.SnoozedUntil = acked.Ptr(), resolved.Ptr(), snoozed.Ptr()
 	_ = json.Unmarshal([]byte(labels), &a.Labels)
 	_ = json.Unmarshal([]byte(eventIDs), &a.EventIDs)
 	a.Payload = json.RawMessage(payload)
@@ -90,11 +90,11 @@ func (s *Store) UpsertAlert(ctx context.Context, a *model.Alert) (*model.Alert, 
 	a.Status = model.AlertOpen
 	err := s.Write(ctx, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, s.Q(
-			`INSERT INTO alerts (`+alertCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`),
+			`INSERT INTO alerts (`+alertCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`),
 			a.ID, a.TenantID, S(a.RuleID), S(a.ObjectID), S(a.IncidentID),
 			string(a.Status), string(a.Severity), a.Title, S(a.DedupKey),
 			labels, eventIDs, s.T(a.OpenedAt), nil, "", nil, string(orEmptyJSON(a.Payload)),
-			"", "{}")
+			"", "{}", nil)
 		return err
 	})
 	if err != nil {
@@ -204,12 +204,13 @@ func (s *Store) ListAlerts(ctx context.Context, f AlertFilter) ([]*model.Alert, 
 	return out, rows.Err()
 }
 
-// AckAlert transitions open → acked.
+// AckAlert transitions open → acked (and clears any snooze wake-up: a
+// plain ack means "handled", not "remind me").
 func (s *Store) AckAlert(ctx context.Context, tenantID, id, by string) (*model.Alert, error) {
 	now := time.Now().UTC()
 	err := s.Write(ctx, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(ctx, s.Q(
-			`UPDATE alerts SET status = 'acked', acked_at = ?, acked_by = ?
+			`UPDATE alerts SET status = 'acked', acked_at = ?, acked_by = ?, snoozed_until = NULL
 			 WHERE tenant_id = ? AND id = ? AND status = 'open'`), s.T(now), by, tenantID, id)
 		if err != nil {
 			return err
@@ -225,6 +226,108 @@ func (s *Store) AckAlert(ctx context.Context, tenantID, id, by string) (*model.A
 	return s.GetAlert(ctx, tenantID, id)
 }
 
+// SnoozeAlert acks the alert with a wake-up deadline: at `until` the
+// alerting engine re-opens it and restarts the escalation chain unless
+// it resolved in the meantime.
+func (s *Store) SnoozeAlert(ctx context.Context, tenantID, id, by string, until time.Time) (*model.Alert, error) {
+	now := time.Now().UTC()
+	err := s.Write(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, s.Q(
+			`UPDATE alerts SET status = 'acked', acked_at = ?, acked_by = ?, snoozed_until = ?
+			 WHERE tenant_id = ? AND id = ? AND status IN ('open','acked')`),
+			s.T(now), by, s.T(until.UTC()), tenantID, id)
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return ErrNotFound
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.GetAlert(ctx, tenantID, id)
+}
+
+// WakeSnoozedAlerts re-opens acked alerts whose snooze deadline passed
+// and returns them (for chain restart + events). The flip and the read
+// are a single conditional UPDATE per row, so concurrent wakers cannot
+// double-fire a chain.
+func (s *Store) WakeSnoozedAlerts(ctx context.Context, now time.Time) ([]*model.Alert, error) {
+	rows, err := s.db.QueryContext(ctx, s.Q(
+		`SELECT `+alertCols+` FROM alerts
+		 WHERE snoozed_until IS NOT NULL AND snoozed_until <= ? AND status = 'acked'
+		 LIMIT 500`), s.T(now))
+	if err != nil {
+		return nil, err
+	}
+	var due []*model.Alert
+	for rows.Next() {
+		a, err := scanAlert(rows)
+		if err != nil {
+			rows.Close()
+			return nil, err
+		}
+		due = append(due, a)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	var woken []*model.Alert
+	for _, a := range due {
+		err := s.Write(ctx, func(tx *sql.Tx) error {
+			res, err := tx.ExecContext(ctx, s.Q(
+				`UPDATE alerts SET status = 'open', acked_at = NULL, acked_by = '', snoozed_until = NULL
+				 WHERE tenant_id = ? AND id = ? AND status = 'acked' AND snoozed_until IS NOT NULL`),
+				a.TenantID, a.ID)
+			if err != nil {
+				return err
+			}
+			if n, _ := res.RowsAffected(); n == 0 {
+				return ErrNotFound // raced a resolve/second waker — skip
+			}
+			return nil
+		})
+		if err == nil {
+			a.Status, a.AckedAt, a.AckedBy, a.SnoozedUntil = model.AlertOpen, nil, "", nil
+			woken = append(woken, a)
+		}
+	}
+	return woken, nil
+}
+
+// MergeAlertLabels folds labels into an alert (voice recordings,
+// transcripts and similar post-facto attachments).
+func (s *Store) MergeAlertLabels(ctx context.Context, tenantID, id string, add model.Labels) (*model.Alert, error) {
+	if len(add) == 0 {
+		return s.GetAlert(ctx, tenantID, id)
+	}
+	err := s.Write(ctx, func(tx *sql.Tx) error {
+		var raw string
+		if err := tx.QueryRowContext(ctx, s.Q(
+			`SELECT labels FROM alerts WHERE tenant_id = ? AND id = ?`), tenantID, id).
+			Scan(&raw); err != nil {
+			if err == sql.ErrNoRows {
+				return ErrNotFound
+			}
+			return err
+		}
+		labels := model.Labels{}
+		_ = json.Unmarshal([]byte(raw), &labels)
+		labels = labels.Merge(add)
+		merged, _ := jsonMarshal(labels)
+		_, err := tx.ExecContext(ctx, s.Q(
+			`UPDATE alerts SET labels = ? WHERE tenant_id = ? AND id = ?`), merged, tenantID, id)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.GetAlert(ctx, tenantID, id)
+}
+
 // ResolveAlert closes the alert (status resolved|expired). When the
 // alert carries an auto-close ticket (F-04.05), a durable ticket-close
 // job is enqueued — central here so every resolve path (engine, API,
@@ -233,7 +336,7 @@ func (s *Store) ResolveAlert(ctx context.Context, tenantID, id string, status mo
 	now := time.Now().UTC()
 	err := s.Write(ctx, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(ctx, s.Q(
-			`UPDATE alerts SET status = ?, resolved_at = ?
+			`UPDATE alerts SET status = ?, resolved_at = ?, snoozed_until = NULL
 			 WHERE tenant_id = ? AND id = ? AND status IN ('open','acked')`),
 			string(status), s.T(now), tenantID, id)
 		if err != nil {

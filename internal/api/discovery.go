@@ -13,6 +13,7 @@ import (
 
 	"github.com/northplane/northplane/internal/auth"
 	"github.com/northplane/northplane/internal/model"
+	"github.com/northplane/northplane/internal/selector"
 	"github.com/northplane/northplane/internal/storage"
 )
 
@@ -253,6 +254,15 @@ func (a *API) WebhookDispatcher(ctx context.Context) {
 				if len(ws.Types) > 0 && !containsStr(ws.Types, string(e.Type)) {
 					continue
 				}
+				// Selector filters on the event's payload labels (ingress
+				// events, alert_opened, …). A non-empty selector that fails
+				// to parse matches nothing rather than everything.
+				if ws.Selector != "" {
+					sel, err := selector.Parse(ws.Selector)
+					if err != nil || !sel.Matches(eventLabels(e)) {
+						continue
+					}
+				}
 				body, _ := json.Marshal(e)
 				payload, _ := json.Marshal(map[string]any{
 					"url": ws.URL, "secret": ws.Secret, "body": json.RawMessage(body)})
@@ -261,6 +271,19 @@ func (a *API) WebhookDispatcher(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// eventLabels extracts the labels map from an event payload (NormEvent
+// ingress events and alert lifecycle events both carry "labels").
+func eventLabels(e *model.Event) map[string]string {
+	var p struct {
+		Labels map[string]string `json:"labels"`
+	}
+	_ = json.Unmarshal(e.Payload, &p)
+	if p.Labels == nil {
+		return map[string]string{}
+	}
+	return p.Labels
 }
 
 func containsStr(list []string, v string) bool {
