@@ -444,8 +444,10 @@ func TestTokenBucket(t *testing.T) {
 	b := newBucket(1, 2)
 	base := time.Now()
 	b.last = base
-	if !b.allow(base) || !b.allow(base) {
-		t.Fatal("burst of 2 not allowed")
+	for i := 0; i < 2; i++ {
+		if !b.allow(base) {
+			t.Fatalf("burst of 2: call %d denied", i+1)
+		}
 	}
 	if b.allow(base) {
 		t.Fatal("third immediate message allowed, want deny")
@@ -458,8 +460,10 @@ func TestTokenBucket(t *testing.T) {
 	}
 	// Refill is capped at burst.
 	later := base.Add(time.Minute)
-	if !b.allow(later) || !b.allow(later) {
-		t.Fatal("burst after idle denied")
+	for i := 0; i < 2; i++ {
+		if !b.allow(later) {
+			t.Fatalf("burst after idle: call %d denied", i+1)
+		}
 	}
 	if b.allow(later) {
 		t.Fatal("burst cap exceeded")

@@ -314,8 +314,8 @@ func (t *twiml) Say(text string) *twiml {
 
 // Gather wraps the given say-texts in a DTMF gather posting to action.
 func (t *twiml) Gather(action string, numDigits int, texts ...string) *twiml {
-	t.b.WriteString(fmt.Sprintf(`<Gather input="dtmf" numDigits="%d" timeout="10" action="%s" method="POST">`,
-		numDigits, t.esc(action)))
+	fmt.Fprintf(&t.b, `<Gather input="dtmf" numDigits="%d" timeout="10" action="%s" method="POST">`,
+		numDigits, t.esc(action))
 	for _, s := range texts {
 		t.Say(s)
 	}
@@ -376,7 +376,7 @@ func (a *API) handleVoiceInbound(w http.ResponseWriter, r *http.Request) {
 	t := newTwiML(c.lang, c.voice)
 	greeting := firstNonEmpty(c.menu.Greeting, p.greeting)
 
-	if c.menu.PIN != "" && !(c.menu.TrustCallerID && a.contactByPhone(r, c.tenant, c.from()) != nil) {
+	if c.menu.PIN != "" && (!c.menu.TrustCallerID || a.contactByPhone(r, c.tenant, c.from()) == nil) {
 		t.Gather(a.telAction(r, c.src, "/menu", url.Values{"state": {"pin"}}),
 			len(c.menu.PIN), greeting, p.pin).Say(p.bye).write(w)
 		return

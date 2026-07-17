@@ -75,8 +75,10 @@ func TestConfigSeverity(t *testing.T) {
 func TestAllowRateBurstExhaustion(t *testing.T) {
 	// Tiny refill so the burst dominates within the test's lifetime.
 	id := "test-rate-" + time.Now().Format("150405.000000000")
-	if !allowRate(id, 0.001, 2) || !allowRate(id, 0.001, 2) {
-		t.Fatal("burst of 2 should admit two calls")
+	for i := 0; i < 2; i++ {
+		if !allowRate(id, 0.001, 2) {
+			t.Fatalf("burst of 2 should admit call %d", i+1)
+		}
 	}
 	if allowRate(id, 0.001, 2) {
 		t.Fatal("third call should be rate limited")
