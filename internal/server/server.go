@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/northplane/northplane/internal/agi"
 	"github.com/northplane/northplane/internal/ai"
 	"github.com/northplane/northplane/internal/alerting"
 	"github.com/northplane/northplane/internal/api"
@@ -66,6 +67,7 @@ type Server struct {
 	mail    *mailin.Manager
 	mqtt    *mqttin.Manager
 	espa    *espa.Manager
+	agi     *agi.Manager
 	ldap    *ldapsync.Syncer
 	edge    *federation.Edge
 	hub     *sse.Hub
@@ -163,6 +165,11 @@ func New(ctx context.Context, cfg config.Config, store *storage.Store, ts *tsdb.
 	})
 
 	apiHandler := api.New(s.api)
+	// FastAGI listener: inbound alarm calls from an on-prem Asterisk/
+	// FreePBX (the PBX terminates the SIP trunks; northplane drives the
+	// IVR over AGI — the fully cloud-free phone path).
+	s.agi = agi.New(s.api, log)
+
 	s.httpSrv = &http.Server{
 		Addr:    cfg.Listen,
 		Handler: s.rootHandler(apiHandler, authn),
@@ -356,6 +363,7 @@ func (s *Server) Run(ctx context.Context) error {
 	spawn("mailin", s.mail.Run)
 	spawn("mqttin", s.mqtt.Run)
 	spawn("espa", s.espa.Run)
+	spawn("agi", s.agi.Run)
 	spawn("api-janitor", s.api.Janitor)
 	spawn("webhook-dispatcher", s.api.WebhookDispatcher)
 	spawn("report-scheduler", s.api.ReportScheduler)

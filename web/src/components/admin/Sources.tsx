@@ -33,7 +33,7 @@ const sourcesApi = resourceApi<EventSourceDef>('event-sources')
 
 const SOURCE_TYPES = [
   'webhook', 'alertmanager', 'snmp-trap', 'imap', 'email',
-  'voice-inbound', 'sms-inbound', 'mqtt', 'espa', 'espa-x',
+  'voice-inbound', 'sms-inbound', 'asterisk-inbound', 'mqtt', 'espa', 'espa-x',
 ] as const
 const AUTH_MODES = ['none', 'token', 'hmac', 'basic'] as const
 const SEVERITIES: Severity[] = ['critical', 'warning', 'info', 'ok']
@@ -64,6 +64,7 @@ export function SourcesTab() {
                 {(s.type === 'webhook' || s.type === 'alertmanager') ? `/api/v1/ingest/${s.name}`
                   : s.type === 'voice-inbound' ? `/api/v1/voice/inbound/${s.id ?? ''}`
                   : s.type === 'sms-inbound' ? `/api/v1/sms/inbound/${s.id ?? ''}`
+                  : s.type === 'asterisk-inbound' ? `agi://<host>:4573/${s.id ?? ''}`
                   : '—'}
               </TableCell>
               <TableCell className="px-3 py-2">
@@ -130,6 +131,7 @@ const VOICE_KEYS = ['menu', 'language', 'voice', 'allowFrom', 'escalationPolicy'
 const SMS_KEYS = ['action', 'escalationPolicy', 'severity', 'allowFrom', 'ackKeyword', 'language', 'twilioAuthToken']
 const MQTT_KEYS = ['url', 'topics', 'qos', 'clientId', 'username', 'password', 'passwordSecretRef', 'tlsInsecure', 'severity']
 const ESPA_KEYS = ['listen', 'severity']
+const AGI_KEYS = ['listen', 'menu', 'language', 'ttsApp', 'escalationPolicy', 'severity', 'allowFrom', 'recordDir']
 
 function knownKeysFor(type: string): string[] {
   switch (type) {
@@ -139,6 +141,7 @@ function knownKeysFor(type: string): string[] {
     case 'sms-inbound': return SMS_KEYS
     case 'mqtt': return MQTT_KEYS
     case 'espa': case 'espa-x': return ESPA_KEYS
+    case 'asterisk-inbound': return AGI_KEYS
     default: return []
   }
 }
@@ -477,6 +480,40 @@ function SourceForm({ doc, etag, isNew, onClose }: {
                   <CfgSeverity value={cfg('severity')} onChange={(v) => setCfg('severity', v)} />
                 </Field>
               </div>
+            </div>
+          )}
+
+          {/* Asterisk inbound: FastAGI from the on-prem PBX (no cloud) */}
+          {type === 'asterisk-inbound' && (
+            <div className="border border-border rounded-lg p-3 space-y-2">
+              <div className="text-xs text-muted-foreground font-medium">Asterisk FastAGI</div>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="Listen" hint="tcp://:4573">
+                  <Input value={cfg('listen')} onChange={(e) => setCfg('listen', e.target.value)} placeholder="tcp://:4573" />
+                </Field>
+                <Field label={t('ivrMenuField')} hint={t('ivrMenuHint')}>
+                  <Input value={cfg('menu')} onChange={(e) => setCfg('menu', e.target.value)} />
+                </Field>
+                <Field label={t('languageField')} hint={t('ttsLanguageHint')}>
+                  <Input value={cfg('language')} onChange={(e) => setCfg('language', e.target.value)} placeholder="de-DE" />
+                </Field>
+                <Field label={t('agiTtsApp')} hint={t('agiTtsAppHint')}>
+                  <Input value={cfg('ttsApp')} onChange={(e) => setCfg('ttsApp', e.target.value)} placeholder="Flite" />
+                </Field>
+                <Field label={t('escalationPolicyField')}>
+                  <Input value={cfg('escalationPolicy')} onChange={(e) => setCfg('escalationPolicy', e.target.value)} />
+                </Field>
+                <Field label={t('severity')}>
+                  <CfgSeverity value={cfg('severity')} onChange={(v) => setCfg('severity', v)} />
+                </Field>
+                <Field label={t('allowFrom')} hint={t('allowFromHint')}>
+                  <Input value={cfg('allowFrom')} onChange={(e) => setCfg('allowFrom', e.target.value)} placeholder="+49,+43" />
+                </Field>
+                <Field label={t('agiRecordDir')} hint="/var/spool/asterisk/recording">
+                  <Input value={cfg('recordDir')} onChange={(e) => setCfg('recordDir', e.target.value)} />
+                </Field>
+              </div>
+              <Badge variant="outline" className="bg-muted text-muted-foreground border-input">{t('agiDialplanHint')}</Badge>
             </div>
           )}
 

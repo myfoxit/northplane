@@ -48,6 +48,48 @@ its own menu, allowlist and policy — this is how multi-SIP setups work.
    speaks a confirmation. Known callers (contact phone numbers) are
    recorded as the acting person.
 
+### Fully on-prem: your own Asterisk/FreePBX (no cloud)
+
+The PBX model — a VM with Asterisk terminating your SIP trunks (A1,
+Twilio Elastic SIP, any carrier) — is a first-class citizen. Northplane
+drives the same IVR menus over **FastAGI**; the dialplan needs one line:
+
+```
+[alarm-line]
+exten => s,1,AGI(agi://<northplane-host>:4573/<source-id-or-name>)
+ same => n,Hangup()
+```
+
+1. Create an `EventSource` of type **`asterisk-inbound`** (Admin →
+   Quellen). Config: `listen` (default `tcp://:4573`), `menu`,
+   `language`, `escalationPolicy`, `severity`, `allowFrom` (caller-id
+   prefixes), `recordDir` (PBX path for voicemails, default
+   `/var/spool/asterisk/recording`), and `ttsApp`.
+2. Point the trunk's inbound route at the `alarm-line` context. Multiple
+   numbers/trunks: one `asterisk-inbound` source per line, addressed by
+   the AGI URL path.
+3. Speech output, two modes:
+   - **`ttsApp` set** (e.g. `Flite`, `ESpeak`, or a wrapper around
+     [piper](https://github.com/rhasspy/piper) for good German voices):
+     all prompts and alert titles are spoken dynamically via
+     `EXEC <app> "<text>"`.
+   - **`ttsApp` empty**: northplane plays pre-recorded prompt files and
+     says digits via `SAY NUMBER` (alert titles are skipped). Record or
+     generate these sounds once (e.g.
+     `piper -m de_DE-thorsten-medium.onnx -f np-greeting.wav` …) and
+     drop them into `/var/lib/asterisk/sounds/`:
+     `np-greeting, np-pin, np-pin-bad, np-invalid, np-bye,
+     np-alarm-raised, np-record-now, np-recorded, np-no-alerts,
+     np-ack-confirm, np-resolve-confirm, np-list-intro, np-opt-trigger,
+     np-opt-list, np-opt-ack, np-opt-resolve, np-choose,
+     np-sev-critical, np-sev-warning, np-sev-info`.
+4. Voicemail recordings stay on the PBX (`recordingFile` label on the
+   alert points at the wav).
+
+Outbound stays symmetric: the voice channel's `asterisk` provider
+(AMI `Originate`) rings people through the same trunks — end to end
+without any cloud dependency.
+
 ### IVR menus (`Alarmierung → IVR-Menüs`, kind `ivr-menu`)
 
 ```yaml
