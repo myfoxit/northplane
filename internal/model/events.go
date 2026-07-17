@@ -50,22 +50,26 @@ type StateChangePayload struct {
 
 // Alert is a stateful evaluated incident precursor (SPEC §6.4/§6.5).
 type Alert struct {
-	ID         string          `json:"id"`
-	TenantID   string          `json:"tenantId"`
-	RuleID     string          `json:"ruleId,omitempty"`
-	ObjectID   string          `json:"objectId,omitempty"`
-	IncidentID string          `json:"incidentId,omitempty"`
-	Status     AlertStatus     `json:"status"`
-	Severity   Severity        `json:"severity"`
-	Title      string          `json:"title"`
-	DedupKey   string          `json:"dedupKey,omitempty"`
-	OpenedAt   time.Time       `json:"openedAt"`
-	AckedAt    *time.Time      `json:"ackedAt,omitempty"`
-	AckedBy    string          `json:"ackedBy,omitempty"`
-	ResolvedAt *time.Time      `json:"resolvedAt,omitempty"`
-	Payload    json.RawMessage `json:"payload"`
-	Labels     Labels          `json:"labels,omitempty"`
-	EventIDs   []string        `json:"eventIds,omitempty"` // triggering events
+	ID         string      `json:"id"`
+	TenantID   string      `json:"tenantId"`
+	RuleID     string      `json:"ruleId,omitempty"`
+	ObjectID   string      `json:"objectId,omitempty"`
+	IncidentID string      `json:"incidentId,omitempty"`
+	Status     AlertStatus `json:"status"`
+	Severity   Severity    `json:"severity"`
+	Title      string      `json:"title"`
+	DedupKey   string      `json:"dedupKey,omitempty"`
+	OpenedAt   time.Time   `json:"openedAt"`
+	AckedAt    *time.Time  `json:"ackedAt,omitempty"`
+	AckedBy    string      `json:"ackedBy,omitempty"`
+	ResolvedAt *time.Time  `json:"resolvedAt,omitempty"`
+	// SnoozedUntil re-arms a snoozed (acked) alert: the alerting engine
+	// flips it back to open and restarts the escalation chain when the
+	// deadline passes without a resolution.
+	SnoozedUntil *time.Time      `json:"snoozedUntil,omitempty"`
+	Payload      json.RawMessage `json:"payload"`
+	Labels       Labels          `json:"labels,omitempty"`
+	EventIDs     []string        `json:"eventIds,omitempty"` // triggering events
 	// Ticket links the external ticket created for this alert (F-04.05);
 	// resolution auto-closes it when Ticket.AutoClose is set.
 	Ticket *TicketRef `json:"ticket,omitempty"`
@@ -101,7 +105,7 @@ type EventSource struct {
 	ID       string `json:"id"`
 	TenantID string `json:"tenantId"`
 	Name     string `json:"name"`
-	Type     string `json:"type"` // webhook|alertmanager|email|snmp-trap|heartbeat|agent|…
+	Type     string `json:"type"` // webhook|alertmanager|email|snmp-trap|mqtt|espa|espa-x|voice-inbound|sms-inbound|heartbeat|agent|…
 	Enabled  bool   `json:"enabled"`
 	// Auth: token (hashed at rest), hmac secret, or basic credentials.
 	AuthMode  string `json:"authMode"` // token|hmac|basic|none

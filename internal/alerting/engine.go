@@ -131,6 +131,7 @@ func (en *Engine) Run(ctx context.Context) {
 			en.checkHeartbeats(ctx, time.Now().UTC())
 			en.autoClose(ctx, time.Now().UTC())
 			en.reEvaluateSuppressed(ctx)
+			en.wakeSnoozed(ctx, time.Now().UTC())
 		}
 	}
 }
@@ -658,6 +659,62 @@ func (en *Engine) Suppressed(ctx context.Context, a *model.Alert) (bool, string)
 
 // persistAndFanout stores a pipeline-internal event and feeds SSE only
 // (NOT the alerting queue — these are alerting outputs).
+// wakeSnoozed re-opens alerts whose snooze deadline passed and restarts
+// their escalation chain (SnoozeAlert sets the deadline; ack/resolve
+// clear it). The policy comes from the alert's rule — or, for manual
+// alarms, from the escalationPolicy recorded in the alert payload.
+func (en *Engine) wakeSnoozed(ctx context.Context, now time.Time) {
+	woken, err := en.store.WakeSnoozedAlerts(ctx, now)
+	if err != nil {
+		en.log.Error("alerting: snooze wake", "err", err)
+		return
+	}
+	for _, alert := range woken {
+		policy := en.policyForAlert(alert)
+		raw, _ := json.Marshal(map[string]any{
+			"alertId": alert.ID, "title": alert.Title,
+			"comment": "snooze expired — alarm re-armed", "policy": policy})
+		en.persistAndFanout(ctx, &model.Event{
+			ID: model.NewID(), TenantID: alert.TenantID, TS: now,
+			Type: model.EventEscalation, ObjectID: alert.ObjectID,
+			Severity: alert.Severity, Payload: raw,
+		})
+		if alert.ObjectID != "" {
+			_ = en.store.ClearAck(ctx, alert.ObjectID)
+		}
+		if policy != "" && en.esc != nil {
+			// Chain restart counts from now, not from OpenedAt: rebase so
+			// step 0 fires after its configured delay from the wake-up.
+			rearmed := *alert
+			rearmed.OpenedAt = now
+			if err := en.esc.StartChain(ctx, &rearmed, policy); err != nil {
+				en.log.Error("alerting: snooze re-arm", "alert", alert.ID, "err", err)
+			}
+		}
+	}
+}
+
+// policyForAlert resolves the escalation policy driving an alert.
+func (en *Engine) policyForAlert(alert *model.Alert) string {
+	if alert.RuleID == "manual" || alert.RuleID == "" {
+		var p struct {
+			EscalationPolicy string `json:"escalationPolicy"`
+		}
+		_ = json.Unmarshal(alert.Payload, &p)
+		return p.EscalationPolicy
+	}
+	en.mu.RLock()
+	defer en.mu.RUnlock()
+	for _, rules := range en.rules {
+		for _, cr := range rules {
+			if cr.Rule.ID == alert.RuleID {
+				return cr.Rule.EscalationPolicy
+			}
+		}
+	}
+	return ""
+}
+
 func (en *Engine) persistAndFanout(ctx context.Context, e *model.Event) {
 	if err := en.store.InsertEvents(ctx, []*model.Event{e}); err != nil {
 		en.log.Error("alerting: event persist", "err", err)

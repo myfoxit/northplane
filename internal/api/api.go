@@ -646,6 +646,7 @@ func (a *API) registerAll() {
 	a.registerOpenAPI()
 	a.registerDiscovery()
 	a.registerWebhookSubs()
+	a.registerTelephony()
 	a.registerDirectory()
 	a.registerSites()
 	a.registerAgentConfig()

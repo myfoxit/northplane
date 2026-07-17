@@ -75,6 +75,7 @@ var bundleKindToStorage = map[string]string{
 	"WebhookSubscription": storage.KindWebhookSub,
 	"SavedFilter":         storage.KindSavedFilter,
 	"Role":                storage.KindRole,
+	"IVRMenu":             storage.KindIVRMenu,
 }
 
 func (a *API) registerBundles() {

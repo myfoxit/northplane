@@ -11,9 +11,10 @@ const (
 	ChannelTeams   ChannelType = "teams"
 	ChannelSlack   ChannelType = "slack"
 	ChannelNtfy    ChannelType = "ntfy"
-	ChannelPush    ChannelType = "push" // Web Push / PWA (ADR-12)
+	ChannelPush    ChannelType = "push" // Web Push / PWA (ADR-12) + FCM/APNs mobile
 	ChannelSMS     ChannelType = "sms"
 	ChannelVoice   ChannelType = "voice"
+	ChannelMQTT    ChannelType = "mqtt" // publish alarms to an MQTT broker
 	// Ticket-system transports (F-04.05): create an external ticket and
 	// optionally auto-close it when the alert resolves.
 	ChannelServiceNow ChannelType = "servicenow"

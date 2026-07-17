@@ -7,14 +7,16 @@ import { t } from '../i18n'
 import { RulesTab } from '../components/alerting/Rules'
 import { GroupsTab } from '../components/alerting/Groups'
 import { EscalationsTab } from '../components/alerting/Escalations'
+import { IVRMenusTab } from '../components/alerting/IVRMenus'
 
-const tabs = ['rules', 'groups', 'escalations'] as const
+const tabs = ['rules', 'groups', 'escalations', 'ivr'] as const
 type Tab = typeof tabs[number]
 
 const labels: Record<Tab, string> = {
   rules: t('rules'),
   groups: t('groups'),
   escalations: t('escalations'),
+  ivr: t('ivrMenus'),
 }
 
 export function AlertingConfigPage() {
@@ -39,6 +41,7 @@ export function AlertingConfigPage() {
       {tab === 'rules' && <RulesTab createRef={createRef} />}
       {tab === 'groups' && <GroupsTab createRef={createRef} />}
       {tab === 'escalations' && <EscalationsTab createRef={createRef} />}
+      {tab === 'ivr' && <IVRMenusTab createRef={createRef} />}
     </div>
   )
 }

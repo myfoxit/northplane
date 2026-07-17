@@ -119,6 +119,19 @@ func EventView(e *model.Event) map[string]any {
 	if len(e.Payload) > 0 {
 		_ = json.Unmarshal(e.Payload, &payload)
 	}
+	// Ingress events wrap the original body inside NormEvent.payload —
+	// hoist its object keys so rules address them directly
+	// (event.payload.subject for mail-in, event.payload.<field> for
+	// webhook/MQTT/SMS bodies). NormEvent's own keys win on collision.
+	if payload != nil {
+		if inner, ok := payload["payload"].(map[string]any); ok {
+			for k, v := range inner {
+				if _, exists := payload[k]; !exists {
+					payload[k] = v
+				}
+			}
+		}
+	}
 	view["payload"] = orMap(payload)
 	if payload != nil {
 		if l, ok := payload["labels"].(map[string]any); ok {

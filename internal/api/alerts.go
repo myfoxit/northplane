@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -66,6 +67,67 @@ func (a *API) registerAlerts() {
 			a.writeJSON(w, http.StatusOK, alert)
 		})
 
+	// Manual alarm raise (alarming pipelines): the web dialog, the mobile
+	// alarm app and scripts can open an alert directly — with a message,
+	// severity, labels (np.sound/np.volume steer the alarm app) and an
+	// escalation policy that starts ringing people immediately. Manual
+	// alarms deliberately bypass the suppression gate: a human pressed
+	// the button.
+	type raiseAlertRequest struct {
+		Title            string         `json:"title"`
+		Message          string         `json:"message,omitempty"`
+		Severity         model.Severity `json:"severity,omitempty"` // default critical
+		Labels           model.Labels   `json:"labels,omitempty"`
+		EscalationPolicy string         `json:"escalationPolicy,omitempty"`
+		ObjectID         string         `json:"objectId,omitempty"`
+		// DedupKey folds repeated triggers into one open alert; empty =
+		// every trigger opens a fresh alert.
+		DedupKey string `json:"dedupKey,omitempty"`
+	}
+	a.handle("POST /api/v1/alerts", "Raise an alarm manually (starts escalation)",
+		"alerts:write", raiseAlertRequest{}, model.Alert{},
+		func(w http.ResponseWriter, r *http.Request, p *auth.Principal) {
+			var req raiseAlertRequest
+			if !a.decode(w, r, &req) {
+				return
+			}
+			if strings.TrimSpace(req.Title) == "" {
+				a.validationError(w, r, "title", "title required")
+				return
+			}
+			if req.Severity == "" {
+				req.Severity = model.SevCritical
+			}
+			if !req.Severity.Valid() {
+				a.validationError(w, r, "severity", "unknown severity")
+				return
+			}
+			tenant := a.tenantOf(r, p)
+			if req.EscalationPolicy != "" {
+				if _, err := storage.LoadOne[model.EscalationPolicy](r.Context(), a.Store,
+					tenant, storage.KindEscalationPolicy, req.EscalationPolicy); err != nil {
+					a.validationError(w, r, "escalationPolicy", "unknown escalation policy")
+					return
+				}
+			}
+			alert, created, err := a.RaiseAlert(r.Context(), tenant, RaiseParams{
+				Title: req.Title, Message: req.Message, Severity: req.Severity,
+				Labels: req.Labels, EscalationPolicy: req.EscalationPolicy,
+				ObjectID: req.ObjectID, DedupKey: req.DedupKey,
+				By: p.Name, Via: "api",
+			})
+			if err != nil {
+				a.fail(w, r, err)
+				return
+			}
+			a.audit(r, p, "alert.raise", alert.ID, nil, req)
+			status := http.StatusCreated
+			if !created {
+				status = http.StatusOK // dedup folded into an existing alarm
+			}
+			a.writeJSON(w, status, alert)
+		}).Status(http.StatusCreated)
+
 	type ackRequest struct {
 		Comment string `json:"comment,omitempty"`
 	}
@@ -111,12 +173,25 @@ func (a *API) registerAlerts() {
 				a.validationError(w, r, "until", "until must be in the future")
 				return
 			}
-			alert, err := a.ackAlert(r, p.TenantID, param(r, "id"), p.Name,
-				"snoozed until "+req.Until.Format(time.RFC3339), p)
+			tenant := a.tenantOf(r, p)
+			alert, err := a.Store.SnoozeAlert(r.Context(), tenant, param(r, "id"), p.Name, req.Until)
 			if err != nil {
 				a.fail(w, r, err)
 				return
 			}
+			_ = a.Escal.StopChain(r.Context(), alert.ID)
+			if alert.ObjectID != "" {
+				_ = a.Store.SetAck(r.Context(), alert.ObjectID, p.Name,
+					"snoozed until "+req.Until.Format(time.RFC3339))
+			}
+			a.audit(r, p, "alert.snooze", alert.ID, nil, map[string]string{
+				"until": req.Until.Format(time.RFC3339)})
+			raw, _ := json.Marshal(map[string]any{"alertId": alert.ID, "by": p.Name,
+				"comment": "snoozed until " + req.Until.Format(time.RFC3339)})
+			ev := &model.Event{ID: model.NewID(), TenantID: tenant, TS: time.Now().UTC(),
+				Type: model.EventAck, ObjectID: alert.ObjectID, Severity: model.SevInfo, Payload: raw}
+			a.insertEvents(r.Context(), ev)
+			a.Bus.FanoutOnly(ev)
 			a.writeJSON(w, http.StatusOK, alert)
 		})
 
@@ -160,7 +235,8 @@ func (a *API) registerAlerts() {
 	})
 
 	// Voice DTMF gather callback (SPEC §9.6): Twilio POSTs the pressed
-	// digit; 4 acknowledges. Same signed one-shot token as the ack link.
+	// digit; 4 acknowledges, 6 resolves. Same signed one-shot token as
+	// the ack link.
 	a.mux.HandleFunc("POST /api/v1/voice/gather/{token}", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/xml; charset=utf-8")
 		say := func(msg string) {
@@ -172,7 +248,11 @@ func (a *API) registerAlerts() {
 			say("This acknowledgement link is invalid or expired. Goodbye.")
 			return
 		}
-		if err := r.ParseForm(); err != nil || r.PostFormValue("Digits") != "4" {
+		digits := ""
+		if err := r.ParseForm(); err == nil {
+			digits = r.PostFormValue("Digits")
+		}
+		if digits != "4" && digits != "6" {
 			say("Not acknowledged. Goodbye.")
 			return
 		}
@@ -186,12 +266,26 @@ func (a *API) registerAlerts() {
 			if err != nil {
 				continue
 			}
-			if alert.Status == model.AlertOpen {
-				contact, _ := storage.LoadOne[model.Contact](r.Context(), a.Store, t.ID, storage.KindContact, contactID)
-				by := contactID
-				if contact != nil {
-					by = contact.Name
+			contact, _ := storage.LoadOne[model.Contact](r.Context(), a.Store, t.ID, storage.KindContact, contactID)
+			by := contactID
+			if contact != nil {
+				by = contact.Name
+			}
+			switch {
+			case digits == "6" && (alert.Status == model.AlertOpen || alert.Status == model.AlertAcked):
+				if resolved, err := a.Store.ResolveAlert(r.Context(), t.ID, alertID, model.AlertResolved); err == nil {
+					_ = a.Escal.StopChain(r.Context(), alertID)
+					a.Alert.MaybeResolveIncident(r.Context(), resolved)
+					_, _ = a.Store.AppendAudit(r.Context(), &model.AuditEntry{
+						TenantID: t.ID, ActorType: model.ActorUser, ActorID: by,
+						Action: "alert.resolve", Resource: alertID,
+						AfterJSON: `{"via":"voice-dtmf"}`, SourceIP: remoteHost(r),
+					})
+					a.alertLifecycleEvent(r, t.ID, resolved, model.EventAlertResolved)
 				}
+				say("Alert resolved. Goodbye.")
+				return
+			case alert.Status == model.AlertOpen:
 				if _, err := a.Store.AckAlert(r.Context(), t.ID, alertID, by); err == nil {
 					_ = a.Escal.StopChain(r.Context(), alertID)
 					_, _ = a.Store.AppendAudit(r.Context(), &model.AuditEntry{
@@ -257,6 +351,22 @@ func (a *API) registerAlerts() {
 				_ = a.Store.AssignAlertIncident(r.Context(), in.TenantID, alertID, in.ID)
 			}
 			a.audit(r, p, "incident.create", in.ID, nil, in)
+			// Publish through the rule engine (not fanout-only): an
+			// app/API-created incident is a first-class alarm trigger — a
+			// rule like `event.type == "incident_update" &&
+			// event.payload.action == "created"` turns it into an alert
+			// with an escalation chain (the mobile alarm app creates
+			// incidents). Engine-created incidents stay fanout-only, so
+			// there is no feedback loop.
+			raw, _ := json.Marshal(map[string]any{
+				"incidentId": in.ID, "title": in.Title, "summary": in.Summary,
+				"createdBy": in.CreatedBy, "status": in.Status, "action": "created",
+				"labels": map[string]string{"createdBy": in.CreatedBy},
+			})
+			ev := &model.Event{ID: model.NewID(), TenantID: in.TenantID, TS: time.Now().UTC(),
+				Type: model.EventIncidentUpdate, Severity: in.Severity, Payload: raw}
+			a.insertEvents(r.Context(), ev)
+			_ = a.Bus.PublishEventCtx(r.Context(), ev)
 			a.writeJSON(w, http.StatusCreated, in)
 		})
 
@@ -398,6 +508,60 @@ func (a *API) registerAlerts() {
 			a.audit(r, p, "incident.summarize", in.ID, nil, map[string]string{"summary": summary})
 			a.writeJSON(w, http.StatusOK, in)
 		})
+}
+
+// RaiseParams describes a manually raised alarm (web dialog, alarm app,
+// inbound phone call / SMS).
+type RaiseParams struct {
+	Title            string
+	Message          string
+	Severity         model.Severity
+	Labels           model.Labels
+	EscalationPolicy string
+	ObjectID         string
+	DedupKey         string
+	By               string // human-readable actor
+	Via              string // api | web | voice | sms
+}
+
+// RaiseAlert opens (or dedup-refreshes) a manual alert, emits the
+// alert_opened event and starts the escalation chain. Manual alarms skip
+// the suppression gate on purpose.
+func (a *API) RaiseAlert(ctx context.Context, tenantID string, p RaiseParams) (*model.Alert, bool, error) {
+	summary := p.Message
+	if summary == "" {
+		summary = p.Title
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"summary": summary, "manual": true, "by": p.By, "via": p.Via,
+		"escalationPolicy": p.EscalationPolicy,
+	})
+	draft := &model.Alert{
+		TenantID: tenantID, RuleID: "manual", ObjectID: p.ObjectID,
+		Severity: p.Severity, Title: p.Title, DedupKey: p.DedupKey,
+		Labels: p.Labels, Payload: payload,
+	}
+	alert, created, err := a.Store.UpsertAlert(ctx, draft)
+	if err != nil {
+		return nil, false, err
+	}
+	if !created {
+		return alert, false, nil // folded into the open alarm; chain already runs
+	}
+	raw, _ := json.Marshal(map[string]any{
+		"alertId": alert.ID, "title": alert.Title, "severity": alert.Severity,
+		"rule": "manual", "via": p.Via, "labels": alert.Labels})
+	ev := &model.Event{ID: model.NewID(), TenantID: tenantID, TS: time.Now().UTC(),
+		Type: model.EventAlertOpened, ObjectID: alert.ObjectID,
+		Severity: alert.Severity, Payload: raw}
+	a.insertEvents(ctx, ev)
+	a.Bus.FanoutOnly(ev)
+	if p.EscalationPolicy != "" {
+		if err := a.Escal.StartChain(ctx, alert, p.EscalationPolicy); err != nil {
+			a.Log.Error("alert raise: escalation start", "alert", alert.ID, "err", err)
+		}
+	}
+	return alert, true, nil
 }
 
 // ackAlert is shared by :ack, :snooze and ack links.

@@ -26,6 +26,7 @@ import (
 	"github.com/northplane/northplane/internal/catalog"
 	"github.com/northplane/northplane/internal/config"
 	"github.com/northplane/northplane/internal/escalation"
+	"github.com/northplane/northplane/internal/espa"
 	"github.com/northplane/northplane/internal/eventbus"
 	"github.com/northplane/northplane/internal/executor"
 	"github.com/northplane/northplane/internal/federation"
@@ -33,6 +34,7 @@ import (
 	"github.com/northplane/northplane/internal/mailin"
 	mcpserver "github.com/northplane/northplane/internal/mcp"
 	"github.com/northplane/northplane/internal/metrics"
+	"github.com/northplane/northplane/internal/mqttin"
 	"github.com/northplane/northplane/internal/notify"
 	"github.com/northplane/northplane/internal/pipeline"
 	"github.com/northplane/northplane/internal/scheduler"
@@ -62,6 +64,8 @@ type Server struct {
 	notify  *notify.Manager
 	traps   *traps.Manager
 	mail    *mailin.Manager
+	mqtt    *mqttin.Manager
+	espa    *espa.Manager
 	ldap    *ldapsync.Syncer
 	edge    *federation.Edge
 	hub     *sse.Hub
@@ -117,6 +121,16 @@ func New(ctx context.Context, cfg config.Config, store *storage.Store, ts *tsdb.
 	}
 	s.traps = traps.New(store, s.bus, secretFn, log)
 	s.mail = mailin.New(store, s.bus, secretFn, log)
+	// Alarming ingress beyond monitoring (alarming pipelines): MQTT
+	// subscriptions and ESPA / ESPA-X pager-protocol TCP listeners.
+	s.mqtt = mqttin.New(store, s.bus, box, log)
+	s.espa = espa.New(store, s.bus, log)
+
+	// Permission-model upgrades are reconciled additively: system roles
+	// gain newly introduced permissions, customised lists keep the rest.
+	if err := store.EnsureSystemRolePermission(ctx, "operator", "alerts:write"); err != nil {
+		log.Warn("server: role permission reconcile", "err", err)
+	}
 
 	s.hub = &sse.Hub{Bus: s.bus, Store: store}
 
@@ -340,6 +354,8 @@ func (s *Server) Run(ctx context.Context) error {
 	spawn("notify", s.notify.Run)
 	spawn("traps", s.traps.Run)
 	spawn("mailin", s.mail.Run)
+	spawn("mqttin", s.mqtt.Run)
+	spawn("espa", s.espa.Run)
 	spawn("api-janitor", s.api.Janitor)
 	spawn("webhook-dispatcher", s.api.WebhookDispatcher)
 	spawn("report-scheduler", s.api.ReportScheduler)

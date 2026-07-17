@@ -438,6 +438,15 @@ var migrations = []migration{
 		)`,
 		`CREATE INDEX ai_chat_messages_chat ON ai_chat_messages (chat_id, id)`,
 	}},
+	{9, "alert_snooze", []string{
+		// Snooze with a wake-up (alarming pipelines): the snoozed alert is
+		// acked with a deadline; the alerting engine re-opens it and
+		// restarts the escalation chain when the deadline passes. The
+		// partial index keeps the wake scan O(snoozed).
+		`ALTER TABLE alerts ADD COLUMN snoozed_until {{TIMESTAMP}}`,
+		`CREATE INDEX IF NOT EXISTS alerts_snoozed ON alerts (snoozed_until)
+			WHERE snoozed_until IS NOT NULL`,
+	}},
 }
 
 func (s *Store) migrate(ctx context.Context) error {

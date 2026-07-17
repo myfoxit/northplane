@@ -111,8 +111,8 @@ var BuiltinRoles = []Role{
 	{Name: "admin", System: true, Permissions: []Permission{"*:*"}},
 	{Name: "operator", System: true, Permissions: []Permission{
 		"objects:read", "objects:write", "checks:run", "alerts:read", "alerts:ack",
-		"incidents:read", "incidents:write", "downtimes:write", "silences:write",
-		"events:read", "metrics:read", "oncall:read", "oncall:write",
+		"alerts:write", "incidents:read", "incidents:write", "downtimes:write",
+		"silences:write", "events:read", "metrics:read", "oncall:read", "oncall:write",
 		"dashboards:read", "dashboards:write", "reports:read", "reports:render",
 	}},
 	{Name: "viewer", System: true, Permissions: []Permission{

@@ -25,13 +25,13 @@ const channelsApi = resourceApi<Channel>('channels')
 
 const CHANNEL_TYPES: ChannelType[] = [
   'email', 'webhook', 'slack', 'teams', 'ntfy', 'sms', 'push', 'voice',
-  'servicenow', 'zendesk', 'jira', 'ticket',
+  'mqtt', 'servicenow', 'zendesk', 'jira', 'ticket',
 ]
 
 // Field spec per config key. secret → render the $SECRET hint.
 type FieldSpec = { key: string; label: string; secret?: boolean; hint?: string; type?: 'number' }
-// Per-channel-type key sets (SPEC §12.3). "push"/"voice" need no config
-// here (VAPID / provider are server-side) — only the KVEditor fallback.
+// Per-channel-type key sets (SPEC §12.3). Web push needs no config (VAPID is
+// server-side); the push keys below only feed the mobile app (FCM/APNs).
 const CONFIG_FIELDS: Record<string, FieldSpec[]> = {
   // email is provider-driven (smtp | sendmail | resend | ses) — the
   // concrete keys come from emailFields() based on config.provider.
@@ -53,19 +53,43 @@ const CONFIG_FIELDS: Record<string, FieldSpec[]> = {
     { key: 'provider', label: 'Provider', hint: 'twilio | generic-http' },
     { key: 'accountSid', label: 'Account SID (twilio)', secret: true },
     { key: 'authToken', label: t('authTokenTwilio'), secret: true },
+    { key: 'apiKeySid', label: 'API-Key-SID (twilio)', hint: t('apiKeyAltHint') },
+    { key: 'apiKeySecret', label: 'API-Key-Secret (twilio)', secret: true },
     { key: 'from', label: t('senderNumber') },
     { key: 'url', label: 'URL (generic-http)', secret: true },
   ],
-  push: [],
-  // voice: Twilio Voice (TTS + DTMF-Ack über /api/v1/voice/gather) oder
-  // generic-http Gateways (SPEC §9.6).
+  // push: Web-Push braucht keine Config (VAPID serverseitig); FCM/APNs
+  // versorgen die Northplane-Alarm-App (Mobile).
+  push: [
+    { key: 'fcmServiceAccount', label: 'FCM-Service-Account (JSON)', secret: true },
+    { key: 'apnsKey', label: 'APNs-Key (.p8)', secret: true },
+    { key: 'apnsKeyId', label: 'APNs-Key-ID' },
+    { key: 'apnsTeamId', label: 'APNs-Team-ID' },
+    { key: 'apnsTopic', label: 'APNs-Topic', hint: t('apnsTopicHint') },
+    { key: 'apnsSandbox', label: 'APNs-Sandbox (true/false)' },
+  ],
+  // voice: Twilio Voice (TTS + DTMF über /api/v1/voice/gather: 4 = ack,
+  // 6 = resolve) oder generic-http Gateways (SPEC §9.6).
   voice: [
     { key: 'provider', label: 'Provider', hint: 'twilio | generic-http' },
     { key: 'accountSid', label: 'Account SID (twilio)', secret: true },
     { key: 'authToken', label: t('authTokenTwilio'), secret: true },
+    { key: 'apiKeySid', label: 'API-Key-SID (twilio)', hint: t('apiKeyAltHint') },
+    { key: 'apiKeySecret', label: 'API-Key-Secret (twilio)', secret: true },
     { key: 'from', label: t('callerNumber') },
     { key: 'language', label: t('ttsLanguage'), hint: t('ttsLanguageHint') },
     { key: 'url', label: 'URL (generic-http)', secret: true },
+  ],
+  // mqtt publisher: alarm notifications onto a broker topic.
+  mqtt: [
+    { key: 'url', label: t('brokerUrl'), hint: t('mqttUrlHint') },
+    { key: 'topic', label: 'Topic' },
+    { key: 'username', label: t('username') },
+    { key: 'password', label: t('password'), secret: true },
+    { key: 'qos', label: 'QoS', hint: '0 | 1 | 2' },
+    { key: 'retain', label: 'Retain (true/false)' },
+    { key: 'clientId', label: 'Client-ID' },
+    { key: 'tlsInsecure', label: t('tlsInsecure') },
   ],
   // Ticket-Systeme (F-04.05): Ticket bei Eskalation, Auto-Close bei Resolve.
   servicenow: [
@@ -145,6 +169,14 @@ function fieldsFor(type: ChannelType, config: Record<string, string>): FieldSpec
   if (type === 'email') return emailFields(config['provider'] ?? '')
   return CONFIG_FIELDS[type] ?? []
 }
+
+// Delivery/retry keys every channel type honours (notify queue backoff) —
+// rendered as their own "Zustellung / Wiederholungen" group.
+const RETRY_FIELDS: FieldSpec[] = [
+  { key: 'retryMaxAttempts', label: t('retryMaxAttempts'), type: 'number', hint: t('retryDefaultHint') },
+  { key: 'retryBackoffSeconds', label: t('retryBackoffSeconds'), type: 'number', hint: t('retryDefaultHint') },
+  { key: 'retryBackoffCapSeconds', label: t('retryBackoffCapSeconds'), type: 'number', hint: t('retryDefaultHint') },
+]
 
 export function ChannelsTab() {
   const { data, isLoading } = useQuery({ queryKey: channelsApi.queryKey, queryFn: channelsApi.list })
@@ -256,7 +288,7 @@ function ChannelForm({ doc, etag, isNew, onClose }: {
   const [template, setTemplate] = useState(doc.template ?? '')
 
   const known = fieldsFor(type, config)
-  const knownKeys = new Set(known.map((f) => f.key))
+  const knownKeys = new Set([...known, ...RETRY_FIELDS].map((f) => f.key))
   const extra = Object.fromEntries(Object.entries(config).filter(([k]) => !knownKeys.has(k)))
 
   const setField = (k: string, v: string) =>
@@ -318,6 +350,19 @@ function ChannelForm({ doc, etag, isNew, onClose }: {
             </div>
           )}
 
+          {/* Delivery/retry settings — honoured by every channel type. */}
+          <div className="border border-border rounded-lg p-3 space-y-2">
+            <div className="text-xs text-muted-foreground font-medium">{t('retryGroup')}</div>
+            <div className="grid grid-cols-3 gap-2">
+              {RETRY_FIELDS.map((f) => (
+                <Field key={f.key} label={f.label} hint={f.hint}>
+                  <Input type="number" value={config[f.key] ?? ''}
+                    onChange={(e) => setField(f.key, e.target.value)} />
+                </Field>
+              ))}
+            </div>
+          </div>
+
           <Field label={t('moreSettings')} hint={t('moreSettingsHintAny')}>
             <KVEditor value={extra} onChange={setExtra} />
           </Field>
@@ -327,7 +372,10 @@ function ChannelForm({ doc, etag, isNew, onClose }: {
           </Field>
 
           {type === 'push' && (
-            <Badge variant="outline" className="bg-muted text-muted-foreground border-input">{t('vapidServerSide')}</Badge>
+            <Badge variant="outline" className="bg-muted text-muted-foreground border-input">{t('pushMobileHint')}</Badge>
+          )}
+          {type === 'voice' && (
+            <Badge variant="outline" className="bg-muted text-muted-foreground border-input">{t('voiceDtmfHint')}</Badge>
           )}
 
           <FormError error={save.error} />

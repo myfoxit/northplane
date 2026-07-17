@@ -1,6 +1,7 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -323,9 +324,16 @@ func (a *API) registerAdmin() {
 		Endpoint string          `json:"endpoint"`
 		Keys     json.RawMessage `json:"keys"`
 	}
-	a.handle("POST /api/v1/push-subscriptions", "Register Web Push subscription", "", pushSub{}, nil,
+	// Web Push (browser JSON with keys) and mobile devices of the alarm
+	// app (endpoint "fcm://<device-token>" / "apns://<device-token>", no
+	// keys) share this endpoint and table. Mobile registrations usually
+	// come from an API token (the app authenticates with Bearer np_…);
+	// the subscription then belongs to that token's id — point a
+	// contact's userId at it (or at the user id for session logins) to
+	// route the push channel to the device.
+	a.handle("POST /api/v1/push-subscriptions", "Register push subscription (Web Push / FCM / APNs)", "", pushSub{}, nil,
 		func(w http.ResponseWriter, r *http.Request, p *auth.Principal) {
-			if p == nil || p.ActorType != model.ActorUser {
+			if p == nil || (p.ActorType != model.ActorUser && p.ActorType != model.ActorToken) {
 				a.problem(w, r, http.StatusUnauthorized, "np:auth/required", "login required", "")
 				return
 			}
@@ -333,21 +341,59 @@ func (a *API) registerAdmin() {
 			if !a.decode(w, r, &req) {
 				return
 			}
-			if req.Endpoint == "" {
-				a.validationError(w, r, "endpoint", "endpoint required")
+			mobile := strings.HasPrefix(req.Endpoint, "fcm://") || strings.HasPrefix(req.Endpoint, "apns://")
+			if req.Endpoint == "" || (!mobile && !strings.HasPrefix(req.Endpoint, "https://")) {
+				a.validationError(w, r, "endpoint", "endpoint must be https:// (Web Push), fcm:// or apns://")
 				return
 			}
-			_, err := a.Store.DB().ExecContext(r.Context(), a.Store.Q(
-				`INSERT INTO push_subscriptions (id, user_id, endpoint, keys, created_at)
-				 VALUES (?,?,?,?,?)`),
-				model.NewID(), p.ActorID, req.Endpoint, string(req.Keys),
-				a.Store.T(time.Now().UTC()))
+			if !mobile && len(req.Keys) == 0 {
+				a.validationError(w, r, "keys", "keys required for Web Push endpoints")
+				return
+			}
+			keys := string(req.Keys)
+			if keys == "" {
+				keys = "{}"
+			}
+			// Re-registrations replace the old row (same device, fresh token).
+			err := a.Store.Write(r.Context(), func(tx *sql.Tx) error {
+				if _, err := tx.ExecContext(r.Context(), a.Store.Q(
+					`DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint = ?`),
+					p.ActorID, req.Endpoint); err != nil {
+					return err
+				}
+				_, err := tx.ExecContext(r.Context(), a.Store.Q(
+					`INSERT INTO push_subscriptions (id, user_id, endpoint, keys, created_at)
+					 VALUES (?,?,?,?,?)`),
+					model.NewID(), p.ActorID, req.Endpoint, keys,
+					a.Store.T(time.Now().UTC()))
+				return err
+			})
 			if err != nil {
 				a.fail(w, r, err)
 				return
 			}
 			w.WriteHeader(http.StatusCreated)
 		})
+
+	a.handle("DELETE /api/v1/push-subscriptions", "Unregister a push subscription", "", pushSub{}, nil,
+		func(w http.ResponseWriter, r *http.Request, p *auth.Principal) {
+			if p == nil || (p.ActorType != model.ActorUser && p.ActorType != model.ActorToken) {
+				a.problem(w, r, http.StatusUnauthorized, "np:auth/required", "login required", "")
+				return
+			}
+			var req pushSub
+			if !a.decode(w, r, &req) {
+				return
+			}
+			_, err := a.Store.DB().ExecContext(r.Context(), a.Store.Q(
+				`DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint = ?`),
+				p.ActorID, req.Endpoint)
+			if err != nil {
+				a.fail(w, r, err)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		}).Status(http.StatusNoContent)
 }
 
 // minPasswordLen mirrors the first-run /setup minimum (web.minSetupPasswordLen):

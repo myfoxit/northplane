@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"text/template"
@@ -95,14 +96,26 @@ func (m *Manager) Run(ctx context.Context) {
 	}
 }
 
-// Backoff: 30s · 2^n with ±20 % jitter, capped at 1 h, dead after 24 h
-// cumulative (SPEC §9.6).
-func backoff(attempt int) time.Duration {
-	d := 30 * time.Second * (1 << min(attempt, 7))
-	if d > time.Hour {
-		d = time.Hour
+// retryPolicy shapes the outbox retry loop. Defaults per SPEC §9.6:
+// 30s · 2^n with ±20 % jitter, capped at 1 h, DLQ after 30 attempts
+// (≈ 26 h). Channels override via config retryMaxAttempts /
+// retryBackoffSeconds / retryBackoffCapSeconds — an alarm SMS that
+// should retry every 30 s and give up after 5 tries is a config choice,
+// not a code change.
+type retryPolicy struct {
+	maxAttempts int
+	base        time.Duration
+	cap         time.Duration
+}
+
+var defaultRetry = retryPolicy{maxAttempts: 30, base: 30 * time.Second, cap: time.Hour}
+
+func (p retryPolicy) backoff(attempt int) time.Duration {
+	d := p.base * (1 << min(attempt, 12))
+	if d > p.cap || d <= 0 { // <=0 guards shift overflow
+		d = p.cap
 	}
-	jitter := time.Duration(rand.Int63n(int64(d) / 5))
+	jitter := time.Duration(rand.Int63n(int64(d)/5 + 1))
 	return d - time.Duration(int64(d)/10) + jitter
 }
 
@@ -113,7 +126,37 @@ func min(a, b int) int {
 	return b
 }
 
-const maxAttempts = 30 // ≈ 26 h of retries → DLQ
+// retryPolicyFor resolves the channel-specific retry overrides for a
+// failed delivery. Only "notification" items carry a channel type; all
+// other kinds use the defaults. Lookup errors fall back to defaults —
+// the retry loop must never get stuck on a config read.
+func (m *Manager) retryPolicyFor(ctx context.Context, item *storage.OutboxItem) retryPolicy {
+	pol := defaultRetry
+	if item.Kind != "notification" {
+		return pol
+	}
+	var job notifyJob
+	if err := json.Unmarshal(item.Payload, &job); err != nil || job.Channel == "" {
+		return pol
+	}
+	ch, err := m.channelFor(ctx, job.TenantID, job.Channel)
+	if err != nil {
+		return pol
+	}
+	if v, err := strconv.Atoi(ch.Config["retryMaxAttempts"]); err == nil && v > 0 && v <= 100 {
+		pol.maxAttempts = v
+	}
+	if v, err := strconv.Atoi(ch.Config["retryBackoffSeconds"]); err == nil && v > 0 {
+		pol.base = time.Duration(v) * time.Second
+	}
+	if v, err := strconv.Atoi(ch.Config["retryBackoffCapSeconds"]); err == nil && v > 0 {
+		pol.cap = time.Duration(v) * time.Second
+	}
+	if pol.cap < pol.base {
+		pol.cap = pol.base
+	}
+	return pol
+}
 
 func (m *Manager) deliver(ctx context.Context, item *storage.OutboxItem) {
 	var err error
@@ -139,14 +182,15 @@ func (m *Manager) deliver(ctx context.Context, item *storage.OutboxItem) {
 		return
 	}
 	m.statFailed.Add(1)
+	pol := m.retryPolicyFor(ctx, item)
 	attempts := item.Attempts + 1
-	dead := attempts >= maxAttempts
+	dead := attempts >= pol.maxAttempts
 	if dead {
 		m.statDead.Add(1)
 		m.log.Error("notify: moved to DLQ", "item", item.ID, "err", err)
 	}
 	_ = m.store.OutboxRetry(ctx, item.ID, attempts,
-		time.Now().UTC().Add(backoff(attempts)), dead, err.Error())
+		time.Now().UTC().Add(pol.backoff(attempts)), dead, err.Error())
 }
 
 // notifyJob mirrors escalation.notifyJob (kept in sync via JSON shape).
@@ -456,7 +500,8 @@ Acknowledge: {{.AckURL}}`,
 	model.ChannelSlack:   `{"text":"[{{.Severity}}] {{.Title}}","blocks":[{"type":"section","text":{"type":"mrkdwn","text":"*[{{.Severity}}] <{{.AlertURL}}|{{.Title}}>*\nStep {{.Step}} · Policy {{.Policy}}"}},{"type":"actions","elements":[{"type":"button","text":{"type":"plain_text","text":"Acknowledge"},"url":"{{.AckURL}}","style":"primary"}]}]}`,
 	model.ChannelTeams:   `{"type":"message","attachments":[{"contentType":"application/vnd.microsoft.card.adaptive","content":{"type":"AdaptiveCard","$schema":"http://adaptivecards.io/schemas/adaptive-card.json","version":"1.4","body":[{"type":"TextBlock","size":"Medium","weight":"Bolder","text":"[{{.Severity}}] {{.Title}}"},{"type":"TextBlock","text":"Step {{.Step}} · Policy {{.Policy}}","wrap":true}],"actions":[{"type":"Action.OpenUrl","title":"Acknowledge","url":"{{.AckURL}}"},{"type":"Action.OpenUrl","title":"Open","url":"{{.AlertURL}}"}]}}]}`,
 	model.ChannelWebhook: `{"version":1,"alert":{{json .Alert}},"severity":"{{.Severity}}","title":{{json .Title}},"labels":{{json .Labels}},"step":{{.Step}},"policy":{{json .Policy}},"ackUrl":{{json .AckURL}},"alertUrl":{{json .AlertURL}}}`,
-	model.ChannelVoice:   `Northplane alert. Severity {{.Severity}}. {{.Title}}. Press 4 to acknowledge.`,
+	model.ChannelVoice:   `Northplane alert. Severity {{.Severity}}. {{.Title}}. Press 4 to acknowledge, 6 to resolve.`,
+	model.ChannelMQTT:    `{"version":1,"alert":{{json .Alert}},"severity":"{{.Severity}}","title":{{json .Title}},"labels":{{json .Labels}},"ackUrl":{{json .AckURL}},"alertUrl":{{json .AlertURL}}}`,
 	// Ticket descriptions (ServiceNow/Zendesk/Jira share the text shape;
 	// the generic gateway posts JSON like a webhook).
 	model.ChannelServiceNow: ticketDescriptionTemplate,
