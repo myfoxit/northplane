@@ -1,12 +1,14 @@
 // Package web delivers the frontend: the React SPA from go:embed plus
-// the two deliberately server-rendered pages — login and the public
-// status page (robust, JS-free; SPEC §12.1/§12.4).
+// the deliberately server-rendered pages — login, first-run setup,
+// self-service registration and the public status page (robust, JS-free;
+// SPEC §12.1/§12.4).
 package web
 
 import (
 	"context"
 	"crypto/subtle"
 	"embed"
+	"errors"
 	"html/template"
 	"io/fs"
 	"net/http"
@@ -122,6 +124,12 @@ func NewPages(store *storage.Store, authn *auth.Authenticator, oidc *auth.OIDC,
 // account exists (anti-enumeration). Computed once at startup.
 var dummyPassHash = auth.HashSecret("northplane-nonexistent-account-placeholder")
 
+// steptSnippet embeds the Stept assistant (chat widget + product tours) on
+// the server-rendered auth pages; the SPA carries the same snippet in its
+// index.html. The CSP in server.go allowlists exactly this origin.
+const steptSnippet = template.HTML(`<script>window.SteptSettings={workspaceKey:"wk_As5wfPgMuFbm3VtLaaKEB4xm"}</script>
+<script src="https://app.stepped.ai/widget-assets/loader.js" async></script>`)
+
 // loginLimiter throttles local-login attempts per client IP to blunt
 // online password brute-forcing of the break-glass admin accounts.
 type loginLimiter struct {
@@ -227,6 +235,10 @@ func (p *Pages) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		p.setupPage(w, r, "")
 	case r.URL.Path == "/setup" && r.Method == http.MethodPost:
 		p.setupSubmit(w, r)
+	case r.URL.Path == "/register" && r.Method == http.MethodGet:
+		p.registerPage(w, r, "")
+	case r.URL.Path == "/register" && r.Method == http.MethodPost:
+		p.registerSubmit(w, r)
 	case r.URL.Path == "/auth/oidc":
 		if p.oidc == nil {
 			http.Error(w, "SSO not configured", http.StatusNotImplemented)
@@ -387,6 +399,9 @@ button{width:100%;margin-top:1.2rem;background:#2563eb;border:0;border-radius:8p
 button:hover{background:#1d4ed8}
 .sso{background:#1e293b;margin-top:.6rem}
 .err{background:#7f1d1d;border-radius:8px;padding:.55rem .7rem;font-size:.82rem;margin-bottom:1rem}
+.alt{font-size:.8rem;color:#94a3b8;text-align:center;margin-top:1rem}
+.alt a{color:#60a5fa;text-decoration:none}
+.alt a:hover{text-decoration:underline}
 .v{color:#475569;font-size:.7rem;text-align:center;margin-top:1.2rem}
 </style></head><body>
 <form class="card" method="post" action="/login">
@@ -399,8 +414,10 @@ button:hover{background:#1d4ed8}
   <label style="display:flex;align-items:center;gap:.45rem;font-size:.8rem;color:#94a3b8;margin-top:.9rem"><input type="checkbox" name="remember" value="1" style="width:auto;margin:0"> Angemeldet bleiben</label>
   <button type="submit">Anmelden</button>
   {{if .SSO}}<button type="button" class="sso" onclick="location.href='/auth/oidc'">Single Sign-On</button>{{end}}
+  {{if .Signup}}<div class="alt">Neu hier? <a href="/register">Konto erstellen</a></div>{{end}}
   <div class="v">{{.Version}}</div>
-</form></body></html>`))
+</form>
+{{.Stept}}</body></html>`))
 
 func (p *Pages) loginPage(w http.ResponseWriter, r *http.Request, errMsg string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -409,6 +426,7 @@ func (p *Pages) loginPage(w http.ResponseWriter, r *http.Request, errMsg string)
 	}
 	_ = loginTpl.Execute(w, map[string]any{
 		"Error": errMsg, "SSO": p.oidc != nil, "Version": p.version,
+		"Signup": p.cfg.AllowSignup, "Stept": steptSnippet,
 	})
 }
 
@@ -514,6 +532,133 @@ func (p *Pages) setupSubmit(w http.ResponseWriter, r *http.Request) {
 	_, _ = p.store.AppendAudit(r.Context(), &model.AuditEntry{
 		TenantID: model.DefaultTenant, ActorType: model.ActorUser, ActorID: user.ID,
 		Action: "setup.admin", SourceIP: remoteIP(r),
+	})
+	http.Redirect(w, r, "/", http.StatusFound)
+}
+
+// --- self-service registration (viewer accounts, opt-in via allowSignup) ---
+
+var registerTpl = template.Must(template.New("register").Parse(`<!doctype html>
+<html lang="de"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Northplane — Registrierung</title>
+<style>
+:root{color-scheme:dark}
+body{font-family:system-ui,-apple-system,sans-serif;background:#0b1220;color:#e2e8f0;display:grid;place-items:center;min-height:100vh;margin:0}
+.card{background:#111a2e;border:1px solid #1e293b;border-radius:12px;padding:2.2rem;width:20rem}
+h1{font-size:1.15rem;margin:0 0 .4rem;display:flex;align-items:center;gap:.5rem}
+h1 b{color:#60a5fa}
+p.hint{font-size:.8rem;color:#94a3b8;margin:0 0 1.2rem}
+label{display:block;font-size:.8rem;color:#94a3b8;margin:.8rem 0 .25rem}
+input{width:100%;box-sizing:border-box;background:#0b1220;border:1px solid #334155;border-radius:8px;color:#e2e8f0;padding:.55rem .7rem;font-size:.9rem}
+button{width:100%;margin-top:1.2rem;background:#2563eb;border:0;border-radius:8px;color:#fff;padding:.6rem;font-size:.9rem;cursor:pointer}
+button:hover{background:#1d4ed8}
+.err{background:#7f1d1d;border-radius:8px;padding:.55rem .7rem;font-size:.82rem;margin-bottom:1rem}
+.alt{font-size:.8rem;color:#94a3b8;text-align:center;margin-top:1rem}
+.alt a{color:#60a5fa;text-decoration:none}
+.alt a:hover{text-decoration:underline}
+.v{color:#475569;font-size:.7rem;text-align:center;margin-top:1.2rem}
+</style></head><body>
+<form class="card" method="post" action="/register">
+  <h1><b>▲</b> Northplane</h1>
+  <p class="hint">Neues Konto anlegen</p>
+  {{if .Error}}<div class="err">{{.Error}}</div>{{end}}
+  <label for="name">Name</label>
+  <input id="name" name="name" type="text" autocomplete="name" required>
+  <label for="email">E-Mail</label>
+  <input id="email" name="email" type="email" autocomplete="username" required>
+  <label for="password">Passwort (mind. 12 Zeichen)</label>
+  <input id="password" name="password" type="password" autocomplete="new-password" minlength="12" required>
+  <label for="confirm">Passwort bestätigen</label>
+  <input id="confirm" name="confirm" type="password" autocomplete="new-password" minlength="12" required>
+  <button type="submit">Registrieren</button>
+  <div class="alt">Schon ein Konto? <a href="/login">Anmelden</a></div>
+  <div class="v">{{.Version}}</div>
+</form>
+{{.Stept}}</body></html>`))
+
+// registerPage renders the sign-up form; a 404 when signup is disabled
+// keeps the page invisible on invite-only installs. While the first-run
+// gate is still open, signup defers to /setup — otherwise the first
+// visitor would create a viewer account, close the gate and leave the
+// install without any admin.
+func (p *Pages) registerPage(w http.ResponseWriter, r *http.Request, errMsg string) {
+	if !p.cfg.AllowSignup {
+		http.NotFound(w, r)
+		return
+	}
+	if p.firstRunOpen(r.Context()) {
+		http.Redirect(w, r, "/setup", http.StatusFound)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if errMsg != "" {
+		w.WriteHeader(http.StatusBadRequest)
+	}
+	_ = registerTpl.Execute(w, map[string]any{
+		"Error": errMsg, "Version": p.version, "Stept": steptSnippet,
+	})
+}
+
+// registerSubmit creates a self-service account. Mirrors setupSubmit
+// (shared rate limiter, German messages, audit entry, session cookie) with
+// one decisive difference: the account is explicitly created with the
+// viewer role. Never an empty Roles slice — localLogin escalates that to
+// admin for legacy break-glass rows (see the fallback there).
+func (p *Pages) registerSubmit(w http.ResponseWriter, r *http.Request) {
+	if !p.cfg.AllowSignup {
+		http.NotFound(w, r)
+		return
+	}
+	if p.firstRunOpen(r.Context()) {
+		http.Redirect(w, r, "/setup", http.StatusFound)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		p.registerPage(w, r, "Ungültige Anfrage.")
+		return
+	}
+	if !logins.allow(remoteIP(r), time.Now()) {
+		w.Header().Set("Retry-After", "30")
+		p.registerPage(w, r, "Zu viele Versuche. Bitte kurz warten.")
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	email := strings.TrimSpace(r.FormValue("email"))
+	password, confirm := r.FormValue("password"), r.FormValue("confirm")
+	switch {
+	case name == "" || email == "":
+		p.registerPage(w, r, "Name und E-Mail sind erforderlich.")
+		return
+	case password != confirm:
+		p.registerPage(w, r, "Passwörter stimmen nicht überein.")
+		return
+	case len([]rune(password)) < minSetupPasswordLen:
+		p.registerPage(w, r, "Passwort muss mindestens 12 Zeichen haben.")
+		return
+	}
+	user, err := p.store.CreateUser(r.Context(), &model.User{
+		Name: name, Email: email, Local: true,
+		PassHash: auth.HashSecret(password),
+		Roles:    []string{"viewer"},
+	})
+	if err != nil {
+		if errors.Is(err, storage.ErrDuplicate) {
+			p.registerPage(w, r, "Diese E-Mail ist bereits registriert.")
+			return
+		}
+		p.registerPage(w, r, "Konto konnte nicht angelegt werden.")
+		return
+	}
+	session, err := p.auth.NewSession(r.Context(), user.ID, model.DefaultTenant, user.Roles, nil, sessionTTL)
+	if err != nil {
+		p.registerPage(w, r, "Interner Fehler.")
+		return
+	}
+	p.setSession(w, r, session, sessionTTL)
+	_, _ = p.store.AppendAudit(r.Context(), &model.AuditEntry{
+		TenantID: model.DefaultTenant, ActorType: model.ActorUser, ActorID: user.ID,
+		Action: "user.register", SourceIP: remoteIP(r),
 	})
 	http.Redirect(w, r, "/", http.StatusFound)
 }
