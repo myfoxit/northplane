@@ -249,7 +249,8 @@ func (s *Server) rootHandler(apiHandler http.Handler, authn *auth.Authenticator)
 	mux.Handle("/auth/", pages) // login, callback, logout
 	mux.Handle("/status/", pages)
 	mux.Handle("/login", pages)
-	mux.Handle("/setup", pages) // one-shot first-run admin setup
+	mux.Handle("/setup", pages)    // one-shot first-run admin setup
+	mux.Handle("/register", pages) // self-service signup (viewer role, cfg.AllowSignup)
 	// MCP Streamable HTTP (SPEC §10.3) — Northplane tokens authenticate
 	if svc, ok := s.api.AI.(*ai.Service); ok {
 		mux.Handle("/mcp", mcpserver.HTTPHandler(svc, authn, s.version))
@@ -497,9 +498,17 @@ func securityHeaders(next http.Handler, trustProxy bool) http.Handler {
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "same-origin")
 		if !strings.HasPrefix(r.URL.Path, "/api/") {
+			// steptOrigin carries the embedded Stept assistant (chat widget +
+			// product tours): its loader script, the messenger iframe and the
+			// widget's own API/WebSocket calls all come from that one origin.
+			const steptOrigin = "https://app.stepped.ai"
 			h.Set("Content-Security-Policy",
-				"default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "+
-					"connect-src 'self'; frame-ancestors 'none'; base-uri 'self'")
+				"default-src 'self'; img-src 'self' data: "+steptOrigin+"; "+
+					"style-src 'self' 'unsafe-inline'; "+
+					"script-src 'self' "+steptOrigin+"; "+
+					"connect-src 'self' "+steptOrigin+" wss://app.stepped.ai; "+
+					"frame-src 'self' "+steptOrigin+"; "+
+					"frame-ancestors 'none'; base-uri 'self'")
 		}
 		next.ServeHTTP(w, r)
 	})

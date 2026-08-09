@@ -1,0 +1,32 @@
+# Northplane — edge-proxied production variant (Proxmox VM behind central Caddy).
+#
+# TLS is terminated by the shared Caddy LXC on the private bridge
+# (10.10.10.10), which reverse-proxies the public domain to this VM's :8443.
+# So this stack does NOT run the bundled caddy service: northplaned publishes
+# :8443 on the private bridge only and is not reachable from the internet.
+#
+# MANAGED BY THE DEPLOY PIPELINE (.github/workflows/deploy.yml): every deploy
+# overwrites this file (as docker-compose.yml) and re-renders .env on the
+# server. Change configuration in GitHub repo Variables/Secrets, not here.
+
+name: northplane
+
+services:
+  northplane:
+    image: ${NORTHPLANE_IMAGE:-ghcr.io/myfoxit/northplane:latest}
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      NORTHPLANE_LISTEN: ":8443"
+      NORTHPLANE_TRUST_PROXY: "true" # Caddy LXC terminates TLS + sets X-Forwarded-*
+      NORTHPLANE_SECRET_KEY_FILE: "/etc/northplane/secret.key"
+    volumes:
+      - northplane-data:/var/lib/northplane
+      # Persistent AES-256 master key (secrets-at-rest). Provisioned once;
+      # survives image swaps and mode flips.
+      - ./secret.key:/etc/northplane/secret.key:ro
+    ports:
+      - "8443:8443"
+
+volumes:
+  northplane-data:

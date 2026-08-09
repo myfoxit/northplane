@@ -64,6 +64,13 @@ type Config struct {
 	// command. The env path is guarded (cmd/northplaned): it never seeds on
 	// top of a database that already holds real, non-demo hosts.
 	Demo bool `yaml:"demo"`
+
+	// AllowSignup, when true (env NORTHPLANE_ALLOW_SIGNUP=true /
+	// `allowSignup: true`), exposes a public /register page for
+	// self-service account creation. Self-registered accounts always get
+	// the viewer role only — an admin promotes them afterwards. Off by
+	// default: most installs are invite-only (SPEC §13.2 stays intact).
+	AllowSignup bool `yaml:"allowSignup"`
 }
 
 // StorageConfig selects the relational backend (SPEC §7.3): empty DSN ⇒
@@ -412,6 +419,9 @@ func applyEnv(c *Config) {
 	}
 	if v, ok := os.LookupEnv("NORTHPLANE_DEMO"); ok {
 		c.Demo, _ = strconv.ParseBool(v)
+	}
+	if v, ok := os.LookupEnv("NORTHPLANE_ALLOW_SIGNUP"); ok {
+		c.AllowSignup, _ = strconv.ParseBool(v)
 	}
 	str("NORTHPLANE_OIDC_ISSUER", &c.OIDC.Issuer)
 	str("NORTHPLANE_OIDC_CLIENT_ID", &c.OIDC.ClientID)

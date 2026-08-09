@@ -1,16 +1,24 @@
-# Northplane — production deployment (Docker Compose + Caddy, CI/CD)
+# Northplane — production deployment (Proxmox VM + central Caddy, CI/CD)
 
-Continuous deployment to a single Linux host. Push to `main` → CI runs → on
+Continuous deployment to a NAT'd Proxmox VM. Push to `main` → CI runs → on
 green, the **Deploy** workflow builds the image, pushes it to GHCR, and rolls
-the Compose stack on the server over SSH as an unprivileged `deploy` user.
+the Compose stack on the VM over SSH as an unprivileged `deploy` user.
 
 ```
 GitHub: push main ─▶ CI (test/lint/e2e) ─▶ Deploy workflow
                                               │ build+push ghcr.io image
-                                              ▼ ssh deploy@host
-Server: Caddy :80/:443 ──TLS──▶ northplaned :8443 ──▶ northplane-data volume
-        (Let's Encrypt for doktrace.com, self-signed for the bare IP)
+                                              ▼ ssh -p 2201 deploy@51.83.96.40
+Proxmox host 51.83.96.40 ── DNAT :80/:443 ──▶ Caddy LXC 10.10.10.10 (TLS, all SaaS domains)
+                        └── DNAT :2201    ──▶ saas1 VM 10.10.10.11:22 (this app)
+Caddy LXC: doktrace.com ── reverse_proxy ──▶ 10.10.10.11:8443 (northplaned)
+VM saas1:  /opt/northplane — docker compose, edge-proxied variant (no bundled caddy)
 ```
+
+TLS terminates at the **central Caddy LXC** (one per Proxmox box, shared by
+all SaaS VMs; domains are mapped with the `saas-domain` helper in the LXC).
+The bundled-caddy compose file (`deploy/docker-compose.yml`) remains for
+standalone single-box installs; production ships
+`deploy/docker-compose.vm.yml` instead.
 
 The same binary is a demo instance or a real instance depending on one
 switch — see **Demo / real data switch** below.
@@ -19,30 +27,36 @@ switch — see **Demo / real data switch** below.
 
 ## 1. One-time server provisioning
 
-Run the idempotent provisioner as root. It installs Docker CE, creates the
-`deploy` user, authorizes the CI deploy key, and lays down the project dir +
-persistent `secret.key`:
+On the VM (Rocky Linux, login as `rocky`): run the idempotent provisioner as
+root. It installs Docker CE, creates the `deploy` user, authorizes the CI
+deploy key, and lays down the project dir + persistent `secret.key`:
 
 ```sh
 # from a checkout, with the CI deploy PUBLIC key:
-ssh root@178.104.12.226 \
-  'DEPLOY_PUBKEY="ssh-ed25519 AAAA… northplane-deploy" bash -s' \
+ssh -J root@51.83.96.40 rocky@10.10.10.11 \
+  'DEPLOY_PUBKEY="ssh-ed25519 AAAA… northplane-ci-deploy" sudo -E bash -s' \
   < deploy/provision-server.sh
 ```
 
-Then pin the host's SSH key for the `DEPLOY_KNOWN_HOSTS` variable:
+On the Proxmox host, forward a public SSH port to the VM for CI (persisted
+as `post-up` rules in `/etc/network/interfaces`, next to the 80/443 rules):
 
 ```sh
-ssh-keyscan -t ed25519,rsa 178.104.12.226
+iptables -t nat -A PREROUTING -i vmbr0 -p tcp --dport 2201 \
+  -j DNAT --to-destination 10.10.10.11:22
 ```
 
-## 2. DNS (required for the real Let's Encrypt cert)
+Then pin the VM's SSH key for the `DEPLOY_KNOWN_HOSTS` variable:
 
-Create an **A record**: `doktrace.com → 178.104.12.226` (and `www` if you
-want it). Until it resolves, the site is reachable at
-`https://178.104.12.226` with a self-signed cert (one-time browser warning);
-Caddy upgrades to the real certificate automatically once the record is live —
-no redeploy needed.
+```sh
+ssh-keyscan -p 2201 -t ed25519 51.83.96.40
+```
+
+## 2. DNS + ingress
+
+`doktrace.com` is a Cloudflare-proxied A record to `51.83.96.40`. In the
+Caddy LXC, `saas-domain 1 doktrace.com 8443` maps the domain to this VM;
+Caddy issues the certificate automatically.
 
 ## 3. GitHub configuration
 
@@ -54,15 +68,18 @@ source of truth if you ever need to recreate them.)
 
 | Variable | Value | Purpose |
 |---|---|---|
-| `DEPLOY_HOST` | `178.104.12.226` | Server address (also the bare-IP TLS endpoint). |
+| `DEPLOY_HOST` | `51.83.96.40` | Proxmox host address (SSH is DNAT-forwarded to the VM). |
+| `DEPLOY_PORT` | `2201` | DNAT port on the host → VM `:22`. |
 | `DEPLOY_USER` | `deploy` | Non-root SSH user the deploy runs as. |
-| `DEPLOY_PATH` | `/opt/northplane` | Compose project directory on the server. |
-| `DEPLOY_KNOWN_HOSTS` | _output of `ssh-keyscan`_ | Pins the host key (StrictHostKeyChecking=yes). |
-| `DEPLOY_DOMAIN` | `doktrace.com` | Hostname Caddy gets a Let's Encrypt cert for. |
-| `ACME_EMAIL` | `admin@doktrace.com` | Let's Encrypt account email. |
+| `DEPLOY_PATH` | `/opt/northplane` | Compose project directory on the VM. |
+| `DEPLOY_KNOWN_HOSTS` | _output of `ssh-keyscan -p 2201`_ | Pins the VM host key (StrictHostKeyChecking=yes). |
+| `DEPLOY_DOMAIN` | `doktrace.com` | Public hostname (mapped in the central Caddy LXC). |
 | `NORTHPLANE_BASE_URL` | `https://doktrace.com` | App base URL (links, ack URLs, OIDC redirects). |
 | `NP_DEFAULT_ADMIN_EMAIL` | `admin@doktrace.com` | Break-glass admin login. |
 | `NORTHPLANE_DEMO` | `true` | **The demo/real switch** (`true` = demo data, `false` = clean). |
+
+The rendered `.env` also sets `NORTHPLANE_ALLOW_SIGNUP=true` — the public
+`/register` page (self-service viewer accounts) is part of the showcase.
 
 ### Repository **Secrets**
 

@@ -1,12 +1,15 @@
 name: Deploy
 
-# Publish the app image to GHCR on every green build of main.
+# Publish the app image to GHCR on every green build of main, then roll the
+# production VM forward over SSH.
 #
-# The production host (np-01) PULLS this image itself (a short systemd timer
-# runs `docker compose pull && up -d`), so nothing here ever SSHes into the
-# infrastructure — CI never holds a key with root on a production host.
-# "Deploy" = publish the artifact; the server rolls itself forward within a
-# couple of minutes. See deploy/README.md.
+# Production runs on a NAT'd Proxmox VM (saas1, 10.10.10.11) behind the host
+# 51.83.96.40; TLS terminates at the central Caddy LXC (10.10.10.10), which
+# reverse-proxies doktrace.com -> VM:8443. CI reaches the VM's sshd through a
+# dedicated DNAT port on the host (:2201 -> VM:22) as the unprivileged
+# `deploy` user. GHCR pull auth on the server uses this run's ephemeral
+# GITHUB_TOKEN — the server never stores a registry credential.
+# See deploy/README.md.
 
 on:
   workflow_run:
@@ -14,8 +17,14 @@ on:
     types: [completed]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      demo:
+        description: "Demo/real data switch for this run"
+        type: choice
+        options: [repo-default, "true", "false"]
+        default: repo-default
 
-# One publish at a time; never cancel an in-flight build.
+# One deploy at a time; never cancel an in-flight rollout.
 concurrency:
   group: deploy-production
   cancel-in-progress: false
@@ -31,6 +40,8 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    outputs:
+      ver: ${{ steps.img.outputs.ver }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -61,7 +72,90 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Summary
+  deploy:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read # server-side docker login uses this run's GITHUB_TOKEN
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Set up SSH
         run: |
-          echo "Published ghcr.io/${{ github.repository }}:${{ steps.img.outputs.ver }} (and :latest)." >> "$GITHUB_STEP_SUMMARY"
-          echo "np-01 auto-pulls :latest within ~2 min (northplane-pull.timer)." >> "$GITHUB_STEP_SUMMARY"
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "${{ vars.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          cat >> ~/.ssh/config <<EOF
+          Host prod
+            HostName ${{ vars.DEPLOY_HOST }}
+            Port ${{ vars.DEPLOY_PORT }}
+            User ${{ vars.DEPLOY_USER }}
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+          EOF
+
+      - name: Render .env
+        run: |
+          DEMO="${{ vars.NORTHPLANE_DEMO }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.demo }}" != "repo-default" ]; then
+            DEMO="${{ inputs.demo }}"
+          fi
+          case "$DEMO" in true|false) ;; *) echo "bad demo switch: $DEMO"; exit 1;; esac
+          MODE_DIR=real; [ "$DEMO" = "true" ] && MODE_DIR=demo
+          cat > env.rendered <<EOF
+          NORTHPLANE_IMAGE=ghcr.io/${{ github.repository }}:${{ needs.publish.outputs.ver }}
+          NORTHPLANE_BASE_URL=${{ vars.NORTHPLANE_BASE_URL }}
+          NORTHPLANE_DEMO=$DEMO
+          NORTHPLANE_ALLOW_SIGNUP=true
+          NORTHPLANE_DATA_DIR=/var/lib/northplane/$MODE_DIR
+          NP_DEFAULT_ADMIN_EMAIL=${{ vars.NP_DEFAULT_ADMIN_EMAIL }}
+          NP_DEFAULT_ADMIN_PASSWORD=${{ secrets.NP_DEFAULT_ADMIN_PASSWORD }}
+          EOF
+
+      - name: Ship compose stack
+        run: |
+          DEPLOY_PATH="${{ vars.DEPLOY_PATH }}"
+          ssh prod "cd '$DEPLOY_PATH' && cp .env .env.previous 2>/dev/null || true"
+          scp deploy/docker-compose.vm.yml "prod:$DEPLOY_PATH/docker-compose.yml"
+          scp env.rendered "prod:$DEPLOY_PATH/.env"
+
+      - name: Pull and roll forward
+        run: |
+          DEPLOY_PATH="${{ vars.DEPLOY_PATH }}"
+          ssh prod "set -e; cd '$DEPLOY_PATH'
+            echo '${{ secrets.GITHUB_TOKEN }}' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
+            docker compose pull -q
+            docker logout ghcr.io
+            docker compose up -d --remove-orphans"
+
+      - name: Verify rollout
+        id: verify
+        run: |
+          WANT="ghcr.io/${{ github.repository }}:${{ needs.publish.outputs.ver }}"
+          for i in $(seq 1 12); do
+            RUNNING=$(ssh prod "docker inspect --format '{{.Config.Image}}' northplane-northplane-1 2>/dev/null" || true)
+            HEALTH=$(ssh prod "curl -fsS -m 5 http://localhost:8443/healthz" || true)
+            if [ "$RUNNING" = "$WANT" ] && [ "$HEALTH" = "ok" ]; then
+              echo "live: $RUNNING (healthz ok)"; exit 0
+            fi
+            echo "waiting ($i/12): image='$RUNNING' health='$HEALTH'"; sleep 5
+          done
+          echo "rollout did not become healthy"; exit 1
+
+      - name: Rollback on failure
+        if: failure() && steps.verify.outcome == 'failure'
+        run: |
+          DEPLOY_PATH="${{ vars.DEPLOY_PATH }}"
+          echo "verify failed — rolling back to .env.previous"
+          ssh prod "set -e; cd '$DEPLOY_PATH'
+            if [ -f .env.previous ]; then mv .env.previous .env; docker compose up -d; fi"
+
+      - name: Summary
+        if: success()
+        run: |
+          echo "Deployed ghcr.io/${{ github.repository }}:${{ needs.publish.outputs.ver }} to ${{ vars.DEPLOY_HOST }}:2201 (VM saas1) — live at ${{ vars.NORTHPLANE_BASE_URL }}." >> "$GITHUB_STEP_SUMMARY"
