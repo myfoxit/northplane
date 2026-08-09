@@ -502,10 +502,17 @@ func securityHeaders(next http.Handler, trustProxy bool) http.Handler {
 			// product tours): its loader script, the messenger iframe and the
 			// widget's own API/WebSocket calls all come from that one origin.
 			const steptOrigin = "https://app.stepped.ai"
+			// steptSettingsHash is the SHA-256 of the ONE inline bootstrap
+			// script that sets window.SteptSettings (see web.steptSnippet and
+			// web/index.html). Allow-listing it by hash keeps script-src free
+			// of 'unsafe-inline'. If that script's bytes change (e.g. a new
+			// widget key), recompute:  printf '%s' '<script-body>' |
+			// openssl dgst -sha256 -binary | openssl base64
+			const steptSettingsHash = "'sha256-HlAiISfjqhgIiTh24Wt2L3bd5wG1TYbHlnpS0PMuIA8='"
 			h.Set("Content-Security-Policy",
 				"default-src 'self'; img-src 'self' data: "+steptOrigin+"; "+
 					"style-src 'self' 'unsafe-inline'; "+
-					"script-src 'self' "+steptOrigin+"; "+
+					"script-src 'self' "+steptOrigin+" "+steptSettingsHash+"; "+
 					"connect-src 'self' "+steptOrigin+" wss://app.stepped.ai; "+
 					"frame-src 'self' "+steptOrigin+"; "+
 					"frame-ancestors 'none'; base-uri 'self'")
