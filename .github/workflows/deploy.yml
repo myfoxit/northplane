@@ -1,15 +1,20 @@
 name: Deploy
 
-# Publish the app image to GHCR on every green build of main, then roll the
-# production VM forward over SSH.
+# Publish the app image to GHCR on every green build of main, then roll both
+# production hosts forward over SSH.
 #
-# Production runs on a NAT'd Proxmox VM (saas1, 10.10.10.11) behind the host
-# 51.83.96.40; TLS terminates at the central Caddy LXC (10.10.10.10), which
-# reverse-proxies doktrace.com -> VM:8443. CI reaches the VM's sshd through a
-# dedicated DNAT port on the host (:2201 -> VM:22) as the unprivileged
-# `deploy` user. GHCR pull auth on the server uses this run's ephemeral
-# GITHUB_TOKEN — the server never stores a registry credential.
-# See deploy/README.md.
+# np-01 (job `deploy`): a NAT'd Proxmox VM (saas1, 10.10.10.11) behind the
+# host 51.83.96.40; TLS terminates at the central Caddy LXC (10.10.10.10),
+# which reverse-proxies doktrace.com -> VM:8443. CI reaches the VM's sshd
+# through a dedicated DNAT port on the host (:2201 -> VM:22) as the
+# unprivileged `deploy` user.
+#
+# np-02 (job `deploy-hetzner`): a standalone Hetzner box (vars.HETZNER_HOST)
+# running the bundled-Caddy stack — it terminates TLS itself and serves
+# https://<ip> with an internal cert until a domain points at it.
+#
+# GHCR pull auth on both servers uses this run's ephemeral GITHUB_TOKEN — the
+# servers never store a registry credential. See deploy/README.md.
 
 on:
   workflow_run:
@@ -159,3 +164,89 @@ jobs:
         if: success()
         run: |
           echo "Deployed ghcr.io/${{ github.repository }}:${{ needs.publish.outputs.ver }} to ${{ vars.DEPLOY_HOST }}:2201 (VM saas1) — live at ${{ vars.NORTHPLANE_BASE_URL }}." >> "$GITHUB_STEP_SUMMARY"
+
+  # np-02: standalone Hetzner box with the bundled-Caddy stack
+  # (deploy/docker-compose.yml + deploy/Caddyfile — TLS terminated on-box).
+  # Always a REAL-data instance; the demo dropdown only affects np-01 above.
+  deploy-hetzner:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read # server-side docker login uses this run's GITHUB_TOKEN
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.HETZNER_SSH_KEY }}" > ~/.ssh/hetzner_key
+          chmod 600 ~/.ssh/hetzner_key
+          printf '%s\n' "${{ vars.HETZNER_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+          cat >> ~/.ssh/config <<EOF
+          Host np-02
+            HostName ${{ vars.HETZNER_HOST }}
+            User deploy
+            IdentityFile ~/.ssh/hetzner_key
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+          EOF
+
+      - name: Render .env
+        run: |
+          cat > env.rendered <<EOF
+          NORTHPLANE_IMAGE=ghcr.io/${{ github.repository }}:${{ needs.publish.outputs.ver }}
+          DOMAIN=localhost
+          SERVER_IP=${{ vars.HETZNER_HOST }}
+          ACME_EMAIL=admin@doktrace.com
+          NORTHPLANE_BASE_URL=https://${{ vars.HETZNER_HOST }}
+          NORTHPLANE_DEMO=false
+          NORTHPLANE_DATA_DIR=/var/lib/northplane/real
+          NP_DEFAULT_ADMIN_EMAIL=root@localhost
+          NP_DEFAULT_ADMIN_PASSWORD=${{ secrets.HETZNER_ADMIN_PASSWORD }}
+          EOF
+
+      - name: Ship compose stack
+        run: |
+          ssh np-02 "cd /opt/northplane && cp .env .env.previous 2>/dev/null || true"
+          scp deploy/docker-compose.yml np-02:/opt/northplane/docker-compose.yml
+          scp deploy/Caddyfile np-02:/opt/northplane/Caddyfile
+          scp env.rendered np-02:/opt/northplane/.env
+
+      - name: Pull and roll forward
+        run: |
+          ssh np-02 "set -e; cd /opt/northplane
+            echo '${{ secrets.GITHUB_TOKEN }}' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
+            docker compose pull -q
+            docker logout ghcr.io
+            docker compose up -d --remove-orphans"
+
+      - name: Verify rollout
+        id: verify
+        run: |
+          WANT="ghcr.io/${{ github.repository }}:${{ needs.publish.outputs.ver }}"
+          for i in $(seq 1 12); do
+            RUNNING=$(ssh np-02 "docker inspect --format '{{.Config.Image}}' northplane-northplane-1 2>/dev/null" || true)
+            # the app container is distroless (no shell) and not published on
+            # the host — probe /healthz through the caddy container instead
+            HEALTH=$(ssh np-02 "cd /opt/northplane && docker compose exec -T caddy wget -qO- http://northplane:8443/healthz" || true)
+            if [ "$RUNNING" = "$WANT" ] && [ "$HEALTH" = "ok" ]; then
+              echo "live: $RUNNING (healthz ok)"; exit 0
+            fi
+            echo "waiting ($i/12): image='$RUNNING' health='$HEALTH'"; sleep 5
+          done
+          echo "rollout did not become healthy"; exit 1
+
+      - name: Rollback on failure
+        if: failure() && steps.verify.outcome == 'failure'
+        run: |
+          echo "verify failed — rolling back to .env.previous"
+          ssh np-02 "set -e; cd /opt/northplane
+            if [ -f .env.previous ]; then mv .env.previous .env; docker compose up -d; fi"
+
+      - name: Summary
+        if: success()
+        run: |
+          echo "Deployed ghcr.io/${{ github.repository }}:${{ needs.publish.outputs.ver }} to np-02 — live at https://${{ vars.HETZNER_HOST }}." >> "$GITHUB_STEP_SUMMARY"
