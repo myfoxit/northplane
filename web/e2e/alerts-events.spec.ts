@@ -65,7 +65,7 @@ async function pickSelect(page: Page, currentLabel: string | RegExp, option: str
 test.describe('alerts', () => {
   test('alerts list renders (rows or empty state)', async ({ page }) => {
     await page.goto('/')
-    await page.getByRole('link', { name: 'Alarme' }).click()
+    await page.getByRole('link', { name: 'Alarme', exact: true }).click()
     await expect(page).toHaveURL(/\/alerts/)
     // Heading with the live count, e.g. "Alarme (3)".
     await expect(page.getByRole('heading', { name: /Alarme/ })).toBeVisible()
