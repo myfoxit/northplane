@@ -27,6 +27,16 @@ if ! command -v docker >/dev/null 2>&1; then
 	dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo >/dev/null 2>&1 || true
 	dnf -y install docker-ce docker-ce-cli containerd.io docker-compose-plugin
 fi
+# RHEL 10 family ships no legacy xt_* iptables kernel modules (dockerd's
+# default firewall backend needs xt_addrtype) — switch to the native
+# nftables backend there. dockerd also refuses to start while IPv4
+# forwarding is off, and cloud images default it off.
+if ! modinfo xt_addrtype >/dev/null 2>&1 && [ ! -s /etc/docker/daemon.json ]; then
+	install -d -m 755 /etc/docker
+	printf '{\n  "firewall-backend": "nftables"\n}\n' >/etc/docker/daemon.json
+fi
+printf 'net.ipv4.ip_forward = 1\n' >/etc/sysctl.d/99-docker-forward.conf
+sysctl -q -p /etc/sysctl.d/99-docker-forward.conf
 systemctl enable --now docker
 docker --version
 docker compose version

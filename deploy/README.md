@@ -20,6 +20,14 @@ The bundled-caddy compose file (`deploy/docker-compose.yml`) remains for
 standalone single-box installs; production ships
 `deploy/docker-compose.vm.yml` instead.
 
+A second host, **np-02** (standalone Hetzner box, `91.98.92.10`), runs the
+bundled-Caddy variant of the same stack: the Deploy workflow's
+`deploy-hetzner` job ships `deploy/docker-compose.yml` + `deploy/Caddyfile`
+there, TLS terminates on the box itself, and the instance is pinned to
+**real data** (the demo switch below only affects np-01). It serves
+`https://91.98.92.10` with an internal cert; once a domain's A-record points
+at it, set `DOMAIN` in the job's rendered `.env` for a Let's Encrypt cert.
+
 The same binary is a demo instance or a real instance depending on one
 switch — see **Demo / real data switch** below.
 
@@ -52,6 +60,16 @@ Then pin the VM's SSH key for the `DEPLOY_KNOWN_HOSTS` variable:
 ssh-keyscan -p 2201 -t ed25519 51.83.96.40
 ```
 
+**np-02** (standalone box) uses the same provisioner, directly as root, with
+its own CI keypair; pin its host key in `HETZNER_KNOWN_HOSTS`:
+
+```sh
+ssh root@91.98.92.10 \
+  'DEPLOY_PUBKEY="ssh-ed25519 AAAA… northplane-deploy-ci" bash -s' \
+  < deploy/provision-server.sh
+ssh-keyscan -t ed25519 91.98.92.10
+```
+
 ## 2. DNS + ingress
 
 `doktrace.com` is a Cloudflare-proxied A record to `51.83.96.40`. In the
@@ -77,6 +95,8 @@ source of truth if you ever need to recreate them.)
 | `NORTHPLANE_BASE_URL` | `https://doktrace.com` | App base URL (links, ack URLs, OIDC redirects). |
 | `NP_DEFAULT_ADMIN_EMAIL` | `admin@doktrace.com` | Break-glass admin login. |
 | `NORTHPLANE_DEMO` | `true` | **The demo/real switch** (`true` = demo data, `false` = clean). |
+| `HETZNER_HOST` | `91.98.92.10` | np-02 address (also its bare-IP TLS endpoint). |
+| `HETZNER_KNOWN_HOSTS` | _output of `ssh-keyscan -t ed25519 91.98.92.10`_ | Pins np-02's host key. |
 
 The rendered `.env` also sets `NORTHPLANE_ALLOW_SIGNUP=true` — the public
 `/register` page (self-service viewer accounts) is part of the showcase.
@@ -87,6 +107,8 @@ The rendered `.env` also sets `NORTHPLANE_ALLOW_SIGNUP=true` — the public
 |---|---|---|
 | `DEPLOY_SSH_KEY` | _private key_ | CI → server SSH key (its public half is in step 1). |
 | `NP_DEFAULT_ADMIN_PASSWORD` | _strong password_ | Initial admin password (set once; change it after first login). Leave empty to use the interactive `/setup` page instead. |
+| `HETZNER_SSH_KEY` | _private key_ | CI → np-02 SSH key (its public half is in step 1). |
+| `HETZNER_ADMIN_PASSWORD` | _strong password_ | np-02 break-glass admin (`root@localhost`); change after first login. |
 
 > GHCR pull auth needs no extra secret: the deploy job's built-in
 > `GITHUB_TOKEN` is used for the `docker login` on the server and revoked
