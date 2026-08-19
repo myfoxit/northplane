@@ -112,11 +112,16 @@ jobs:
           fi
           case "$DEMO" in true|false) ;; *) echo "bad demo switch: $DEMO"; exit 1;; esac
           MODE_DIR=real; [ "$DEMO" = "true" ] && MODE_DIR=demo
+          # Public self-registration is off unless the repo variable turns it
+          # on. It used to be hardcoded true, which left /register open to the
+          # internet on doktrace.com.
+          SIGNUP="${{ vars.NORTHPLANE_ALLOW_SIGNUP }}"
+          case "$SIGNUP" in true) ;; *) SIGNUP=false;; esac
           cat > env.rendered <<EOF
           NORTHPLANE_IMAGE=ghcr.io/${{ github.repository }}:${{ needs.publish.outputs.ver }}
           NORTHPLANE_BASE_URL=${{ vars.NORTHPLANE_BASE_URL }}
           NORTHPLANE_DEMO=$DEMO
-          NORTHPLANE_ALLOW_SIGNUP=true
+          NORTHPLANE_ALLOW_SIGNUP=$SIGNUP
           NORTHPLANE_DATA_DIR=/var/lib/northplane/$MODE_DIR
           NP_DEFAULT_ADMIN_EMAIL=${{ vars.NP_DEFAULT_ADMIN_EMAIL }}
           NP_DEFAULT_ADMIN_PASSWORD=${{ secrets.NP_DEFAULT_ADMIN_PASSWORD }}
@@ -203,6 +208,7 @@ jobs:
           ACME_EMAIL=admin@doktrace.com
           NORTHPLANE_BASE_URL=https://${{ vars.HETZNER_HOST }}
           NORTHPLANE_DEMO=false
+          NORTHPLANE_ALLOW_SIGNUP=false
           NORTHPLANE_DATA_DIR=/var/lib/northplane/real
           NP_DEFAULT_ADMIN_EMAIL=root@localhost
           NP_DEFAULT_ADMIN_PASSWORD=${{ secrets.HETZNER_ADMIN_PASSWORD }}
