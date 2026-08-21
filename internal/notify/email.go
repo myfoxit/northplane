@@ -12,6 +12,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/mail"
 	"net/smtp"
 	"net/url"
 	"os/exec"
@@ -94,6 +95,32 @@ func sanitizeHeader(s string) string {
 
 // --- smtp: native SMTP client (STARTTLS/implicit, SPEC §9.6) ---
 
+// heloName is the EHLO identity for outbound SMTP: config.helo wins,
+// otherwise the domain of the from address. Go's client would announce
+// "localhost", which strict receivers (direct-to-MX delivery) answer
+// with 550 or a capability list without STARTTLS.
+func heloName(cfg map[string]string, from string) string {
+	if h := cfg["helo"]; h != "" {
+		return h
+	}
+	if a, err := mail.ParseAddress(from); err == nil {
+		if i := strings.LastIndexByte(a.Address, '@'); i >= 0 {
+			return a.Address[i+1:]
+		}
+	}
+	return "localhost"
+}
+
+// envelopeAddr reduces "Display Name <box@dom>" to box@dom — MAIL
+// FROM/RCPT TO take the bare address, the display form stays in the
+// message headers.
+func envelopeAddr(s string) string {
+	if a, err := mail.ParseAddress(s); err == nil {
+		return a.Address
+	}
+	return s
+}
+
 func (m *Manager) sendEmailSMTP(ctx context.Context, ch *model.NotificationChannel,
 	to, subject, body string) (string, error) {
 	host := ch.Config["host"]
@@ -115,6 +142,7 @@ func (m *Manager) sendEmailSMTP(ctx context.Context, ch *model.NotificationChann
 
 	addr := net.JoinHostPort(host, port)
 	implicit := port == "465" || ch.Config["tls"] == "implicit"
+	helo := heloName(ch.Config, from)
 
 	dial := func() (*smtp.Client, error) {
 		d := net.Dialer{Timeout: 15 * time.Second}
@@ -123,7 +151,15 @@ func (m *Manager) sendEmailSMTP(ctx context.Context, ch *model.NotificationChann
 			if err != nil {
 				return nil, err
 			}
-			return smtp.NewClient(conn, host)
+			c, err := smtp.NewClient(conn, host)
+			if err != nil {
+				return nil, err
+			}
+			if err := c.Hello(helo); err != nil {
+				_ = c.Close()
+				return nil, err
+			}
+			return c, nil
 		}
 		conn, err := d.DialContext(ctx, "tcp", addr)
 		if err != nil {
@@ -131,6 +167,10 @@ func (m *Manager) sendEmailSMTP(ctx context.Context, ch *model.NotificationChann
 		}
 		c, err := smtp.NewClient(conn, host)
 		if err != nil {
+			return nil, err
+		}
+		if err := c.Hello(helo); err != nil {
+			_ = c.Close()
 			return nil, err
 		}
 		if ok, _ := c.Extension("STARTTLS"); ok {
@@ -154,10 +194,10 @@ func (m *Manager) sendEmailSMTP(ctx context.Context, ch *model.NotificationChann
 			return "", fmt.Errorf("smtp auth: %w", err)
 		}
 	}
-	if err := c.Mail(from); err != nil {
+	if err := c.Mail(envelopeAddr(from)); err != nil {
 		return "", err
 	}
-	if err := c.Rcpt(to); err != nil {
+	if err := c.Rcpt(envelopeAddr(to)); err != nil {
 		return "", err
 	}
 	w, err := c.Data()
