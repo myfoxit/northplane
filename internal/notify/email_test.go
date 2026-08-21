@@ -322,3 +322,104 @@ func TestSendEmailSMTPRefusesPlaintextByDefault(t *testing.T) {
 		t.Fatalf("want STARTTLS refusal, got %v", err)
 	}
 }
+
+func TestSendEmailSMTPHeloAndEnvelope(t *testing.T) {
+	// Strict receivers (direct-to-MX delivery) reject EHLO localhost and
+	// display-name envelopes; assert the client announces the sender
+	// domain and strips the display form for MAIL FROM.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	lines := make(chan string, 16)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		r := bufio.NewReader(conn)
+		write := func(s string) { _, _ = conn.Write([]byte(s + "\r\n")) }
+		write("220 fake ESMTP")
+		inData := false
+		for {
+			line, err := r.ReadString('\n')
+			if err != nil {
+				return
+			}
+			line = strings.TrimRight(line, "\r\n")
+			lines <- line
+			if inData {
+				if line == "." {
+					inData = false
+					write("250 ok queued")
+				}
+				continue
+			}
+			switch {
+			case strings.HasPrefix(line, "EHLO"), strings.HasPrefix(line, "HELO"):
+				write("250-fake")
+				write("250 SIZE 1048576")
+			case strings.HasPrefix(line, "DATA"):
+				inData = true
+				write("354 go ahead")
+			case strings.HasPrefix(line, "QUIT"):
+				write("221 bye")
+				return
+			default:
+				write("250 ok")
+			}
+		}
+	}()
+	host, port, _ := net.SplitHostPort(ln.Addr().String())
+	m := &Manager{}
+	_, err = m.sendEmail(context.Background(), emailChannel("smtp", map[string]string{
+		"host": host, "port": port, "allowPlaintext": "true",
+		"from": "Northplane Alarm <alarm@doktrace.com>",
+	}), "ops@example.com", "s", "b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ehlo, mailFrom string
+	deadline := time.After(5 * time.Second)
+	for ehlo == "" || mailFrom == "" {
+		select {
+		case l := <-lines:
+			if strings.HasPrefix(l, "EHLO") || strings.HasPrefix(l, "HELO") {
+				ehlo = l
+			}
+			if strings.HasPrefix(l, "MAIL FROM") {
+				mailFrom = l
+			}
+		case <-deadline:
+			t.Fatalf("EHLO/MAIL FROM not seen (ehlo=%q mailFrom=%q)", ehlo, mailFrom)
+		}
+	}
+	if !strings.Contains(ehlo, "doktrace.com") {
+		t.Fatalf("EHLO does not announce the sender domain: %q", ehlo)
+	}
+	if !strings.Contains(mailFrom, "<alarm@doktrace.com>") || strings.Contains(mailFrom, "Northplane") {
+		t.Fatalf("MAIL FROM not the bare address: %q", mailFrom)
+	}
+}
+
+func TestHeloNameAndEnvelopeAddr(t *testing.T) {
+	cases := []struct{ cfgHelo, from, wantHelo string }{
+		{"", "alarm@doktrace.com", "doktrace.com"},
+		{"", "Alarm <alarm@doktrace.com>", "doktrace.com"},
+		{"edge.example.net", "alarm@doktrace.com", "edge.example.net"},
+		{"", "not-an-address", "localhost"},
+	}
+	for _, c := range cases {
+		if got := heloName(map[string]string{"helo": c.cfgHelo}, c.from); got != c.wantHelo {
+			t.Errorf("heloName(%q, %q) = %q, want %q", c.cfgHelo, c.from, got, c.wantHelo)
+		}
+	}
+	if got := envelopeAddr("Alarm <alarm@doktrace.com>"); got != "alarm@doktrace.com" {
+		t.Errorf("envelopeAddr display form = %q", got)
+	}
+	if got := envelopeAddr("plain@doktrace.com"); got != "plain@doktrace.com" {
+		t.Errorf("envelopeAddr bare form = %q", got)
+	}
+}
