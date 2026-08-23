@@ -92,7 +92,7 @@ continue with [Set up as a service](#set-up-as-a-service-with-northplaned-init).
 
 | Item | Value |
 |---|---|
-| Image | `ghcr.io/myfoxit/northplane` — tags `latest`, `main-<12-char sha>` (pushed for every green CI run of `main`), and for releases `X.Y.Z` and `X.Y`; release images are multi-arch `linux/amd64` + `linux/arm64` |
+| Image | `ghcr.io/myfoxit/northplane` — tags `latest`, `main-<12-char sha>` (pushed for every green CI run of `main`), and for releases `X.Y.Z` and `X.Y`; every tag is multi-arch (`linux/amd64` + `linux/arm64`) |
 | Base | `gcr.io/distroless/static-debian12:nonroot` — **no shell**, runs as uid/gid **65532** |
 | Contents | `/usr/local/bin/northplaned`, `/usr/local/bin/np` (no `np-agent`) with the UI and this documentation embedded |
 | Defaults | `ENV NORTHPLANE_DATA_DIR=/var/lib/northplane`, `ENV NORTHPLANE_LISTEN=:8443`, `VOLUME /var/lib/northplane`, `EXPOSE 8443`, `ENTRYPOINT ["/usr/local/bin/northplaned"]`, `CMD ["serve"]` |
