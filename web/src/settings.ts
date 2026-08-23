@@ -8,6 +8,11 @@
 // instant-boot cache: the UI starts on the cached value, adopts the server
 // value once syncPreferencesFromServer() resolves (Layout mount), and every
 // local change is written through to both.
+//
+// This module also owns the SHARED preferences document. A PUT replaces the
+// whole doc, so anything else that wants to persist a per-user setting (the
+// branding axes in theme.ts / mode.ts) goes through setExtraPref() here rather
+// than PUTting on its own — one writer, one merged document, no lost keys.
 import { useSyncExternalStore } from 'react'
 import { api } from './api'
 import { t } from './i18n'
@@ -68,7 +73,40 @@ export async function syncPreferencesFromServer(): Promise<void> {
       writeCache(v)
       emit()
     }
+    synced = true
+    const extra = serverPrefs.extra ?? {}
+    for (const adopt of adopters) adopt(extra)
   } catch { /* keep cache */ }
+}
+
+// ── shared `extra` bag ────────────────────────────────────────────────────
+// Free-form string settings that need no schema change (model.Preferences
+// .Extra). Used by the branding axes so a user's look follows them to every
+// browser and device instead of living only in one localStorage.
+
+type Adopter = (extra: Record<string, string>) => void
+const adopters = new Set<Adopter>()
+let synced = false
+
+// onPreferencesSynced registers a callback fired once the authoritative
+// server document arrives. Modules use it to adopt a value saved elsewhere;
+// they must apply it WITHOUT writing back (nothing changed server-side).
+export function onPreferencesSynced(adopt: Adopter): void {
+  adopters.add(adopt)
+  // A module imported after the sync already resolved still needs the value.
+  if (synced) adopt(serverPrefs.extra ?? {})
+}
+
+// setExtraPref writes one `extra` key through to the server, preserving every
+// other key in the document (PUT replaces the whole thing). Fire-and-forget:
+// the caller has already applied the value locally, so a failed write only
+// means other devices won't pick it up until the next change.
+export function setExtraPref(key: string, value: string): void {
+  const extra = { ...(serverPrefs.extra ?? {}), [key]: value }
+  if (serverPrefs.extra?.[key] === value) return
+  serverPrefs = { ...serverPrefs, extra }
+  void api('/users/me/preferences', { method: 'PUT', body: JSON.stringify(serverPrefs) })
+    .catch(() => { /* offline — localStorage still holds the value */ })
 }
 
 export function setRefreshInterval(v: RefreshValue): void {

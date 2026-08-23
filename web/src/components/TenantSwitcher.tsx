@@ -6,8 +6,11 @@
 // Selecting a customer scopes the ENTIRE UI to that tenant via the
 // X-Northplane-Tenant header (tenant.ts → api.ts), then resets the query cache
 // and navigates home so no other customer's data lingers. A non-home selection
-// is rendered with a warning treatment so the operator can never mistake which
-// customer they are operating on.
+// is called out in the sidebar's own accent (--sidebar-primary, so it follows
+// whatever colour theme is active) — tinted trigger plus a standing "active
+// customer" line — so the operator can never mistake which customer they are
+// operating on. That call-out used to be hard-coded amber, which clashed with
+// every theme's branding and read as a warning rather than a scope indicator.
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { Building2 } from 'lucide-react'
@@ -69,7 +72,7 @@ export function TenantSwitcher() {
         <SelectTrigger
           size="sm"
           aria-label={t('customer')}
-          className={`w-full ${active ? 'border-amber-500/70 bg-amber-500/10 text-amber-600 dark:text-amber-400' : ''}`}
+          className={`w-full ${active ? 'border-sidebar-primary/60 bg-sidebar-primary/10 text-sidebar-primary' : ''}`}
         >
           <Building2 size={13} className="shrink-0" />
           <SelectValue placeholder={t('customer')} />
@@ -82,7 +85,7 @@ export function TenantSwitcher() {
         </SelectContent>
       </Select>
       {active && (
-        <div className="mt-1 text-[10px] font-medium uppercase tracking-wide text-amber-600 dark:text-amber-400">
+        <div className="mt-1 text-[10px] font-medium uppercase tracking-wide text-sidebar-primary">
           {t('activeCustomer')}: {activeName}
         </div>
       )}

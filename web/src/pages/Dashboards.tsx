@@ -384,7 +384,7 @@ function Panel({ widget, editing, handle, onConfigure, onDuplicate, onRemove }: 
   onRemove: () => void
 }) {
   return (
-    <div className="group/panel h-full flex flex-col bg-card/60 border border-border rounded-xl overflow-hidden shadow-sm hover:border-primary/30 transition-colors">
+    <div className="group/panel h-full flex flex-col bg-card/60 border border-border rounded-xl overflow-hidden hover:border-primary/30 transition-colors">
       <div
         {...(handle ?? {})}
         className={`flex items-center justify-between px-3 py-2 border-b border-border ${editing ? 'bg-background/40' : ''}`}

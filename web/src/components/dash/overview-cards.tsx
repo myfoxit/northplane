@@ -1,8 +1,11 @@
-// Overview hero cards: richer KPI stat cards (corner badge + big value/total +
-// sublabel + a live sparkline) and an SVG service-status donut. Built to read
-// like a NOC board while staying token-driven so every colour theme + light/
-// dark mode themes correctly. No chart dependency — the sparkline and donut are
-// inline SVG.
+// Overview hero cards: KPI stat cards (corner badge + big value/total +
+// sublabel) and an SVG service-status donut. Built to read like a NOC board
+// while staying token-driven so every colour theme + light/dark mode themes
+// correctly. No chart dependency — the donut is inline SVG.
+//
+// Deliberately FLAT: no drop shadow, a hairline tinted border and a slim
+// status stripe. Elevation was doing no work here (nothing floats above the
+// page) and made a wall of tiles read as noisy.
 import { type ReactNode } from 'react'
 import { Link } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
@@ -24,49 +27,26 @@ const toneText: Record<Tone, string> = {
   crit: 'text-danger',
 }
 // Status-coloured card border so each KPI reads its health at a glance (a plain
-// neutral border made every card look the same). Works in light + dark.
+// neutral border made every card look the same) — kept to a faint tint so the
+// colour registers without shouting. Works in light + dark.
 const toneBorder: Record<Tone, string> = {
   default: 'border-border',
-  ok: 'border-success/45',
-  warn: 'border-warning/50',
-  crit: 'border-danger/50',
-}
-
-function Sparkline({ data, color, width = 240, height = 40 }: { data: number[]; color: string; width?: number; height?: number }) {
-  const pts = data.length ? data : [0]
-  const min = Math.min(...pts), max = Math.max(...pts)
-  const span = max - min || 1
-  const n = Math.max(pts.length - 1, 1)
-  const x = (i: number) => (i / n) * width
-  const y = (v: number) => height - 4 - ((v - min) / span) * (height - 8)
-  const line = pts.map((v, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ')
-  const area = `${line} L${width},${height} L0,${height} Z`
-  const id = `sg-${color.replace(/[^a-z0-9]/gi, '')}`
-  return (
-    <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="block" aria-hidden>
-      <defs>
-        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.28" />
-          <stop offset="100%" stopColor={color} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <path d={area} fill={`url(#${id})`} />
-      <path d={line} fill="none" stroke={color} strokeWidth="1.75" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-    </svg>
-  )
+  ok: 'border-success/20',
+  warn: 'border-warning/25',
+  crit: 'border-danger/25',
 }
 
 export function StatCard({
-  label, value, total, unit, badge, badgeTone = 'default', sublabel, tone = 'default', series, to, search,
+  label, value, total, unit, badge, badgeTone = 'default', sublabel, tone = 'default', to, search,
 }: {
   label: string; value: ReactNode; total?: ReactNode; unit?: string
   badge?: ReactNode; badgeTone?: Tone; sublabel?: ReactNode; tone?: Tone
-  series?: number[]; to?: '/objects' | '/alerts' | '/problems'; search?: ObjectsSearch
+  to?: '/objects' | '/alerts' | '/problems'; search?: ObjectsSearch
 }) {
   const inner = (
-    <div className={cn('relative overflow-hidden rounded-xl border bg-card px-4 pt-3 pb-9 shadow-sm transition-shadow hover:shadow-md', toneBorder[tone])}>
-      {/* Solid status stripe on the left edge (reference-style accent). */}
-      {tone !== 'default' && <span className="absolute inset-y-0 left-0 w-1" style={{ backgroundColor: toneVar[tone] }} aria-hidden />}
+    <div className={cn('relative overflow-hidden rounded-xl border bg-card px-4 pt-3 pb-3.5 transition-colors hover:border-ring/40', toneBorder[tone])}>
+      {/* Slim status stripe on the left edge — the one saturated accent. */}
+      {tone !== 'default' && <span className="absolute inset-y-0 left-0 w-0.5 opacity-70" style={{ backgroundColor: toneVar[tone] }} aria-hidden />}
       <div className="flex items-start justify-between gap-2">
         <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{label}</div>
         {badge != null && (
@@ -84,11 +64,6 @@ export function StatCard({
         {unit && <span className="text-xs text-muted-foreground">{unit}</span>}
       </div>
       {sublabel != null && <div className="mt-1 text-xs text-muted-foreground truncate">{sublabel}</div>}
-      {series && series.length > 0 && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 opacity-90">
-          <Sparkline data={series} color={toneVar[tone]} />
-        </div>
-      )}
     </div>
   )
   return to ? <Link to={to} search={search ?? {}} className="block">{inner}</Link> : inner

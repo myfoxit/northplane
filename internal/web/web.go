@@ -386,6 +386,7 @@ func remoteIP(r *http.Request) string {
 var loginTpl = template.Must(template.New("login").Parse(`<!doctype html>
 <html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <title>Northplane — Anmeldung</title>
 <style>
 :root{color-scheme:dark}
@@ -435,6 +436,7 @@ func (p *Pages) loginPage(w http.ResponseWriter, r *http.Request, errMsg string)
 var setupTpl = template.Must(template.New("setup").Parse(`<!doctype html>
 <html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <title>Northplane — Einrichtung</title>
 <style>
 :root{color-scheme:dark}
@@ -541,6 +543,7 @@ func (p *Pages) setupSubmit(w http.ResponseWriter, r *http.Request) {
 var registerTpl = template.Must(template.New("register").Parse(`<!doctype html>
 <html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <title>Northplane — Registrierung</title>
 <style>
 :root{color-scheme:dark}
@@ -674,6 +677,7 @@ type statusRow struct {
 var statusTpl = template.Must(template.New("status").Parse(`<!doctype html>
 <html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <meta http-equiv="refresh" content="60">
 <title>{{.Title}} — Status</title>
 <style>
