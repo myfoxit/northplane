@@ -38,3 +38,6 @@ config.local.yaml
 
 # Dev pipeline state (make dev)
 /.dev/
+
+# Root-level stray artifacts
+/node_modules/
