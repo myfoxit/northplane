@@ -47,6 +47,24 @@ Two routes are reachable only by link: `/objects/<id>` (object detail) and `/das
 
 Unknown paths render a **404** page inside the shell (the big "404", the path, and a link back to **Overview**). A route that throws renders the shared error state with a **Retry** button.
 
+## Duplicating entities
+
+Every list row — and the object detail header — carries a **Duplicate** (Duplizieren) action next
+to Edit. It opens the entity's *create* dialog seeded from the source, so a second service, host,
+contact, channel or escalation policy is "copy, rename, save" instead of retyping every field.
+Covered: hosts and services (list and detail page), contacts, contact groups, channels, event
+sources, webhooks, heartbeats, roles (a system role becomes a custom copy), users (roles and flags;
+the identity is not copied), sites, escalation policies, alert rules, schedules, alert groups, IVR
+menus, templates, check commands, time periods, business services, reports, dashboards (full
+widget layout), downtimes and silences (window/expiry kept while still ahead, otherwise now + 1 h).
+
+The copy never carries the store envelope (`id`, `tenantId`, `version`, timestamps), so it is a
+real create (`POST`) and never collides with the source. The suggested name is `<name>-copy` for
+slug-like names (hosts, services, contacts, rules — things that end up in selectors, URLs and
+check arguments) and `<name> (copy)` / `<name> (Kopie)` for free-text names (dashboards, reports),
+numbered (`-copy-2`, `(Kopie 3)`) against the names already on the page so the suggestion is free
+from the start; the name stays editable.
+
 ## Command palette
 
 Press **⌘K** (macOS) or **Ctrl+K** (Linux/Windows), or click **Search… (⌘K)** in the sidebar footer. The palette has two groups:

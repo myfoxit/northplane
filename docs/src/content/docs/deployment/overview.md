@@ -78,7 +78,7 @@ The production stacks make the switch safe with **separate data directories insi
 | 8006 | TCP | inbound (hypervisor) | Proxmox web UI, IP-allowlisted | `doktrace.com` topology only |
 
 :::note[Published ports on the production VM]
-The production compose file (`deploy/docker-compose.vm.yml`) publishes **only** `8443:8443`. The trap, ESPA, ESPA-X and FastAGI ports are not published on `np-01` as of 2026-08-23 — an event source listening on them inside the container is unreachable from the network until the compose file gains the mappings.
+The production compose file (`deploy/docker-compose.vm.yml`) publishes `8443:8443` plus `9162:9162/udp`, `2023:2023`, `8123:8123` and `4573:4573` — on the VM's private bridge address only; the hypervisor forwards nothing but 80/443 (to Caddy) and the CI SSH port.
 :::
 
 ## Where to go next

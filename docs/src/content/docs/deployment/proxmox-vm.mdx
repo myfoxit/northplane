@@ -144,13 +144,19 @@ services:
       # survives image swaps and mode flips.
       - ./secret.key:/etc/northplane/secret.key:ro
     ports:
-      - "8443:8443"
+      - "8443:8443"       # web UI + API (Caddy LXC is the only client)
+      # Alarm-input listeners. EventSources bind these inside the container,
+      # so without the mappings SNMP traps and ESPA pages never arrive.
+      - "9162:9162/udp"   # snmp-trap
+      - "2023:2023"       # ESPA 4.4.4
+      - "8123:8123"       # ESPA-X 2.0
+      - "4573:4573"       # Asterisk FastAGI (asterisk-inbound)
 
 volumes:
   northplane-data:
 ```
 
-**Why no bundled Caddy:** TLS already terminates in CT100 for every VM on the box, and the VM has no public address — a second Caddy would have nothing to bind 80/443 to and no way to pass an ACME challenge. The stack therefore publishes `8443:8443` on the VM's bridge address (`0.0.0.0:8443` inside the VM, reachable from `10.10.10.0/24` only) and nothing else. The `.env`, the `secret.key` mount and the data volume are identical to the standalone recipe, so [Docker Compose](/docs/deployment/docker-compose/) applies for everything except TLS.
+**Why no bundled Caddy:** TLS already terminates in CT100 for every VM on the box, and the VM has no public address — a second Caddy would have nothing to bind 80/443 to and no way to pass an ACME challenge. The stack therefore publishes `8443:8443` on the VM's bridge address (`0.0.0.0:8443` inside the VM, reachable from `10.10.10.0/24` only) plus the four alarm-input listener ports (`9162/udp` traps, `2023` ESPA, `8123` ESPA-X, `4573` FastAGI) for the lab devices on the private bridge; nothing is reachable from the internet directly. The `.env`, the `secret.key` mount and the data volume are identical to the standalone recipe, so [Docker Compose](/docs/deployment/docker-compose/) applies for everything except TLS.
 
 ### `/opt/northplane` on the VM
 
@@ -170,7 +176,7 @@ volumes:
 | `NORTHPLANE_IMAGE` | `ghcr.io/myfoxit/northplane:main-daa6dc518a2b` | `.env` (pipeline) |
 | `NORTHPLANE_BASE_URL` | `https://doktrace.com` | `.env` ← repo variable `NORTHPLANE_BASE_URL` |
 | `NORTHPLANE_DEMO` | `false` | `.env` ← repo variable `NORTHPLANE_DEMO` (set to `false` on 2026-08-20) |
-| `NORTHPLANE_ALLOW_SIGNUP` | `true` | `.env` (hard-coded in the workflow) — `/register` is public, self-registered users get `viewer` |
+| `NORTHPLANE_ALLOW_SIGNUP` | `false` unless the repo variable `NORTHPLANE_ALLOW_SIGNUP` is `true` | `.env` ← repo variable (default off since the signup-flag change; it used to be hard-coded `true`) — when on, `/register` is public and self-registered users get `viewer` |
 | `NORTHPLANE_DATA_DIR` | `/var/lib/northplane/real` | `.env` (derived from the demo switch) |
 | `NP_DEFAULT_ADMIN_EMAIL` | `admin@doktrace.com` | `.env` ← repo variable |
 | `NP_DEFAULT_ADMIN_PASSWORD` | `<secret>` | `.env` ← repo secret `NP_DEFAULT_ADMIN_PASSWORD` |
@@ -179,7 +185,7 @@ volumes:
 | `NORTHPLANE_SECRET_KEY_FILE` | `/etc/northplane/secret.key` | compose file |
 
 :::caution[Not published on the production VM]
-The compose file publishes only `8443`. `9162/udp` (SNMP traps), `2023` (ESPA), `8123` (ESPA-X) and `4573` (FastAGI) are **not** mapped on `np-01` as of 2026-08-23 — those mappings exist only on an unmerged branch. An event source that listens on one of them inside the container cannot be reached from the lab network until the mapping is merged and deployed.
+The compose file publishes `8443` plus `9162/udp` (SNMP traps), `2023` (ESPA), `8123` (ESPA-X) and `4573` (FastAGI) — all on the private bridge only. Those four mappings were merged on 2026-08-23 (branch `feature/signup-flag-var`); before that, event sources listening on them inside the container were unreachable from the lab network.
 :::
 
 ## Cloudflare in front
@@ -212,7 +218,7 @@ The compose file publishes only `8443`. `9162/udp` (SNMP traps), `2023` (ESPA), 
 | `/readyz` | `{"ready":true,"subsystems":[{"name":"storage","ok":true,"info":"sqlite"},{"name":"eventbus","ok":true},{"name":"scheduler","ok":true}]}` |
 | `/api/v1/system/info` (anonymous) | `{"aiEnabled":false,"goVersion":"go1.25.14","goroutines":44,"heapMB":134,"startedAt":"2026-08-23T08:50:57Z","storage":"sqlite","uptime":"22m57s","version":"main-daa6dc518a2b"}` |
 | Data mode | **real** since 2026-08-20 (`/var/lib/northplane/real`); the demo directory `/var/lib/northplane/demo` still exists alongside, so flipping `NORTHPLANE_DEMO` back restores the showcase |
-| Signup | `/register` public (`NORTHPLANE_ALLOW_SIGNUP=true`, viewer role) |
+| Signup | governed by the repo variable `NORTHPLANE_ALLOW_SIGNUP` (unset → off after the next deploy; the build verified at 08:50 UTC still had it hard-coded on) |
 | Break-glass admin | `admin@doktrace.com` (password in the repo secret `NP_DEFAULT_ADMIN_PASSWORD`) |
 | Caddy site | `doktrace.com → 10.10.10.11:8443`, Let's Encrypt via HTTP-01 |
 | Agent on the VM | systemd `np-agent` active; `/etc/northplane/agent.yaml`: `server: https://doktrace.com`, token `np-agent-np-prod` (`objects:write`), `hostname: np-prod`, `insecure: false`, `interval: 60s`, `disk: [/]` |

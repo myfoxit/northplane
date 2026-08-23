@@ -32,12 +32,12 @@ The state below was checked live on 2026-08-23 by SSH/HTTP against the systems a
 | Image | `ghcr.io/myfoxit/northplane:main-daa6dc518a2b`, started `2026-08-23T08:50:57Z`; `/api/v1/system/info` → `version: main-daa6dc518a2b`, `storage: sqlite`, `goVersion: go1.25.14`, `aiEnabled: false` |
 | Health | `/healthz` → `ok`; `/readyz` → `ready: true` (storage sqlite, eventbus, scheduler all ok) |
 | Data mode | **real** — `NORTHPLANE_DEMO=false`, `NORTHPLANE_DATA_DIR=/var/lib/northplane/real`, switched on 2026-08-20 (repo variable `NORTHPLANE_DEMO=false` set the same day); `/var/lib/northplane/demo` still present in the volume |
-| Env keys | `NORTHPLANE_IMAGE`, `NORTHPLANE_BASE_URL=https://doktrace.com`, `NORTHPLANE_DEMO=false`, `NORTHPLANE_ALLOW_SIGNUP=true`, `NORTHPLANE_DATA_DIR`, `NP_DEFAULT_ADMIN_EMAIL=admin@doktrace.com`, `NP_DEFAULT_ADMIN_PASSWORD` (secret); compose-set `NORTHPLANE_LISTEN=:8443`, `NORTHPLANE_TRUST_PROXY=true`, `NORTHPLANE_SECRET_KEY_FILE=/etc/northplane/secret.key` |
-| Signup | **on** — `/register` is publicly reachable; self-registered accounts get the `viewer` role |
+| Env keys | `NORTHPLANE_IMAGE`, `NORTHPLANE_BASE_URL=https://doktrace.com`, `NORTHPLANE_DEMO=false`, `NORTHPLANE_ALLOW_SIGNUP` (now from the repo variable of the same name; default `false`), `NORTHPLANE_DATA_DIR`, `NP_DEFAULT_ADMIN_EMAIL=admin@doktrace.com`, `NP_DEFAULT_ADMIN_PASSWORD` (secret); compose-set `NORTHPLANE_LISTEN=:8443`, `NORTHPLANE_TRUST_PROXY=true`, `NORTHPLANE_SECRET_KEY_FILE=/etc/northplane/secret.key` |
+| Signup | was **on** in the build verified at 08:50 UTC (hard-coded); since the signup-flag merge it follows the repo variable `NORTHPLANE_ALLOW_SIGNUP` — unset, so the next deploy turns `/register` **off**. Set the variable to `true` to re-enable (self-registered accounts get `viewer`) |
 | Break-glass admin | `admin@doktrace.com` (password = repo secret `NP_DEFAULT_ADMIN_PASSWORD`; not printed here) |
 | Tenants | default tenant plus tenant **MyFoxIT** (own users and a `tenant-admin` role; site `vm104-edge` lives here) — see [Tenants and sites](/docs/administration/tenants-and-sites/) |
 | TLS / ingress | Cloudflare-proxied A record → `51.83.96.40` → DNAT 443 → CT100 Caddy (`/etc/caddy/sites/saas1.caddy`, Let's Encrypt HTTP-01) → `10.10.10.11:8443` |
-| Published ports | `8443` only (trap/ESPA/ESPA-X/FastAGI ports are not mapped — unmerged branch) |
+| Published ports | `8443` plus `9162/udp`, `2023`, `8123`, `4573` (private bridge only; merged 2026-08-23, live with the next deploy) |
 | Agents reporting here | `np-prod` (VM101), `pve-host` (hypervisor), `netlab` (VM102), `alarmlab` (VM103) |
 | Last deploy | Deploy run `32629242562`, 2026-08-23 08:48 UTC, for merge `daa6dc5`: `publish` and `deploy` succeeded, `deploy-hetzner` failed (np-02) |
 | Docs | `/docs/` is served by every image built from the commit that introduced the embedded documentation onwards; the build verified at 08:50 UTC (`main-daa6dc518a2b`) predates it, the next Deploy run after the merge carries it ([CI/CD](/docs/deployment/ci-cd/)) |
@@ -110,9 +110,9 @@ Guest list verified 2026-08-23; service details from the lab notes (see the [ope
 
 1. **np-02 is gone** — repoint `deploy-hetzner` to a new box or remove it; the `HETZNER_*` variables/secrets are stale. Until then every Deploy run is red although production deploys fine. ([Provisioning](/docs/deployment/provisioning/#np-02-recreation-checklist))
 2. **Schedule production backups** — there is no automated job yet; `secret.key` and the data volume need regular off-host copies. ([Operations → Backups](/docs/deployment/operations/#backups))
-3. **Trap/ESPA/FastAGI ports not published on np-01** — `9162/udp`, `2023`, `8123`, `4573` exist only in an unmerged branch of `deploy/docker-compose.vm.yml`; event sources listening on them cannot be reached from the lab network.
+3. **Confirm the alarm-input ports after the next deploy** — `9162/udp`, `2023`, `8123`, `4573` were merged into `deploy/docker-compose.vm.yml` on 2026-08-23; check with `docker compose ps` on the VM that they are mapped.
 4. **Confirm `/docs/` on doktrace.com after the next deploy** — the image verified on 2026-08-23 08:50 UTC predates the docs embedding; the first Deploy run after the docs merge serves it (check `https://doktrace.com/docs/`).
-5. **Public signup is on** (`NORTHPLANE_ALLOW_SIGNUP=true`, hard-coded in the deploy workflow) — intentional for the showcase; revisit for a customer-facing instance. ([Security](/docs/administration/security/))
+5. **Public signup** is now governed by the repo variable `NORTHPLANE_ALLOW_SIGNUP` (default off). Decide: leave `/register` closed, or `gh variable set NORTHPLANE_ALLOW_SIGNUP --body true` for the showcase. ([Security](/docs/administration/security/))
 6. **`DEPLOY_DOMAIN` variable is unused** by any workflow (informational only).
 7. **Known CI flake** — the `postgres` job's `TestAuditChain` failure (jsonb normalisation) is non-blocking; re-run failed jobs with `gh run rerun --failed <id>` when other jobs flake.
 

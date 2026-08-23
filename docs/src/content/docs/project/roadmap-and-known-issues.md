@@ -182,9 +182,9 @@ Further fixes from the same pass worth knowing: report preview uses `POST …:re
 | DEP-3 | Medium · Enhancement | No periodic backup: `backup.interval` is parsed but no scheduler uses it; only `northplaned backup` on demand. No vzdump job on the production Proxmox host. | Back up `secret.key` and the data volume yourself. [Operations](/docs/deployment/operations/) |
 | DEP-4 | Low · Doc | Fixed: `northplaned init` now creates the service user, installs the unit into `/etc/systemd/system` and no longer sets `WatchdogSec`. Kept for the record. | [Installation](/docs/getting-started/installation/#set-up-as-a-service-with-northplaned-init) |
 | DEP-5 | Low · Doc | The `TLSConfig` comment mentions autocert, but no ACME implementation exists — TLS termination in production is Caddy's job. | [TLS and proxy](/docs/administration/tls-and-proxy/) |
-| DEP-6 | Low · Doc | The production Compose stack does not publish 9162/udp (traps), 2023 (ESPA), 8123 (ESPA-X) or 4573 (FastAGI); those inputs are unavailable on `np-01` until the ports are added. | [Proxmox VM](/docs/deployment/proxmox-vm/) |
+| DEP-6 | Low · Doc | Fixed 2026-08-23: the production Compose stack now publishes 9162/udp (traps), 2023 (ESPA), 8123 (ESPA-X) and 4573 (FastAGI) on the private bridge. Kept for the record. | [Proxmox VM](/docs/deployment/proxmox-vm/) |
 | DEP-7 | Low · Doc | Cloudflare in front of doktrace.com blocks Python user agents (HTTP 403) — scripts need a curl-like `User-Agent`. | |
-| DEP-8 | Low · Doc | `/register` is publicly enabled on production (`NORTHPLANE_ALLOW_SIGNUP=true`, creates viewers). | Intentional for the showcase; turn off for private instances. |
+| DEP-8 | Low · Doc | `/register` on production now follows the repo variable `NORTHPLANE_ALLOW_SIGNUP` (default off; it used to be hard-coded on). | Set the variable to re-enable the showcase signup; turn off for private instances. |
 
 ## Development and documentation
 
