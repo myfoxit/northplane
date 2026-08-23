@@ -14,7 +14,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
-import { Empty, Spinner, Field, FormError, SubmitRow, useSave, DeleteButton } from '@/components/kit'
+import { Empty, Spinner, Field, FormError, SubmitRow, useSave, DeleteButton, DuplicateButton } from '@/components/kit'
+import { duplicateDoc } from '@/lib/duplicate'
 import { t } from '../../i18n'
 import { TableActions, RowActions } from './common'
 
@@ -29,6 +30,7 @@ const SEVERITIES: Severity[] = ['critical', 'warning', 'info', 'ok']
 export function ContactsTab() {
   const { data, isLoading } = useQuery({ queryKey: contactsApi.queryKey, queryFn: contactsApi.list })
   const [editing, setEditing] = useState<Contact | 'new' | null>(null)
+  const [copying, setCopying] = useState<Contact | null>(null)
   return (
     <div className="space-y-4">
       <TableActions onCreate={() => setEditing('new')} label={t('create')} />
@@ -54,6 +56,7 @@ export function ContactsTab() {
               <TableCell className="px-3 py-2">
                 <RowActions>
                   <Button size="sm" variant="ghost" onClick={() => setEditing(c)}>{t('edit')}</Button>
+                  <DuplicateButton onClick={() => setCopying(c)} />
                   <ContactDelete contact={c} />
                 </RowActions>
               </TableCell>
@@ -64,6 +67,10 @@ export function ContactsTab() {
       {!isLoading && (data?.length ?? 0) === 0 && <Empty text={t('empty')} />}
       {editing && (
         <ContactDialog name={editing === 'new' ? null : editing.name} onClose={() => setEditing(null)} />
+      )}
+      {copying && (
+        <ContactDialog name={copying.name} copy existing={(data ?? []).map((c) => c.name)}
+          onClose={() => setCopying(null)} />
       )}
     </div>
   )
@@ -79,14 +86,18 @@ function ContactDelete({ contact }: { contact: Contact }) {
   )
 }
 
-function ContactDialog({ name, onClose }: { name: string | null; onClose: () => void }) {
-  const isNew = !name
+// ContactDialog: `name` null → create; set → edit; set + `copy` → create a
+// duplicate seeded from that contact (envelope stripped, fresh name).
+function ContactDialog({ name, copy, existing, onClose }: {
+  name: string | null; copy?: boolean; existing?: string[]; onClose: () => void
+}) {
+  const isNew = !name || !!copy
   const { data: loaded, isLoading } = useQuery({
     queryKey: [...contactsApi.queryKey, name],
     queryFn: () => contactsApi.get(name!),
-    enabled: !isNew,
+    enabled: !!name,
   })
-  if (!isNew && isLoading) {
+  if (name && isLoading) {
     return (
       <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
         <DialogContent className="max-w-2xl">
@@ -98,18 +109,20 @@ function ContactDialog({ name, onClose }: { name: string | null; onClose: () => 
       </Dialog>
     )
   }
+  const src = loaded?.data
   return (
     <ContactForm
-      doc={loaded?.data ?? { name: '', preferences: [] }}
-      etag={loaded?.etag ?? 0}
+      doc={copy && src ? duplicateDoc(src, existing) : (src ?? { name: '', preferences: [] })}
+      etag={copy ? 0 : (loaded?.etag ?? 0)}
       isNew={isNew}
+      copyOf={copy ? name ?? undefined : undefined}
       onClose={onClose}
     />
   )
 }
 
-function ContactForm({ doc, etag, isNew, onClose }: {
-  doc: Contact; etag: number; isNew: boolean; onClose: () => void
+function ContactForm({ doc, etag, isNew, copyOf, onClose }: {
+  doc: Contact; etag: number; isNew: boolean; copyOf?: string; onClose: () => void
 }) {
   const [name, setName] = useState(doc.name)
   const [email, setEmail] = useState(doc.email ?? '')
@@ -130,7 +143,7 @@ function ContactForm({ doc, etag, isNew, onClose }: {
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{isNew ? t('create') : `${t('edit')}: ${doc.name}`}</DialogTitle>
+          <DialogTitle>{copyOf ? `${t('duplicate')}: ${copyOf}` : isNew ? t('create') : `${t('edit')}: ${doc.name}`}</DialogTitle>
         </DialogHeader>
         <form onSubmit={(e) => { e.preventDefault(); save.mutate(undefined) }} className="space-y-3">
           <div className="grid grid-cols-2 gap-2">

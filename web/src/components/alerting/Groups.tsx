@@ -15,7 +15,8 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
-import { Empty, ErrorState, Field, FormError, ListEditor, DurationInput, SubmitRow, DeleteButton, useSave } from '@/components/kit'
+import { Empty, ErrorState, Field, FormError, ListEditor, DurationInput, SubmitRow, DeleteButton, useSave, DuplicateButton } from '@/components/kit'
+import { duplicateDoc } from '@/lib/duplicate'
 import { t } from '../../i18n'
 
 const groupsApi = resourceApi<AlertGroup>('alert-groups')
@@ -27,12 +28,17 @@ function emptyGroup(): AlertGroup {
 
 export function GroupsTab({ createRef }: { createRef?: RefObject<() => void> }) {
   const { data, isError, error, refetch } = useQuery({ queryKey: groupsApi.queryKey, queryFn: groupsApi.list })
-  const [editing, setEditing] = useState<{ group: AlertGroup; etag: number } | null>(null)
+  const [editing, setEditing] = useState<{ group: AlertGroup; etag: number; copyOf?: string } | null>(null)
 
   const open = async (name?: string) => {
     if (!name) { setEditing({ group: emptyGroup(), etag: 0 }); return }
     const { data: g, etag } = await groupsApi.get(name)
     setEditing({ group: g, etag })
+  }
+  // Duplicate: a create (etag 0) seeded from the stored group under a fresh name.
+  const openCopy = async (name: string) => {
+    const { data: g } = await groupsApi.get(name)
+    setEditing({ group: duplicateDoc(g, (data ?? []).map((x) => x.name)), etag: 0, copyOf: name })
   }
   useEffect(() => { if (createRef) createRef.current = () => void open() })
 
@@ -62,7 +68,12 @@ export function GroupsTab({ createRef }: { createRef?: RefObject<() => void> }) 
                 <TableCell className="font-mono text-xs text-muted-foreground">{g.window}</TableCell>
                 <TableCell><Badge variant="outline" className="bg-muted text-foreground/90 border-input">{g.aggregate ?? 'count'}</Badge></TableCell>
                 <TableCell className="text-xs text-muted-foreground tabular-nums">{g.minCount ?? '—'}</TableCell>
-                <TableCell className="text-right"><Button size="sm" variant="outline" onClick={() => open(g.name)}>{t('edit')}</Button></TableCell>
+                <TableCell className="text-right">
+                  <div className="flex gap-1 justify-end">
+                    <Button size="sm" variant="outline" onClick={() => open(g.name)}>{t('edit')}</Button>
+                    <DuplicateButton onClick={() => void openCopy(g.name)} />
+                  </div>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -73,8 +84,11 @@ export function GroupsTab({ createRef }: { createRef?: RefObject<() => void> }) 
   )
 }
 
-function GroupDialog({ state, onClose }: { state: { group: AlertGroup; etag: number }; onClose: () => void }) {
-  const isNew = state.etag === 0 && !state.group.name
+function GroupDialog({ state, onClose }: {
+  state: { group: AlertGroup; etag: number; copyOf?: string }; onClose: () => void
+}) {
+  // etag 0 = not stored yet: a blank form or a duplicate (stored docs are ≥ 1).
+  const isNew = state.etag === 0
   const [g, setG] = useState<AlertGroup>(state.group)
   const set = (patch: Partial<AlertGroup>) => setG((prev) => ({ ...prev, ...patch }))
 
@@ -91,7 +105,7 @@ function GroupDialog({ state, onClose }: { state: { group: AlertGroup; etag: num
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{isNew ? t('create') : `${t('edit')}: ${state.group.name}`}</DialogTitle>
+          <DialogTitle>{state.copyOf ? `${t('duplicate')}: ${state.copyOf}` : isNew ? t('create') : `${t('edit')}: ${state.group.name}`}</DialogTitle>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-3">
           <Field label={t('name')} required>

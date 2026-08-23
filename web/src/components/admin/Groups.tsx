@@ -10,7 +10,8 @@ import { Button } from '@/components/ui/button'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { Empty, Spinner, Field, FormError, SubmitRow, useSave, DeleteButton, ListEditor } from '@/components/kit'
+import { Empty, Spinner, Field, FormError, SubmitRow, useSave, DeleteButton, ListEditor, DuplicateButton } from '@/components/kit'
+import { duplicateDoc } from '@/lib/duplicate'
 import { t } from '../../i18n'
 import { TableActions, RowActions } from './common'
 
@@ -20,6 +21,7 @@ const contactsApi = resourceApi<Contact>('contacts')
 export function GroupsTab() {
   const { data, isLoading } = useQuery({ queryKey: groupsApi.queryKey, queryFn: groupsApi.list })
   const [editing, setEditing] = useState<ContactGroup | 'new' | null>(null)
+  const [copying, setCopying] = useState<ContactGroup | null>(null)
   return (
     <div className="space-y-4">
       <TableActions onCreate={() => setEditing('new')} label={t('create')} />
@@ -41,6 +43,7 @@ export function GroupsTab() {
               <TableCell className="px-3 py-2">
                 <RowActions>
                   <Button size="sm" variant="ghost" onClick={() => setEditing(g)}>{t('edit')}</Button>
+                  <DuplicateButton onClick={() => setCopying(g)} />
                   <GroupDelete group={g} />
                 </RowActions>
               </TableCell>
@@ -51,6 +54,10 @@ export function GroupsTab() {
       {!isLoading && (data?.length ?? 0) === 0 && <Empty text={t('empty')} />}
       {editing && (
         <GroupDialog name={editing === 'new' ? null : editing.name} onClose={() => setEditing(null)} />
+      )}
+      {copying && (
+        <GroupDialog name={copying.name} copy existing={(data ?? []).map((g) => g.name)}
+          onClose={() => setCopying(null)} />
       )}
     </div>
   )
@@ -66,15 +73,19 @@ function GroupDelete({ group }: { group: ContactGroup }) {
   )
 }
 
-function GroupDialog({ name, onClose }: { name: string | null; onClose: () => void }) {
-  const isNew = !name
+// GroupDialog: `name` null → create; set → edit; set + `copy` → create a
+// duplicate seeded from that group (envelope stripped, fresh name).
+function GroupDialog({ name, copy, existing, onClose }: {
+  name: string | null; copy?: boolean; existing?: string[]; onClose: () => void
+}) {
+  const isNew = !name || !!copy
   const { data: contacts } = useQuery({ queryKey: contactsApi.queryKey, queryFn: contactsApi.list })
   const { data: loaded, isLoading } = useQuery({
     queryKey: [...groupsApi.queryKey, name],
     queryFn: () => groupsApi.get(name!),
-    enabled: !isNew,
+    enabled: !!name,
   })
-  if (!isNew && isLoading) {
+  if (name && isLoading) {
     return (
       <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
         <DialogContent className="max-w-md">
@@ -86,19 +97,21 @@ function GroupDialog({ name, onClose }: { name: string | null; onClose: () => vo
       </Dialog>
     )
   }
+  const src = loaded?.data
   return (
     <GroupForm
-      doc={loaded?.data ?? { name: '', members: [] }}
-      etag={loaded?.etag ?? 0}
+      doc={copy && src ? duplicateDoc(src, existing) : (src ?? { name: '', members: [] })}
+      etag={copy ? 0 : (loaded?.etag ?? 0)}
       isNew={isNew}
+      copyOf={copy ? name ?? undefined : undefined}
       suggestions={(contacts ?? []).map((c) => c.name)}
       onClose={onClose}
     />
   )
 }
 
-function GroupForm({ doc, etag, isNew, suggestions, onClose }: {
-  doc: ContactGroup; etag: number; isNew: boolean; suggestions: string[]; onClose: () => void
+function GroupForm({ doc, etag, isNew, copyOf, suggestions, onClose }: {
+  doc: ContactGroup; etag: number; isNew: boolean; copyOf?: string; suggestions: string[]; onClose: () => void
 }) {
   const [name, setName] = useState(doc.name)
   const [members, setMembers] = useState<string[]>(doc.members ?? [])
@@ -113,7 +126,7 @@ function GroupForm({ doc, etag, isNew, suggestions, onClose }: {
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{isNew ? t('create') : `${t('edit')}: ${doc.name}`}</DialogTitle>
+          <DialogTitle>{copyOf ? `${t('duplicate')}: ${copyOf}` : isNew ? t('create') : `${t('edit')}: ${doc.name}`}</DialogTitle>
         </DialogHeader>
         <form onSubmit={(e) => { e.preventDefault(); save.mutate(undefined) }} className="space-y-3">
           <Field label={t('name')} required>

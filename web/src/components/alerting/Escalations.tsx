@@ -20,7 +20,8 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
-import { Empty, ErrorState, Field, FormError, DurationInput, SubmitRow, DeleteButton, useSave } from '@/components/kit'
+import { Empty, ErrorState, Field, FormError, DurationInput, SubmitRow, DeleteButton, useSave, DuplicateButton } from '@/components/kit'
+import { duplicateDoc } from '@/lib/duplicate'
 import { t } from '../../i18n'
 import { ChannelPicker, ToggleRow } from './common'
 
@@ -52,7 +53,7 @@ export function EscalationsTab({ createRef }: { createRef?: RefObject<() => void
   const { data: contacts } = useQuery({ queryKey: contactsApi.queryKey, queryFn: contactsApi.list })
   const { data: groups } = useQuery({ queryKey: groupsApi.queryKey, queryFn: groupsApi.list })
   const { data: channels } = useQuery({ queryKey: channelsApi.queryKey, queryFn: channelsApi.list })
-  const [editing, setEditing] = useState<{ policy: EscalationPolicy; etag: number } | null>(null)
+  const [editing, setEditing] = useState<{ policy: EscalationPolicy; etag: number; copyOf?: string } | null>(null)
 
   const pickers: Pickers = {
     schedules: schedules ?? [], contacts: contacts ?? [], groups: groups ?? [], channels: channels ?? [],
@@ -62,6 +63,12 @@ export function EscalationsTab({ createRef }: { createRef?: RefObject<() => void
     if (!name) { setEditing({ policy: emptyPolicy(), etag: 0 }); return }
     const { data, etag } = await policiesApi.get(name)
     setEditing({ policy: { ...data, steps: data.steps ?? [] }, etag })
+  }
+  // Duplicate: a create (etag 0) seeded from the stored policy under a fresh name.
+  const openCopy = async (name: string) => {
+    const { data } = await policiesApi.get(name)
+    const policy = duplicateDoc({ ...data, steps: data.steps ?? [] }, (policies ?? []).map((p) => p.name))
+    setEditing({ policy, etag: 0, copyOf: name })
   }
   useEffect(() => { if (createRef) createRef.current = () => void open() })
 
@@ -89,7 +96,12 @@ export function EscalationsTab({ createRef }: { createRef?: RefObject<() => void
                 <TableCell className="text-xs text-muted-foreground font-mono truncate">
                   {(p.steps ?? []).map((s) => `+${s.after}`).join(' → ') || '—'}
                 </TableCell>
-                <TableCell className="text-right"><Button size="sm" variant="outline" onClick={() => open(p.name)}>{t('edit')}</Button></TableCell>
+                <TableCell className="text-right">
+                  <div className="flex gap-1 justify-end">
+                    <Button size="sm" variant="outline" onClick={() => open(p.name)}>{t('edit')}</Button>
+                    <DuplicateButton onClick={() => void openCopy(p.name)} />
+                  </div>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -101,9 +113,10 @@ export function EscalationsTab({ createRef }: { createRef?: RefObject<() => void
 }
 
 function PolicyDialog({ state, pickers, onClose }: {
-  state: { policy: EscalationPolicy; etag: number }; pickers: Pickers; onClose: () => void
+  state: { policy: EscalationPolicy; etag: number; copyOf?: string }; pickers: Pickers; onClose: () => void
 }) {
-  const isNew = state.etag === 0 && !state.policy.name
+  // etag 0 = not stored yet: a blank form or a duplicate (stored docs are ≥ 1).
+  const isNew = state.etag === 0
   const [p, setP] = useState<EscalationPolicy>(state.policy)
   const [sim, setSim] = useState<{ steps: Record<string, unknown>[] } | null>(null)
   const [simErr, setSimErr] = useState<unknown>(null)
@@ -141,7 +154,7 @@ function PolicyDialog({ state, pickers, onClose }: {
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{isNew ? t('create') : `${t('edit')}: ${state.policy.name}`}</DialogTitle>
+          <DialogTitle>{state.copyOf ? `${t('duplicate')}: ${state.copyOf}` : isNew ? t('create') : `${t('edit')}: ${state.policy.name}`}</DialogTitle>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-3">
           <Field label={t('name')} required>

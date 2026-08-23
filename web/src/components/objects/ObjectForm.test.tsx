@@ -4,11 +4,12 @@
 // notification pickers are chip comboboxes rather than two-up dual-lists.
 import { describe, it, expect } from 'vitest'
 import { http, HttpResponse } from 'msw'
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { server } from '../../test/msw'
 import { renderWithProviders } from '../../test/render'
 import { ObjectFormDialog } from './ObjectForm'
+import type { NPObject } from '../../types'
 
 // The spec sections lazily query resource names as their tab mounts; MSW errors
 // on unhandled requests, so stub every endpoint any tab might hit.
@@ -74,5 +75,63 @@ describe('<ObjectFormDialog /> — tabbed create form', () => {
     expect(within(dialog).getByRole('combobox', { name: /Add contact/ })).toBeInTheDocument()
     // …and the DualListPicker's move controls (› » « ‹) are NOT.
     expect(within(dialog).queryByRole('button', { name: '›' })).not.toBeInTheDocument()
+  })
+})
+
+describe('<ObjectFormDialog /> — duplicate (copyFrom)', () => {
+  it('seeds a CREATE from the source service: fresh name, same host/folder/labels/spec, POSTs to /services', async () => {
+    mockResources()
+    let posted: Record<string, unknown> | null = null
+    server.use(
+      http.get('/api/v1/hosts', () => HttpResponse.json({ items: [{ id: 'h1', name: 'db01' }] })),
+      http.post('/api/v1/services', async ({ request }) => {
+        posted = await request.json() as Record<string, unknown>
+        return HttpResponse.json({ id: 'new', ...posted }, { status: 201 })
+      }),
+    )
+    const src: NPObject = {
+      id: 'svc-1', tenantId: 't1', kind: 'service', name: 'http', hostId: 'h1', hostName: 'db01',
+      folder: '/web', labels: { env: 'prod' },
+      spec: { checkCommand: 'builtin:http', interval: '30s' }, version: 3,
+    }
+    const user = userEvent.setup()
+    renderWithProviders(
+      <ObjectFormDialog open kind="service" copyFrom={src} existingNames={['http', 'http-copy']} onClose={() => {}} />,
+    )
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/^(Duplicate|Duplizieren): http$/)).toBeInTheDocument()
+
+    // The name skips the taken variants and stays editable (create mode, no
+    // rename lock); folder and labels mirror the source.
+    const name = within(dialog).getByDisplayValue('http-copy-2')
+    expect(name).toBeEnabled()
+    expect(within(dialog).getByDisplayValue('/web')).toBeInTheDocument()
+    expect(within(dialog).getByDisplayValue('prod')).toBeInTheDocument()
+    // The host is pre-selected (and, unlike edit, changeable).
+    const hostPicker = await within(dialog).findByRole('combobox')
+    expect(hostPicker).toHaveTextContent('db01')
+    expect(hostPicker).toBeEnabled()
+
+    // Submit is enabled straight away and creates (POST), not updates.
+    const submit = within(dialog).getByRole('button', { name: /Anlegen|Create/ })
+    expect(submit).toBeEnabled()
+    await user.click(submit)
+    await waitFor(() => expect(posted).not.toBeNull())
+    expect(posted).toEqual({
+      name: 'http-copy-2', host: 'h1', folder: '/web', labels: { env: 'prod' },
+      spec: { checkCommand: 'builtin:http', interval: '30s' },
+    })
+  })
+
+  it('a host copy pre-fills the address and spec under a "-copy" name', async () => {
+    mockResources()
+    const src: NPObject = {
+      id: 'h-1', tenantId: 't1', kind: 'host', name: 'web01', folder: '/', labels: {},
+      spec: { address: '10.0.0.1', checkCommand: 'builtin:icmp' }, version: 1,
+    }
+    renderWithProviders(<ObjectFormDialog open kind="host" copyFrom={src} onClose={() => {}} />)
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByDisplayValue('web01-copy')).toBeEnabled()
+    expect(within(dialog).getByDisplayValue('10.0.0.1')).toBeInTheDocument()
   })
 })

@@ -16,10 +16,10 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
-import { Empty, Field, FormError, DurationInput, SubmitRow, DeleteButton, useSave } from '@/components/kit'
+import { Empty, Field, FormError, DurationInput, SubmitRow, DeleteButton, DuplicateButton, useSave } from '@/components/kit'
 import { t } from '../../i18n'
 import { DateTimeInput } from './common'
-import { localInputToIso, nowPlus } from './datetime'
+import { isAhead, isoToLocalInput, localInputToIso, nowPlus } from './datetime'
 
 const KEY = ['downtimes']
 const fetchDowntimes = () => get<ListResponse<Downtime>>('/downtimes').then((r) => r.items ?? [])
@@ -27,6 +27,9 @@ const fetchDowntimes = () => get<ListResponse<Downtime>>('/downtimes').then((r) 
 export function DowntimesTab({ createRef }: { createRef?: RefObject<() => void> }) {
   const { data } = useQuery({ queryKey: KEY, queryFn: fetchDowntimes })
   const [creating, setCreating] = useState(false)
+  // Duplicate: the create dialog seeded from an existing downtime (target,
+  // type, RRULE, comment — and its window while that still lies ahead).
+  const [copying, setCopying] = useState<Downtime | null>(null)
   const remove = useSave((id: string) => del(`/downtimes/${encodeURIComponent(id)}`), { invalidate: [KEY] })
   useEffect(() => { if (createRef) createRef.current = () => setCreating(true) })
 
@@ -53,7 +56,10 @@ export function DowntimesTab({ createRef }: { createRef?: RefObject<() => void> 
                 <TableCell className="font-mono text-[11px] text-muted-foreground">{d.rrule || '—'}</TableCell>
                 <TableCell className="text-sm text-foreground/90">{d.comment}</TableCell>
                 <TableCell className="text-right">
-                  {d.id && <DeleteButton onDelete={() => remove.mutate(d.id!)} />}
+                  <div className="flex gap-1 justify-end">
+                    <DuplicateButton onClick={() => setCopying(d)} />
+                    {d.id && <DeleteButton onDelete={() => remove.mutate(d.id!)} />}
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
@@ -61,20 +67,27 @@ export function DowntimesTab({ createRef }: { createRef?: RefObject<() => void> 
         </Table>
       )}
       {creating && <DowntimeDialog onClose={() => setCreating(false)} />}
+      {copying && <DowntimeDialog copyFrom={copying} onClose={() => setCopying(null)} />}
     </div>
   )
 }
 
-function DowntimeDialog({ onClose }: { onClose: () => void }) {
-  const [targetKind, setTargetKind] = useState<'object' | 'selector'>('object')
-  const [objectId, setObjectId] = useState('')
-  const [selector, setSelector] = useState('')
-  const [type, setType] = useState<'fixed' | 'flexible'>('fixed')
-  const [start, setStart] = useState(nowPlus(0))
-  const [end, setEnd] = useState(nowPlus(3600_000))
-  const [duration, setDuration] = useState('1h')
-  const [rrule, setRrule] = useState('')
-  const [comment, setComment] = useState('')
+// DowntimeDialog: blank create, or — with `copyFrom` — a create seeded from an
+// existing downtime. The source window is kept only while it still lies
+// ahead; a window that already ended would create a downtime that is over
+// before it starts, so that case falls back to the default "now + 1h".
+function DowntimeDialog({ copyFrom, onClose }: { copyFrom?: Downtime; onClose: () => void }) {
+  const src = copyFrom
+  const windowAhead = isAhead(src?.end)
+  const [targetKind, setTargetKind] = useState<'object' | 'selector'>(src?.selector && !src.objectId ? 'selector' : 'object')
+  const [objectId, setObjectId] = useState(src?.objectId ?? '')
+  const [selector, setSelector] = useState(src?.selector ?? '')
+  const [type, setType] = useState<'fixed' | 'flexible'>(src?.type === 'flexible' ? 'flexible' : 'fixed')
+  const [start, setStart] = useState(windowAhead ? isoToLocalInput(src!.start) : nowPlus(0))
+  const [end, setEnd] = useState(windowAhead ? isoToLocalInput(src!.end) : nowPlus(3600_000))
+  const [duration, setDuration] = useState(src?.duration ?? '1h')
+  const [rrule, setRrule] = useState(src?.rrule ?? '')
+  const [comment, setComment] = useState(src?.comment ?? '')
 
   const save = useSave(
     () => post<Downtime>('/downtimes', {
@@ -97,7 +110,7 @@ function DowntimeDialog({ onClose }: { onClose: () => void }) {
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{`${t('downtimes')} ${t('create').toLowerCase()}`}</DialogTitle>
+          <DialogTitle>{src ? `${t('duplicate')}: ${src.comment || src.objectId || src.selector || t('downtime')}` : `${t('downtimes')} ${t('create').toLowerCase()}`}</DialogTitle>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-3">
           <div>

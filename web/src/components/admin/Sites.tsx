@@ -12,7 +12,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Empty, Field, FormError, SubmitRow, DeleteButton, useSave } from '@/components/kit'
+import { Empty, Field, FormError, SubmitRow, DeleteButton, useSave, DuplicateButton } from '@/components/kit'
+import { duplicateDoc } from '@/lib/duplicate'
 import { t } from '../../i18n'
 import { StatusBadge, TableActions, RowActions } from './common'
 
@@ -45,6 +46,7 @@ export function SitesTab() {
   })
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
+  const [copying, setCopying] = useState<string | null>(null)
   const remove = useSave((name: string) => sites.remove(name), {
     invalidate: [[...OVERVIEW]],
   })
@@ -93,6 +95,7 @@ export function SitesTab() {
               <TableCell className="px-3 py-2">
                 <RowActions>
                   <Button variant="ghost" size="sm" onClick={() => setEditing(s.name)}>{t('edit')}</Button>
+                  <DuplicateButton onClick={() => setCopying(s.name)} />
                   <DeleteButton onDelete={() => remove.mutate(s.name)} />
                 </RowActions>
               </TableCell>
@@ -107,19 +110,31 @@ export function SitesTab() {
       </p>
       {creating && <SiteDialog onClose={() => setCreating(false)} />}
       {editing && <SiteDialog name={editing} onClose={() => setEditing(null)} />}
+      {copying && (
+        <SiteDialog name={copying} copy existing={(data ?? []).map((s) => s.name)}
+          onClose={() => setCopying(null)} />
+      )}
     </div>
   )
 }
 
-function SiteDialog({ name, onClose }: { name?: string; onClose: () => void }) {
-  const isEdit = Boolean(name)
+// SiteDialog: no `name` → create; `name` → edit; `name` + `copy` → create a
+// duplicate seeded from that site (description, bundle YAML, disabled flag;
+// envelope stripped, fresh name — the edge enrols under the new name).
+function SiteDialog({ name, copy, existing: existingNames, onClose }: {
+  name?: string; copy?: boolean; existing?: string[]; onClose: () => void
+}) {
+  const hasSource = Boolean(name)
+  const isEdit = hasSource && !copy
   const existing = useQuery({
     queryKey: ['sites', 'doc', name],
     queryFn: () => sites.get(name!),
-    enabled: isEdit,
+    enabled: hasSource,
   })
-  const [form, setForm] = useState<Site | null>(isEdit ? null : { name: '' })
-  const doc = form ?? (existing.data ? { ...existing.data.data } : null)
+  const [form, setForm] = useState<Site | null>(hasSource ? null : { name: '' })
+  const doc = form ?? (existing.data
+    ? (copy ? duplicateDoc(existing.data.data, existingNames) : { ...existing.data.data })
+    : null)
   const save = useSave(
     (d: Site) => isEdit ? sites.update(name!, d, existing.data?.etag ?? 0) : sites.create(d),
     { invalidate: [[...OVERVIEW]], onDone: onClose },
@@ -130,7 +145,7 @@ function SiteDialog({ name, onClose }: { name?: string; onClose: () => void }) {
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{`${t('sites')} — ${isEdit ? t('edit') : t('create')}`}</DialogTitle>
+          <DialogTitle>{copy ? `${t('duplicate')}: ${name}` : `${t('sites')} — ${isEdit ? t('edit') : t('create')}`}</DialogTitle>
         </DialogHeader>
         <form onSubmit={(e) => { e.preventDefault(); save.mutate(doc) }} className="space-y-3">
           <Field label={t('name')} required>

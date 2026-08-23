@@ -21,7 +21,8 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
-import { Empty, Field, FormError, KVEditor, ListEditor, DurationInput, SubmitRow, DeleteButton, useSave } from '@/components/kit'
+import { Empty, Field, FormError, KVEditor, ListEditor, DurationInput, SubmitRow, DeleteButton, useSave, DuplicateButton } from '@/components/kit'
+import { duplicateDoc } from '@/lib/duplicate'
 import { t } from '../../i18n'
 import { DateTimeInput } from './common'
 import { isoToLocalInput, localInputToIso, nowPlus } from './datetime'
@@ -62,12 +63,18 @@ function useContactName() {
 
 export function SchedulesManager() {
   const { data } = useQuery({ queryKey: schedulesApi.queryKey, queryFn: schedulesApi.list })
-  const [editing, setEditing] = useState<{ schedule: Schedule; etag: number } | null>(null)
+  const [editing, setEditing] = useState<{ schedule: Schedule; etag: number; copyOf?: string } | null>(null)
 
   const open = async (name?: string) => {
     if (!name) { setEditing({ schedule: emptySchedule(), etag: 0 }); return }
     const { data: s, etag } = await schedulesApi.get(name)
     setEditing({ schedule: { ...s, layers: s.layers ?? [] }, etag })
+  }
+  // Duplicate: a create (etag 0) seeded from the stored schedule under a fresh name.
+  const openCopy = async (name: string) => {
+    const { data: s } = await schedulesApi.get(name)
+    const schedule = duplicateDoc({ ...s, layers: s.layers ?? [] }, (data ?? []).map((x) => x.name))
+    setEditing({ schedule, etag: 0, copyOf: name })
   }
 
   return (
@@ -93,7 +100,12 @@ export function SchedulesManager() {
                   <TableCell className="font-medium text-foreground">{s.name}</TableCell>
                   <TableCell className="text-xs text-muted-foreground font-mono">{s.timeZone}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">{s.layers?.length ?? 0}</TableCell>
-                  <TableCell className="text-right"><Button size="sm" variant="outline" onClick={() => open(s.name)}>{t('edit')}</Button></TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex gap-1 justify-end">
+                      <Button size="sm" variant="outline" onClick={() => open(s.name)}>{t('edit')}</Button>
+                      <DuplicateButton onClick={() => void openCopy(s.name)} />
+                    </div>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -105,8 +117,11 @@ export function SchedulesManager() {
   )
 }
 
-function ScheduleDialog({ state, onClose }: { state: { schedule: Schedule; etag: number }; onClose: () => void }) {
-  const isNew = state.etag === 0 && !state.schedule.name
+function ScheduleDialog({ state, onClose }: {
+  state: { schedule: Schedule; etag: number; copyOf?: string }; onClose: () => void
+}) {
+  // etag 0 = not stored yet: a blank form or a duplicate (stored docs are ≥ 1).
+  const isNew = state.etag === 0
   const [s, setS] = useState<Schedule>(state.schedule)
   const { contacts } = useContactName()
   const suggestions = contacts.map((c) => c.name)
@@ -129,7 +144,7 @@ function ScheduleDialog({ state, onClose }: { state: { schedule: Schedule; etag:
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{isNew ? t('create') : `${t('edit')}: ${state.schedule.name}`}</DialogTitle>
+          <DialogTitle>{state.copyOf ? `${t('duplicate')}: ${state.copyOf}` : isNew ? t('create') : `${t('edit')}: ${state.schedule.name}`}</DialogTitle>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-3">
           <div className="grid grid-cols-2 gap-3">

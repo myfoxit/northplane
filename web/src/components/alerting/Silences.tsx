@@ -12,10 +12,10 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
-import { Empty, Field, FormError, SubmitRow, DeleteButton, useSave } from '@/components/kit'
+import { Empty, Field, FormError, SubmitRow, DeleteButton, DuplicateButton, useSave } from '@/components/kit'
 import { t } from '../../i18n'
 import { DateTimeInput } from './common'
-import { localInputToIso, nowPlus } from './datetime'
+import { isAhead, isoToLocalInput, localInputToIso, nowPlus } from './datetime'
 
 const KEY = ['silences']
 const fetchSilences = () => get<ListResponse<Silence>>('/silences').then((r) => r.items ?? [])
@@ -29,6 +29,9 @@ const quick: { label: string; ms: number }[] = [
 export function SilencesTab({ createRef }: { createRef?: RefObject<() => void> }) {
   const { data } = useQuery({ queryKey: KEY, queryFn: fetchSilences })
   const [creating, setCreating] = useState(false)
+  // Duplicate: the create dialog seeded from an existing silence (selector,
+  // regex, comment — and its expiry while that still lies ahead).
+  const [copying, setCopying] = useState<Silence | null>(null)
   const remove = useSave((id: string) => del(`/silences/${encodeURIComponent(id)}`), { invalidate: [KEY] })
   useEffect(() => { if (createRef) createRef.current = () => setCreating(true) })
 
@@ -55,7 +58,10 @@ export function SilencesTab({ createRef }: { createRef?: RefObject<() => void> }
                 <TableCell className="text-xs text-muted-foreground tabular-nums">{fmtTime(s.expiresAt)}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">{s.createdBy ?? '—'}</TableCell>
                 <TableCell className="text-right">
-                  {s.id && <DeleteButton onDelete={() => remove.mutate(s.id!)} />}
+                  <div className="flex gap-1 justify-end">
+                    <DuplicateButton onClick={() => setCopying(s)} />
+                    {s.id && <DeleteButton onDelete={() => remove.mutate(s.id!)} />}
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
@@ -63,15 +69,21 @@ export function SilencesTab({ createRef }: { createRef?: RefObject<() => void> }
         </Table>
       )}
       {creating && <SilenceDialog onClose={() => setCreating(false)} />}
+      {copying && <SilenceDialog copyFrom={copying} onClose={() => setCopying(null)} />}
     </div>
   )
 }
 
-function SilenceDialog({ onClose }: { onClose: () => void }) {
-  const [selector, setSelector] = useState('')
-  const [textRegex, setTextRegex] = useState('')
-  const [comment, setComment] = useState('')
-  const [expires, setExpires] = useState(nowPlus(3600_000))
+// SilenceDialog: blank create, or — with `copyFrom` — a create seeded from an
+// existing silence. Its expiry is kept only while it still lies ahead (an
+// expired one would be dead on arrival), else the default "now + 1h" applies.
+function SilenceDialog({ copyFrom, onClose }: { copyFrom?: Silence; onClose: () => void }) {
+  const src = copyFrom
+  const expiryAhead = isAhead(src?.expiresAt)
+  const [selector, setSelector] = useState(src?.selector ?? '')
+  const [textRegex, setTextRegex] = useState(src?.textRegex ?? '')
+  const [comment, setComment] = useState(src?.comment ?? '')
+  const [expires, setExpires] = useState(expiryAhead ? isoToLocalInput(src!.expiresAt) : nowPlus(3600_000))
 
   const save = useSave(
     () => post<Silence>('/silences', {
@@ -89,7 +101,7 @@ function SilenceDialog({ onClose }: { onClose: () => void }) {
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{`${t('silences')} ${t('create').toLowerCase()}`}</DialogTitle>
+          <DialogTitle>{src ? `${t('duplicate')}: ${src.comment || src.selector || src.textRegex || t('silence')}` : `${t('silences')} ${t('create').toLowerCase()}`}</DialogTitle>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-3">
           <Field label={t('selector')} hint={t('silenceSelectorHint')}>

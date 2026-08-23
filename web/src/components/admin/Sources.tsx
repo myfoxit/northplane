@@ -20,7 +20,8 @@ import { Badge } from '@/components/ui/badge'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-import { Empty, Spinner, Field, FormError, SubmitRow, useSave, DeleteButton, KVEditor, DurationInput } from '@/components/kit'
+import { Empty, Spinner, Field, FormError, SubmitRow, useSave, DeleteButton, KVEditor, DurationInput, DuplicateButton } from '@/components/kit'
+import { duplicateDoc } from '@/lib/duplicate'
 import { t } from '../../i18n'
 import { TypeBadge, StatusBadge, TableActions, RowActions } from './common'
 
@@ -41,6 +42,7 @@ const SEVERITIES: Severity[] = ['critical', 'warning', 'info', 'ok']
 export function SourcesTab() {
   const { data, isLoading } = useQuery({ queryKey: sourcesApi.queryKey, queryFn: sourcesApi.list })
   const [editing, setEditing] = useState<EventSourceDef | 'new' | null>(null)
+  const [copying, setCopying] = useState<EventSourceDef | null>(null)
   return (
     <div className="space-y-4">
       <TableActions onCreate={() => setEditing('new')} label={t('create')} />
@@ -70,6 +72,7 @@ export function SourcesTab() {
               <TableCell className="px-3 py-2">
                 <RowActions>
                   <Button size="sm" variant="ghost" onClick={() => setEditing(s)}>{t('edit')}</Button>
+                  <DuplicateButton onClick={() => setCopying(s)} />
                   <SourceDelete source={s} />
                 </RowActions>
               </TableCell>
@@ -80,6 +83,10 @@ export function SourcesTab() {
       {!isLoading && (data?.length ?? 0) === 0 && <Empty text={t('empty')} />}
       {editing && (
         <SourceDialog name={editing === 'new' ? null : editing.name} onClose={() => setEditing(null)} />
+      )}
+      {copying && (
+        <SourceDialog name={copying.name} copy existing={(data ?? []).map((x) => x.name)}
+          onClose={() => setCopying(null)} />
       )}
     </div>
   )
@@ -95,14 +102,19 @@ function SourceDelete({ source }: { source: EventSourceDef }) {
   )
 }
 
-function SourceDialog({ name, onClose }: { name: string | null; onClose: () => void }) {
-  const isNew = !name
+// SourceDialog: `name` null → create; set → edit; set + `copy` → create a
+// duplicate seeded from that source (envelope stripped — the copy gets its
+// own id, hence its own inbound URL — fresh name).
+function SourceDialog({ name, copy, existing, onClose }: {
+  name: string | null; copy?: boolean; existing?: string[]; onClose: () => void
+}) {
+  const isNew = !name || !!copy
   const { data: loaded, isLoading } = useQuery({
     queryKey: [...sourcesApi.queryKey, name],
     queryFn: () => sourcesApi.get(name!),
-    enabled: !isNew,
+    enabled: !!name,
   })
-  if (!isNew && isLoading) {
+  if (name && isLoading) {
     return (
       <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
         <DialogContent className="max-w-4xl">
@@ -114,11 +126,13 @@ function SourceDialog({ name, onClose }: { name: string | null; onClose: () => v
       </Dialog>
     )
   }
+  const src = loaded?.data
   return (
     <SourceForm
-      doc={loaded?.data ?? { name: '', type: 'webhook', enabled: true, authMode: 'none', config: {} }}
-      etag={loaded?.etag ?? 0}
+      doc={copy && src ? duplicateDoc(src, existing) : (src ?? { name: '', type: 'webhook', enabled: true, authMode: 'none', config: {} })}
+      etag={copy ? 0 : (loaded?.etag ?? 0)}
       isNew={isNew}
+      copyOf={copy ? name ?? undefined : undefined}
       onClose={onClose}
     />
   )
@@ -160,8 +174,8 @@ function CfgSeverity({ value, onChange }: { value: string; onChange: (v: string)
   )
 }
 
-function SourceForm({ doc, etag, isNew, onClose }: {
-  doc: EventSourceDef; etag: number; isNew: boolean; onClose: () => void
+function SourceForm({ doc, etag, isNew, copyOf, onClose }: {
+  doc: EventSourceDef; etag: number; isNew: boolean; copyOf?: string; onClose: () => void
 }) {
   const [name, setName] = useState(doc.name)
   const [type, setType] = useState<string>(doc.type)
@@ -207,7 +221,7 @@ function SourceForm({ doc, etag, isNew, onClose }: {
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="max-w-4xl">
         <DialogHeader>
-          <DialogTitle>{isNew ? t('create') : `${t('edit')}: ${doc.name}`}</DialogTitle>
+          <DialogTitle>{copyOf ? `${t('duplicate')}: ${copyOf}` : isNew ? t('create') : `${t('edit')}: ${doc.name}`}</DialogTitle>
         </DialogHeader>
         <form onSubmit={(e) => { e.preventDefault(); save.mutate(undefined) }} className="space-y-3">
           <div className="grid grid-cols-2 gap-2">

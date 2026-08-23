@@ -14,7 +14,8 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-import { Empty, Spinner, Field, FormError, SubmitRow, useSave, DeleteButton, KVEditor, DurationInput } from '@/components/kit'
+import { Empty, Spinner, Field, FormError, SubmitRow, useSave, DeleteButton, KVEditor, DurationInput, DuplicateButton } from '@/components/kit'
+import { duplicateDoc } from '@/lib/duplicate'
 import { t } from '../../i18n'
 import { StatusBadge, TableActions, RowActions } from './common'
 import { SeverityField } from '../alerting/common'
@@ -26,6 +27,7 @@ const webhooksApi = resourceApi<WebhookSub>('webhooks')
 export function WebhooksTab() {
   const { data, isLoading } = useQuery({ queryKey: webhooksApi.queryKey, queryFn: webhooksApi.list })
   const [editing, setEditing] = useState<WebhookSub | 'new' | null>(null)
+  const [copying, setCopying] = useState<WebhookSub | null>(null)
   return (
     <div className="space-y-4">
       <TableActions onCreate={() => setEditing('new')} label={t('create')} />
@@ -51,6 +53,7 @@ export function WebhooksTab() {
               <TableCell className="px-3 py-2">
                 <RowActions>
                   <Button size="sm" variant="ghost" onClick={() => setEditing(w)}>{t('edit')}</Button>
+                  <DuplicateButton onClick={() => setCopying(w)} />
                   <WebhookDelete name={w.name} />
                 </RowActions>
               </TableCell>
@@ -62,6 +65,10 @@ export function WebhooksTab() {
       {editing && (
         <WebhookDialog name={editing === 'new' ? null : editing.name} onClose={() => setEditing(null)} />
       )}
+      {copying && (
+        <WebhookDialog name={copying.name} copy existing={(data ?? []).map((x) => x.name)}
+          onClose={() => setCopying(null)} />
+      )}
     </div>
   )
 }
@@ -71,14 +78,18 @@ function WebhookDelete({ name }: { name: string }) {
   return <DeleteButton onDelete={() => save.mutate(undefined)} />
 }
 
-function WebhookDialog({ name, onClose }: { name: string | null; onClose: () => void }) {
-  const isNew = !name
+// WebhookDialog: `name` null → create; set → edit; set + `copy` → create a
+// duplicate seeded from that subscription (envelope stripped, fresh name).
+function WebhookDialog({ name, copy, existing, onClose }: {
+  name: string | null; copy?: boolean; existing?: string[]; onClose: () => void
+}) {
+  const isNew = !name || !!copy
   const { data: loaded, isLoading } = useQuery({
     queryKey: [...webhooksApi.queryKey, name],
     queryFn: () => webhooksApi.get(name!),
-    enabled: !isNew,
+    enabled: !!name,
   })
-  if (!isNew && isLoading) {
+  if (name && isLoading) {
     return (
       <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
         <DialogContent className="max-w-md">
@@ -90,18 +101,20 @@ function WebhookDialog({ name, onClose }: { name: string | null; onClose: () => 
       </Dialog>
     )
   }
+  const src = loaded?.data
   return (
     <WebhookForm
-      doc={loaded?.data ?? { name: '', url: '' }}
-      etag={loaded?.etag ?? 0}
+      doc={copy && src ? duplicateDoc(src, existing) : (src ?? { name: '', url: '' })}
+      etag={copy ? 0 : (loaded?.etag ?? 0)}
       isNew={isNew}
+      copyOf={copy ? name ?? undefined : undefined}
       onClose={onClose}
     />
   )
 }
 
-function WebhookForm({ doc, etag, isNew, onClose }: {
-  doc: WebhookSub; etag: number; isNew: boolean; onClose: () => void
+function WebhookForm({ doc, etag, isNew, copyOf, onClose }: {
+  doc: WebhookSub; etag: number; isNew: boolean; copyOf?: string; onClose: () => void
 }) {
   const [w, setW] = useState<WebhookSub>(doc)
   const set = (patch: Partial<WebhookSub>) => setW((prev) => ({ ...prev, ...patch }))
@@ -113,7 +126,7 @@ function WebhookForm({ doc, etag, isNew, onClose }: {
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{isNew ? t('create') : `${t('edit')}: ${doc.name}`}</DialogTitle>
+          <DialogTitle>{copyOf ? `${t('duplicate')}: ${copyOf}` : isNew ? t('create') : `${t('edit')}: ${doc.name}`}</DialogTitle>
         </DialogHeader>
         <form onSubmit={(e) => { e.preventDefault(); save.mutate(undefined) }} className="space-y-3">
           <div className="grid grid-cols-2 gap-2">
@@ -160,6 +173,7 @@ export function HeartbeatsTab() {
     refetchInterval: 30_000,
   })
   const [editing, setEditing] = useState<HeartbeatDef | 'new' | null>(null)
+  const [copying, setCopying] = useState<HeartbeatDef | null>(null)
   const remove = useMutation({
     mutationFn: (name: string) => del(`/heartbeats/${encodeURIComponent(name)}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['heartbeats'] }),
@@ -198,6 +212,7 @@ export function HeartbeatsTab() {
               <TableCell className="px-3 py-2">
                 <RowActions>
                   <Button size="sm" variant="ghost" onClick={() => setEditing(h)}>{t('edit')}</Button>
+                  <DuplicateButton onClick={() => setCopying(h)} />
                   <DeleteButton onDelete={() => remove.mutate(h.name)} />
                 </RowActions>
               </TableCell>
@@ -210,12 +225,18 @@ export function HeartbeatsTab() {
         <HeartbeatForm doc={editing === 'new' ? { name: '', expectEvery: '1h' } : editing}
           isNew={editing === 'new'} onClose={() => setEditing(null)} />
       )}
+      {copying && (
+        // Duplicate: a create seeded from the source definition — runtime state
+        // (lastBeat/missing) is not part of the posted body, the name is fresh.
+        <HeartbeatForm doc={duplicateDoc(copying, rows.map((x) => x.name))}
+          isNew copyOf={copying.name} onClose={() => setCopying(null)} />
+      )}
     </div>
   )
 }
 
-function HeartbeatForm({ doc, isNew, onClose }: {
-  doc: HeartbeatDef; isNew: boolean; onClose: () => void
+function HeartbeatForm({ doc, isNew, copyOf, onClose }: {
+  doc: HeartbeatDef; isNew: boolean; copyOf?: string; onClose: () => void
 }) {
   const [h, setH] = useState<HeartbeatDef>(doc)
   const set = (patch: Partial<HeartbeatDef>) => setH((prev) => ({ ...prev, ...patch }))
@@ -231,7 +252,7 @@ function HeartbeatForm({ doc, isNew, onClose }: {
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{isNew ? t('create') : `${t('edit')}: ${doc.name}`}</DialogTitle>
+          <DialogTitle>{copyOf ? `${t('duplicate')}: ${copyOf}` : isNew ? t('create') : `${t('edit')}: ${doc.name}`}</DialogTitle>
         </DialogHeader>
         <form onSubmit={(e) => { e.preventDefault(); save.mutate(undefined) }} className="space-y-3">
           <Field label={t('name')} required>

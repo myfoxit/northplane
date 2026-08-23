@@ -230,6 +230,55 @@ test.describe('Objects explorer (operator)', () => {
     await expect(row(page, 'service', name)).toHaveCount(0)
   })
 
+  test('duplicates a service from its list row: create dialog pre-filled from the source', async ({ page }) => {
+    const name = `e2e-dup-${Date.now()}`
+    await page.setViewportSize(TALL_VIEWPORT)
+    await page.goto('/objects')
+
+    // Source: the seeded demo-tls service. Its row prints "<host> / demo-tls";
+    // remember the host so we can prove the copy lands under the same one.
+    const src = row(page, 'service', 'demo-tls')
+    await expect(src).toBeVisible()
+    const srcHost = (await src.innerText()).match(/([\w.-]+) \/ demo-tls/)?.[1]
+    expect(srcHost).toBeTruthy()
+
+    // The row's action cluster is revealed on hover; "Duplizieren" is the
+    // icon button carrying that exact accessible name (kit DuplicateButton).
+    await src.hover()
+    const rowEl = page.locator('div.group', { has: src })
+    await rowEl.getByRole('button', { name: 'Duplizieren', exact: true }).click()
+
+    // A CREATE dialog titled after the source, name pre-filled with the free
+    // "-copy" variant and editable (no rename lock like on edit), host pre-set.
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByRole('heading', { name: 'Duplizieren: demo-tls' })).toBeVisible()
+    const nameInput = dialog.getByPlaceholder('http')
+    await expect(nameInput).toHaveValue('demo-tls-copy')
+    await expect(nameInput).toBeEnabled()
+    await expect(dialog.getByRole('combobox').first()).toContainText(srcHost!)
+
+    // Rename (keeps the shared demo DB tidy) and submit — "Anlegen", not
+    // "Speichern": a duplicate is a new object.
+    await nameInput.fill(name)
+    await dialog.getByRole('button', { name: 'Anlegen', exact: true }).click()
+    await expect(dialog).toBeHidden()
+    await page.setViewportSize(DEFAULT_VIEWPORT)
+
+    // The copy shows up under the same host — and the source is untouched.
+    const copy = row(page, 'service', name)
+    await expect(copy).toBeVisible()
+    await expect(copy).toContainText(`${srcHost} / ${name}`)
+    await expect(row(page, 'service', 'demo-tls')).toBeVisible()
+
+    // Cleanup: delete the copy via its row actions.
+    await copy.hover()
+    const copyRow = page.locator('div.group', { has: copy })
+    await copyRow.getByRole('button', { name: 'Löschen', exact: true }).click()
+    await copyRow.getByRole('button', { name: 'Wirklich löschen?', exact: true }).click()
+    await expect(row(page, 'service', name)).toHaveCount(0)
+  })
+
   test('triggers "Jetzt prüfen" (check-now) from an object detail', async ({ page }) => {
     await page.goto('/objects')
 

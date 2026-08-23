@@ -15,7 +15,8 @@ import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-import { Empty, Field, FormError, SubmitRow, useSave, DeleteButton, ListEditor } from '@/components/kit'
+import { Empty, Field, FormError, SubmitRow, useSave, DeleteButton, ListEditor, DuplicateButton } from '@/components/kit'
+import { copyName } from '@/lib/duplicate'
 import { t } from '../../i18n'
 import { StatusBadge, TableActions, RowActions } from './common'
 
@@ -31,6 +32,7 @@ export function UsersTab() {
     queryFn: () => get<ListResponse<Role>>('/roles?limit=500').then((r) => r.items ?? []),
   })
   const [editing, setEditing] = useState<User | 'new' | null>(null)
+  const [copying, setCopying] = useState<User | null>(null)
   const [pwUser, setPwUser] = useState<User | null>(null)
 
   const roleNames = (roles ?? []).map((r) => r.name)
@@ -66,6 +68,7 @@ export function UsersTab() {
                 <RowActions>
                   {u.local && <Button size="sm" variant="ghost" onClick={() => setPwUser(u)}>{t('setPassword')}</Button>}
                   <Button size="sm" variant="ghost" onClick={() => setEditing(u)}>{t('edit')}</Button>
+                  <DuplicateButton onClick={() => setCopying(u)} />
                   <UserDelete user={u} />
                 </RowActions>
               </TableCell>
@@ -81,6 +84,9 @@ export function UsersTab() {
           roleNames={roleNames}
           onClose={() => setEditing(null)}
         />
+      )}
+      {copying && (
+        <UserDialog user={copying} copy roleNames={roleNames} onClose={() => setCopying(null)} />
       )}
       {pwUser && <SetPasswordDialog user={pwUser} onClose={() => setPwUser(null)} />}
 
@@ -100,12 +106,16 @@ function UserDelete({ user }: { user: User }) {
   )
 }
 
-function UserDialog({ user, roleNames, onClose }: {
-  user: User | null; roleNames: string[]; onClose: () => void
+// UserDialog: `user` null → create; set → edit; set + `copy` → create a new
+// local account seeded from that user's roles and disabled flag. Identity is
+// NOT copied: the e-mail must be unique (left blank), the display name gets
+// the copy suffix, and a copy always needs its own password.
+function UserDialog({ user, roleNames, copy, onClose }: {
+  user: User | null; roleNames: string[]; copy?: boolean; onClose: () => void
 }) {
-  const isNew = !user
-  const [name, setName] = useState(user?.name ?? '')
-  const [email, setEmail] = useState(user?.email ?? '')
+  const isNew = !user || !!copy
+  const [name, setName] = useState(copy && user ? copyName(user.name) : (user?.name ?? ''))
+  const [email, setEmail] = useState(copy ? '' : (user?.email ?? ''))
   const [password, setPassword] = useState('')
   const [roles, setRoles] = useState<string[]>(user?.roles ?? [])
   const [disabled, setDisabled] = useState(user?.disabled ?? false)
@@ -127,7 +137,7 @@ function UserDialog({ user, roleNames, onClose }: {
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{isNew ? t('newUser') : `${t('edit')}: ${user!.name}`}</DialogTitle>
+          <DialogTitle>{copy && user ? `${t('duplicate')}: ${user.name}` : isNew ? t('newUser') : `${t('edit')}: ${user!.name}`}</DialogTitle>
         </DialogHeader>
         <form onSubmit={(e) => { e.preventDefault(); save.mutate(undefined) }} className="space-y-3">
           <Field label={t('name')} required>

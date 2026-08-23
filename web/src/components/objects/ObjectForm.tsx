@@ -22,6 +22,7 @@ import {
   AddressField, CheckSection, IntervalSection, NotifySection, AdvancedSection,
 } from './SpecFields'
 import { cleanSpec, specOf } from './specUtil'
+import { copyName } from '@/lib/duplicate'
 
 // Radix SelectItem value cannot be "" — sentinel stands in for the
 // empty/"choose host" option and maps back to '' on change.
@@ -51,19 +52,27 @@ function useHostPicker(enabled: boolean) {
 
 // ObjectForm: create when `edit` is undefined, otherwise edit (PUT with the
 // object's version as If-Match; rename is rejected server-side so name is
-// locked on edit).
-export function ObjectForm({ kind, edit, onDone, onCancel }: {
+// locked on edit). `copyFrom` is the third mode — "Duplizieren": a CREATE
+// whose fields are seeded from an existing object (folder, labels, host and
+// the whole spec), under a fresh `-copy` name that the user can change;
+// `existingNames` (same kind / same host) lets the suggested name skip
+// collisions up front instead of bouncing off the server's 409.
+export function ObjectForm({ kind, edit, copyFrom, existingNames, onDone, onCancel }: {
   kind: Kind
   edit?: NPObject
+  copyFrom?: NPObject
+  existingNames?: string[]
   onDone: () => void
   onCancel: () => void
 }) {
   const isEdit = !!edit
-  const [name, setName] = useState(edit?.name ?? '')
-  const [folder, setFolder] = useState(edit?.folder ?? '')
-  const [labels, setLabels] = useState<Record<string, string>>(edit?.labels ?? {})
-  const [host, setHost] = useState(edit?.hostId ?? '')
-  const [spec, setSpec] = useState<ObjectSpec>(specOf(edit?.spec))
+  // Seed: the object being edited, or the one being duplicated.
+  const seed = edit ?? copyFrom
+  const [name, setName] = useState(edit?.name ?? (copyFrom ? copyName(copyFrom.name, existingNames) : ''))
+  const [folder, setFolder] = useState(seed?.folder ?? '')
+  const [labels, setLabels] = useState<Record<string, string>>(seed?.labels ?? {})
+  const [host, setHost] = useState(seed?.hostId ?? '')
+  const [spec, setSpec] = useState<ObjectSpec>(specOf(seed?.spec))
   // Tabs (FORM-1/3/5): default to Basis so creating a host is a name+address
   // job; check/notify/advanced config lives behind the other tabs.
   const [tab, setTab] = useState<'basis' | 'check' | 'notify' | 'advanced'>('basis')
@@ -163,20 +172,24 @@ export function ObjectForm({ kind, edit, onDone, onCancel }: {
 // ObjectFormDialog wraps ObjectForm in a Dialog. The content is a flex column
 // with a pinned header + footer action bar; only the tab body scrolls, so on a
 // tall form the title and Anlegen/Speichern stay reachable (FORM-5).
-export function ObjectFormDialog({ open, kind, edit, onClose }: {
-  open: boolean; kind: Kind; edit?: NPObject; onClose: () => void
+export function ObjectFormDialog({ open, kind, edit, copyFrom, existingNames, onClose }: {
+  open: boolean; kind: Kind; edit?: NPObject; copyFrom?: NPObject
+  existingNames?: string[]; onClose: () => void
 }) {
   if (!open) return null
   const title = edit
     ? `${t('edit')}: ${edit.name}`
-    : kind === 'host' ? t('newHost') : t('newService')
+    : copyFrom
+      ? `${t('duplicate')}: ${copyFrom.name}`
+      : kind === 'host' ? t('newHost') : t('newService')
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="max-w-2xl sm:max-w-2xl p-0 gap-0 flex flex-col overflow-hidden">
         <DialogHeader className="px-6 pt-6 pb-3 border-b border-border shrink-0">
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
-        <ObjectForm kind={kind} edit={edit} onDone={onClose} onCancel={onClose} />
+        <ObjectForm kind={kind} edit={edit} copyFrom={copyFrom} existingNames={existingNames}
+          onDone={onClose} onCancel={onClose} />
       </DialogContent>
     </Dialog>
   )

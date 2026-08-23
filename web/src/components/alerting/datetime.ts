@@ -33,6 +33,14 @@ export function nowPlus(ms: number): string {
   return isoToLocalInput(new Date(Date.now() + ms).toISOString())
 }
 
+// Does an ISO instant still lie in the future? (Seeding a duplicate from a
+// window/expiry that already passed would be dead on arrival.)
+export function isAhead(iso?: string): boolean {
+  if (!iso) return false
+  const ts = new Date(iso).getTime()
+  return !Number.isNaN(ts) && ts > Date.now()
+}
+
 // Shorten a long CEL expression for table cells.
 export function excerpt(s: string | undefined, max = 48): string {
   if (!s) return ''
