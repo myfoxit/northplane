@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # --- Stage 1: build the React UI -------------------------------------------
-FROM node:22-alpine AS ui
+FROM node:26-alpine AS ui
 WORKDIR /ui
 COPY web/package.json web/package-lock.json ./
 # --legacy-peer-deps: the lockfile pins typescript@6 while openapi-typescript
@@ -17,7 +17,7 @@ RUN npm run build
 # Served by northplaned itself at /docs/ — every image ships the manual that
 # matches its own version, offline-capable. Same legacy-peer-deps rationale
 # as the UI stage (npm bundled with node:22-alpine).
-FROM node:22-alpine AS docs
+FROM node:26-alpine AS docs
 WORKDIR /docs
 COPY docs/package.json docs/package-lock.json ./
 RUN npm ci --legacy-peer-deps
