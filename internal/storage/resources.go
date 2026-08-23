@@ -13,6 +13,9 @@ import (
 
 func newID() string { return model.NewID() }
 
+// BrandingName is the fixed document name of the single KindBranding record.
+const BrandingName = "instance"
+
 // Resource kinds stored in the generic config-document table. Hot-path
 // entities (objects, alerts, events, …) have dedicated tables; these are
 // configuration documents read at evaluation time and cached in memory.
@@ -39,7 +42,9 @@ const (
 	KindPreference       = "preference"   // per-actor UI settings (name = actor ID)
 	KindSite             = "site"         // connected edge instances (SPEC §7.7)
 	KindIVRMenu          = "ivr-menu"     // DTMF phone menus for alarm lines
-
+	// KindBranding is the instance-wide console look (one document, name
+	// BrandingName, always under model.DefaultTenant — never tenant-scoped).
+	KindBranding = "branding"
 )
 
 // EnsureSystemRolePermission adds a permission to a system role in every

@@ -56,6 +56,27 @@ type Preferences struct {
 	Extra map[string]string `json:"extra,omitempty"`
 }
 
+// Branding is the look of THIS INSTALLATION — the colour theme and the
+// light/dark mode the console renders in. It is deliberately instance-wide,
+// not per user and not per tenant: an operator switching customers in the
+// multi-customer console must not see the console re-skin under them, and a
+// customer running its own Northplane instance brands that instance. Stored
+// as a single document under model.DefaultTenant (see storage.KindBranding),
+// which is why the tenant header is ignored when reading or writing it.
+// Empty fields mean "unset" — the client falls back to its shipped default.
+type Branding struct {
+	// Theme is a colour-theme id from the UI's registry (web/src/theme-data.ts),
+	// e.g. "obsidianFire". Unvalidated here on purpose: the theme registry is a
+	// frontend asset, so the client ignores an id it does not know rather than
+	// the API rejecting a theme a newer UI shipped.
+	Theme string `json:"theme,omitempty"`
+	// Mode is "light", "dark" or "system" (follow the viewer's OS setting).
+	Mode string `json:"mode,omitempty"`
+}
+
+// BrandingModes are the accepted Branding.Mode values.
+var BrandingModes = []string{"light", "dark", "system"}
+
 // Permission is "resource:action" ("objects:read", "alerts:ack",
 // "config:write", "admin:*" — SPEC §11.2).
 type Permission string
