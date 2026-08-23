@@ -73,7 +73,7 @@ As long as CI is green, a merge to `main` rolls the production instance forward 
 - It installs `northplaned`, `np`, `np-agent` with mode 0755 into `/usr/local/bin` (using `sudo` when the directory is not writable and a TTY is present) or `~/.local/bin`, warns when the destination is not on `PATH`, and prints the `northplaned serve` / `sudo northplaned init` hints.
 - Windows is not covered by the script (the zip is for manual download); unsupported OS/arch abort with a pointer to building from source.
 
-Two facts worth knowing when you test it: the repository and its packages are **private**, so the anonymous one-liner (and `docker pull` without a `read:packages` token) fail — the Admin → Agents install snippet shows the same URL (a known issue listed in [Roadmap and known issues](/docs/project/roadmap-and-known-issues/)); and GitHub's `releases/latest` endpoint returns the most recent **non-prerelease, non-draft** release, so a pre-release tag such as `v0.0.0-rc1` is not picked up by the installer. Installation options for operators are described in [Installation](/docs/getting-started/installation/).
+Two facts worth knowing when you test it: the script resolves the newest release through GitHub's `releases/latest` endpoint, which only lists full releases — when none exists yet it falls back to the newest release of any kind (pre-releases included); and `NP_VERSION=vX.Y.Z` pins a specific tag, `NP_INSTALL_DIR` and `NP_BINARIES` control where and what is installed.
 
 ## Release notes
 
@@ -102,9 +102,9 @@ Then watch the **Release** workflow: `ui` → `binaries` (5 legs) → `release`,
 ### After the workflow is green
 
 1. On the release page: five archives, `checksums.txt`, generated notes. Spot-check one checksum: `sha256sum -c --ignore-missing checksums.txt` next to a downloaded archive.
-2. `docker pull ghcr.io/myfoxit/northplane:1.2.3` (needs `docker login ghcr.io` with a `read:packages` token) and `docker run --rm ghcr.io/myfoxit/northplane:1.2.3 version` → `northplaned v1.2.3`; `docker manifest inspect` shows `linux/amd64` and `linux/arm64`.
+2. `docker pull ghcr.io/myfoxit/northplane:1.2.3` and `docker run --rm ghcr.io/myfoxit/northplane:1.2.3 version` → `northplaned v1.2.3`; `docker manifest inspect` shows `linux/amd64` and `linux/arm64`.
 3. Unpack a tarball, run `./northplaned version` → `northplaned 1.2.3`; `./northplaned serve` on a throwaway data dir and open `/docs/` — the manual must be embedded (a 501 there means the `docs-dist` artifact did not reach the build).
-4. Test `install.sh` on a clean Linux or macOS machine if the release is a full (non-pre) release.
+4. Test `install.sh` on a clean Linux or macOS machine (`NP_VERSION=v1.2.3` to target the new release explicitly).
 5. If production should run the tagged image instead of `main-<sha>`, set `NORTHPLANE_IMAGE` on the host accordingly (the Deploy workflow overwrites `.env` on its next run — see [Operations](/docs/deployment/operations/)).
 
 ### Hotfixes and rollback

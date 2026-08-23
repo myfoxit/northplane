@@ -142,7 +142,7 @@ The `deploy` and `deploy-hetzner` jobs are independent (`needs: publish` each). 
 | `ghcr.io/myfoxit/northplane:latest` | Deploy `publish` **and** Release `docker` | moving; whichever ran last. Fine for trials, never for production pins |
 | `ghcr.io/myfoxit/northplane:<major>.<minor>.<patch>` and `<major>.<minor>` | Release `docker` (tag `v*`) | semver, `linux/amd64` + `linux/arm64`, `VERSION=<tag>` |
 
-The package is private: pulling needs `docker login ghcr.io` with a PAT that has `read:packages`; the deploy jobs use the run's `GITHUB_TOKEN` (`packages: read`) and log out immediately after the pull.
+The package is public; the deploy jobs nevertheless log in with the run's `GITHUB_TOKEN` (`packages: read`) for the pull and log out immediately after — the servers never store a registry credential.
 
 ## GitHub configuration
 

@@ -125,8 +125,8 @@ The np-agent enrollment helper: **1. Install the binary** one-liner (`curl -fsSL
 ![Admin → Agents: install snippet, token minting and generated agent.yaml](../../../assets/screenshots/admin-agents.webp)
 
 
-:::caution[Two things the tab gets wrong]
-The install URL points at a private repository and returns `404` for anonymous users — install from a release tarball instead ([Agent](/docs/monitoring/agent/)). And "the host appears automatically under Objects" is not what the server does: results for unknown hosts are rejected, so create the host (and its services) first — by UI, API, bundle or discovery. Both are listed in [Known issues](/docs/project/roadmap-and-known-issues/).
+:::caution[One thing the tab gets wrong]
+"The host appears automatically under Objects" is not what the server does: results for unknown hosts are rejected, so create the host (and its services) first — by UI, API, bundle or discovery. It is listed in [Known issues](/docs/project/roadmap-and-known-issues/).
 :::
 
 ## Dead letters (Dead-Letters)

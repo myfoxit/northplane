@@ -14,11 +14,9 @@ production variants and [First steps](/docs/getting-started/first-steps/) contin
 templates, the alarm chain, API tokens and the agent.
 
 You need one of: Docker, Docker Compose, or a `northplaned` binary for Linux/macOS (amd64/arm64).
-Binaries come from the GitHub release tarball `northplane_<tag>_<os>_<arch>.tar.gz`, the container
-image is `ghcr.io/myfoxit/northplane`. Both live in a **private** repository/package at the time of
-writing — you need access (a GitHub account with read permission and a PAT with `read:packages`
-for `docker login ghcr.io`), or you build from source with `make all` (see
-[Installation](/docs/getting-started/installation/#build-from-source)).
+The one-line installer fetches the newest release tarball; the container image is
+`ghcr.io/myfoxit/northplane` — both public, no login needed. Building from source (`make all`) is
+the third option ([Installation](/docs/getting-started/installation/#build-from-source)).
 
 ## 1. Start the server
 
@@ -31,7 +29,6 @@ non-loopback listener, the server **refuses to start** without TLS unless you ex
 plaintext for a local trial:
 
 ```bash
-docker login ghcr.io   # GitHub user + PAT with read:packages (private package)
 docker run -d --name northplane \
   -p 8443:8443 \
   -v northplane-data:/var/lib/northplane \
@@ -63,7 +60,6 @@ on the Compose network only; Caddy publishes 80/443.
 
 ```bash
 git clone https://github.com/myfoxit/northplane.git && cd northplane
-docker login ghcr.io             # private package; or uncomment `build: .` in docker-compose.yml
 docker compose up -d
 docker compose logs -f northplane
 ```
@@ -72,27 +68,21 @@ Open **https://localhost**. With `DOMAIN` unset, Caddy issues an internal self-s
 (your browser warns once); with `DOMAIN=monitoring.example.net docker compose up -d` and public DNS
 pointing at the host, Caddy fetches a Let's Encrypt certificate automatically.
 
-The Compose file does not set `NP_DEFAULT_ADMIN_*`, so on first start the server seeds a
-break-glass admin `admin@localhost` with a **generated password** and `/setup` stays closed:
-
-```bash
-docker compose logs northplane 2>&1 | grep -i "seeded default admin"
-```
-
-If you prefer the interactive `/setup` page, add `NP_DEFAULT_ADMIN_DISABLED: "1"` (or a chosen
-`NP_DEFAULT_ADMIN_EMAIL` / `NP_DEFAULT_ADMIN_PASSWORD` pair) to the `environment:` block of the
-`northplane` service **before** the first `up`.
+The Compose file sets `NP_DEFAULT_ADMIN_DISABLED: "1"`, so the interactive **`/setup`** page is
+open on first start — create your admin account there. For unattended installs replace that line
+with a chosen `NP_DEFAULT_ADMIN_EMAIL` / `NP_DEFAULT_ADMIN_PASSWORD` pair **before** the first
+`up` (or remove it to get a seeded `admin@localhost` with a generated password in the logs).
 
 </TabItem>
 <TabItem label="Single binary">
 
-Unpack the release tarball (it contains `northplaned`, `np`, `np-agent` and `LICENSE`) and start the
-server. No config file is needed for a trial: the defaults listen on the loopback interface in
-plain HTTP and put all data under your user's data directory.
+Install the binaries with the one-line installer (or unpack the release tarball — it contains
+`northplaned`, `np`, `np-agent` and `LICENSE`) and start the server. No config file is needed for a
+trial: the defaults listen on the loopback interface in plain HTTP and put all data under your
+user's data directory.
 
 ```bash
-tar -xzf northplane_<tag>_linux_amd64.tar.gz
-sudo install -m 0755 northplaned np np-agent /usr/local/bin/
+curl -fsSL https://raw.githubusercontent.com/myfoxit/northplane/main/install.sh | sh
 NP_DEFAULT_ADMIN_DISABLED=1 NORTHPLANE_LOG_FORMAT=text northplaned serve
 ```
 

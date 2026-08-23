@@ -52,8 +52,8 @@ curl -s localhost:8443/readyz | python3 -m json.tool
 curl -s localhost:8443/api/v1/system/info
 # from anywhere (Cloudflare in front — use a curl-like User-Agent, not Python's)
 curl -s https://doktrace.com/api/v1/system/info
-# bypass Cloudflare and talk to the origin (valid certificate, SNI via --resolve)
-curl -s --resolve doktrace.com:443:51.83.96.40 https://doktrace.com/readyz
+# from the hypervisor or a VM: ask the origin itself (valid certificate, SNI via --resolve)
+curl -s --resolve doktrace.com:443:10.10.10.11 https://doktrace.com/readyz
 ```
 
 The **Admin → System health** tab shows the same `/system/info` and `/system/health` data in the UI.
@@ -68,8 +68,7 @@ The **Admin → System health** tab shows the same `/system/info` and `/system/h
   cd /opt/northplane
   cp .env .env.manual-$(date +%F)
   sed -i 's#^NORTHPLANE_IMAGE=.*#NORTHPLANE_IMAGE=ghcr.io/myfoxit/northplane:main-<sha12>#' .env
-  echo "<PAT with read:packages>" | docker login ghcr.io -u <github-user> --password-stdin
-  docker compose pull -q && docker logout ghcr.io
+  docker compose pull -q
   docker compose up -d
   curl -s localhost:8443/api/v1/system/info     # version == main-<sha12>
   ```
@@ -109,7 +108,7 @@ What must be backed up, and why:
 | `/opt/northplane/.env` | reproducible from GitHub variables/secrets; a copy saves time in a disaster | VM |
 | GitHub variables and secrets | the actual source of the `.env` | repository settings |
 
-There is **no** periodic backup in the product (`backup.interval` is parsed but unused; only `northplaned backup` on demand exists) and **no** `vzdump` job on the Proxmox host. Until one of the following is scheduled (cron on the VM, for example), there are no backups of production.
+The product has no periodic backup loop (`backup.interval` is parsed but unused; `northplaned backup` runs on demand), so backups are the platform's job: schedule one of the options below (cron on the VM, a Proxmox `vzdump` job, or both) and keep copies off-host.
 
 **Option A — cold copy of the volume** (simple, a minute of downtime):
 

@@ -160,7 +160,7 @@ It creates `<target>/northplane-<YYYYMMDD-HHMMSS>/` (UTC timestamp, mode `0750`)
 - `<dataDir>/artifacts/` (the doc comment mentions artefacts, the code does not copy them).
 
 :::caution[No periodic backup loop]
-`backup.interval` is parsed but not used: the server never runs backups on its own, and the production Proxmox host has no vzdump job either. Schedule `northplaned backup` with cron/systemd timers and ship the resulting directory off-host. A minimal cron line:
+`backup.interval` is parsed but not used: the server never runs backups on its own. Schedule `northplaned backup` with cron/systemd timers (or snapshot the volume/VM at the platform level) and ship the result off-host. A minimal cron line:
 
 ```text
 15 2 * * * northplane NORTHPLANE_BACKUP_TARGET=/var/backups/northplane /usr/local/bin/northplaned backup -config /etc/northplane/config.yaml

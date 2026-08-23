@@ -11,8 +11,13 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"os/signal"
+	osuser "os/user"
 	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/northplane/northplane/internal/ai"
@@ -75,7 +80,8 @@ Usage:
   northplaned [serve]                      run the server (default)
   northplaned serve --demo                 …and seed a live demo environment
                     [--demo-snmp host:161] [--demo-traps udp://:9162]
-  northplaned init [--dir /etc/northplane] write config.yaml, secret key, systemd unit
+  northplaned init [--dir /etc/northplane]  write config.yaml, secret key, systemd unit
+                    [--user northplane]      (root: creates the service user + installs the unit)
   northplaned migrate    [-config …]       apply pending schema migrations and exit
   northplaned storage migrate --to <dsn>   copy relational data between backends (offline)
   northplaned import nagios --path <dir>   convert a Nagios/Icinga config to a bundle
@@ -320,6 +326,7 @@ func initCmd(args []string) {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
 	dir := fs.String("dir", config.DefaultConfigDir(), "config directory")
 	dataDir := fs.String("data", config.DefaultDataDir(), "data directory")
+	user := fs.String("user", "northplane", "system user the service runs as (created when missing, root on Linux only)")
 	_ = fs.Parse(args)
 
 	if err := os.MkdirAll(*dir, 0o750); err != nil {
@@ -340,36 +347,110 @@ func initCmd(args []string) {
 	if err := os.WriteFile(cfgPath, []byte(example), 0o640); err != nil {
 		fatal("%v", err)
 	}
+
+	// The unit runs the binary that ran init (not a guessed path), as an
+	// unprivileged system user. No WatchdogSec: the server does not speak
+	// sd_notify, and a watchdog without keep-alives would SIGABRT it every
+	// interval.
+	exe, err := os.Executable()
+	if err != nil || exe == "" {
+		exe = "/usr/local/bin/northplaned"
+	}
 	unit := `[Unit]
 Description=Northplane monitoring server
+Documentation=https://github.com/myfoxit/northplane
 After=network-online.target
+Wants=network-online.target
 
 [Service]
-ExecStart=/usr/local/bin/northplaned serve -config ` + cfgPath + `
+ExecStart=` + exe + ` serve -config ` + cfgPath + `
 Restart=on-failure
-WatchdogSec=60
-User=northplane
+RestartSec=2
+User=` + *user + `
+Group=` + *user + `
 StateDirectory=northplane
 NoNewPrivileges=yes
 ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
 ReadWritePaths=` + *dataDir + `
 
 [Install]
 WantedBy=multi-user.target
 `
+	// Root on Linux: create the service user, hand it the config + data
+	// directories and install the unit straight into systemd, so the
+	// printed next step is literally `systemctl enable --now northplaned`.
+	// Everywhere else the unit lands next to the config for manual use.
 	unitPath := filepath.Join(*dir, "northplaned.service")
-	_ = os.WriteFile(unitPath, []byte(unit), 0o644)
+	systemd := false
+	userNote := ""
+	if runtime.GOOS == "linux" && os.Geteuid() == 0 {
+		if st, err := os.Stat("/etc/systemd/system"); err == nil && st.IsDir() {
+			unitPath = "/etc/systemd/system/northplaned.service"
+			systemd = true
+		}
+		if err := ensureSystemUser(*user, *dataDir); err != nil {
+			userNote = fmt.Sprintf("  NOTE: could not create user %q (%v) — create it and chown %s %s\n",
+				*user, err, *dir, *dataDir)
+		} else {
+			for _, p := range []string{*dir, cfgPath, keyPath, *dataDir} {
+				_ = chownToUser(p, *user)
+			}
+		}
+	}
+	if err := os.WriteFile(unitPath, []byte(unit), 0o644); err != nil {
+		fatal("write unit: %v", err)
+	}
+
+	next := "  1. review " + cfgPath + " (listen/TLS, storage backend, OIDC)\n"
+	if systemd {
+		next += "  2. systemctl enable --now northplaned\n"
+	} else {
+		next += "  2. copy " + unitPath + " to /etc/systemd/system/ and: systemctl enable --now northplaned\n"
+	}
+	next += "  3. open http://127.0.0.1:8443/setup in the browser to create the admin account\n" +
+		"     (or headless: northplaned bootstrap-admin -config " + cfgPath + ")\n"
 	fmt.Printf(`initialised:
   config:       %s
   secret key:   %s (0600 — back this up!)
-  systemd unit: %s (copy to /etc/systemd/system/)
-
+  systemd unit: %s
+%s
 next steps:
-  1. review %s (TLS, storage backend, OIDC)
-  2. systemctl enable --now northplaned
-  3. open /setup in the browser to create the admin account
-     (or headless: northplaned bootstrap-admin -config %s)
-`, cfgPath, keyPath, unitPath, cfgPath, cfgPath)
+%s`, cfgPath, keyPath, unitPath, userNote, next)
+}
+
+// ensureSystemUser creates a locked system account for the service when it
+// does not exist yet (Linux, root). useradd is part of shadow-utils on every
+// mainstream distribution; on systems without it the error is reported and
+// init still succeeds so the operator can create the user by hand.
+func ensureSystemUser(name, home string) error {
+	if _, err := osuser.Lookup(name); err == nil {
+		return nil
+	}
+	useradd, err := exec.LookPath("useradd")
+	if err != nil {
+		return err
+	}
+	shell := "/usr/sbin/nologin"
+	if _, err := os.Stat(shell); err != nil {
+		shell = "/sbin/nologin"
+	}
+	cmd := exec.Command(useradd, "--system", "--no-create-home", "--home-dir", home, "--shell", shell, name)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("%v: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+func chownToUser(path, name string) error {
+	u, err := osuser.Lookup(name)
+	if err != nil {
+		return err
+	}
+	uid, _ := strconv.Atoi(u.Uid)
+	gid, _ := strconv.Atoi(u.Gid)
+	return os.Chown(path, uid, gid)
 }
 
 func migrateCmd(args []string) {

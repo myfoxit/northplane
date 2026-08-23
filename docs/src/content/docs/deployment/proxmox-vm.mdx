@@ -59,7 +59,7 @@ GitHub Actions (Deploy workflow) --ssh -p 2201 deploy@51.83.96.40--> VM101:22
 | Host | `ns3147660`, **Proxmox VE 9.2.11** (`pve-manager/9.2.11`, kernel `7.0.14-12-pve`), Debian 13 |
 | Bridges | `vmbr0` — public, `51.83.96.40`; `vmbr1` — internal `10.10.10.0/24` with MASQUERADE |
 | DNAT | iptables `PREROUTING` on `vmbr0`: `tcp/80 → 10.10.10.10:80`, `tcp/443 → 10.10.10.10:443`, `tcp/2201 → 10.10.10.11:22`; persisted as `post-up` rules in `/etc/network/interfaces` |
-| Web UI | port 8006, IP-allowlisted in `cluster.fw` (see [access patterns](/docs/deployment/proxmox-vm/#access-patterns)) |
+| Web UI | port 8006, reachable through an SSH tunnel only (see [access patterns](/docs/deployment/proxmox-vm/#access-patterns)) |
 | Backups | **no** `vzdump` job configured |
 
 The DNAT rules, as they are written on the host (the 2201 rule is the one the CI deploy uses):
@@ -185,7 +185,7 @@ The compose file publishes only `8443`. `9162/udp` (SNMP traps), `2023` (ESPA), 
 ## Cloudflare in front
 
 - `doktrace.com` is a Cloudflare-**proxied** A record pointing at `51.83.96.40`. Visitors reach Cloudflare; Cloudflare reaches the origin on 443 (DNAT → CT100).
-- The origin answers directly as well: `curl --resolve doktrace.com:443:51.83.96.40 https://doktrace.com/healthz` works — the WAF is not an enforcement boundary.
+- For troubleshooting from the hypervisor or a VM, query the origin with `--resolve` (see [Operations](/docs/deployment/operations/)); treat Cloudflare as a CDN/TLS front, not as the instance's security boundary — the application enforces its own authentication, rate limits and CSRF rules regardless of the path a request took.
 - Cloudflare blocks Python user agents (HTTP 403, error 1010). Scripts should send a curl-like `User-Agent`; Go clients (`np`, `np-agent`, the federation edge) pass.
 - Cloudflare replaces 5xx error bodies with its own error page; to read the API's RFC 9457 problem document during an outage, query the origin with `--resolve`.
 - Caddy's `trusted_proxies` covers the Cloudflare ranges, so Caddy's own logs and rate decisions see the visitor IP. Northplane itself does not evaluate `X-Forwarded-For` — only `X-Forwarded-Proto` — so no Northplane setting depends on Cloudflare.
@@ -197,7 +197,7 @@ The compose file publishes only `8443`. `9162/udp` (SNMP traps), `2023` (ESPA), 
 | reach the hypervisor | `ssh root@51.83.96.40` (key) |
 | reach a VM | `ssh -J root@51.83.96.40 rocky@10.10.10.11` (user `rocky`, sudo; `.12`/`.13`/`.14` for the other VMs). The VMs trust a different key than the hypervisor |
 | enter the Caddy container | `ssh root@51.83.96.40 -t 'pct enter 100'` |
-| use the Proxmox web UI | `ssh -N -L 8006:127.0.0.1:8006 root@51.83.96.40` then `https://localhost:8006` (realm `pam`) — the firewall allowlists 8006 per source IP and silently drops everything else, so the tunnel is the durable way |
+| use the Proxmox web UI | `ssh -N -L 8006:127.0.0.1:8006 root@51.83.96.40` then `https://localhost:8006` — the UI is not exposed publicly; the SSH tunnel is the supported path |
 | reach the VM the way CI does | `ssh -p 2201 deploy@51.83.96.40` (the CI deploy key; host key pinned in the `DEPLOY_KNOWN_HOSTS` variable) |
 | inspect the app from the VM | `cd /opt/northplane && docker compose ps` / `docker compose logs -f northplane` / `curl -s localhost:8443/readyz` |
 

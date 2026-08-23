@@ -40,7 +40,7 @@ The string is injected at build time (`-ldflags -X main.version=…`): `1.0.0-de
    curl -fsSL https://raw.githubusercontent.com/myfoxit/northplane/main/install.sh | sh
    ```
 
-   or download a specific `northplane_<tag>_<os>_<arch>.tar.gz` + `checksums.txt` from the release page, verify, and copy the three binaries to `/usr/local/bin`. (The repository is private at the time of writing, so the raw URL needs authenticated access — see [Installation](/docs/getting-started/installation/).)
+   or download a specific `northplane_<tag>_<os>_<arch>.tar.gz` + `checksums.txt` from the release page, verify, and copy the three binaries to `/usr/local/bin`. (`NP_VERSION=vX.Y.Z` pins the release — see [Installation](/docs/getting-started/installation/#installsh).)
 2. Optional pre-flight: `sudo -u northplane northplaned migrate -config /etc/northplane/config.yaml` applies pending migrations while the old service is still running and prints `migrations applied — schema is current`. The old binary keeps working with the newer schema in the usual case (migrations are additive), so this shortens the restart window.
 3. `systemctl restart northplaned`, then watch `journalctl -u northplaned -f` for `storage: applying migration …` lines and `northplane: listening`.
 4. Upgrade agents on the hosts (`np-agent` from the same tarball), then restart them (`systemctl restart np-agent`). Agents and server ship from the same release; the push/pull protocol is plain JSON over `/api/v1/results` and `/api/v1/agent/checks` with no version handshake, so upgrading them in either order is fine ([Agent](/docs/monitoring/agent/)).
@@ -54,7 +54,7 @@ docker run -d --name northplane -v northplane-data:/var/lib/northplane <the same
   ghcr.io/myfoxit/northplane:latest
 ```
 
-State lives in the volume (`/var/lib/northplane`: `core.db`, event segments, `tsdb/`, and `secret.key` unless you mounted one), so recreating the container is safe. Pulling `ghcr.io/myfoxit/northplane` needs `docker login ghcr.io` with a token that has `read:packages` while the package is private.
+State lives in the volume (`/var/lib/northplane`: `core.db`, event segments, `tsdb/`, and `secret.key` unless you mounted one), so recreating the container is safe.
 
 ### Docker Compose
 

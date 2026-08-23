@@ -121,6 +121,7 @@ northplaned init --dir ~/np-config --data ~/np-data
 |---|---|---|
 | `--dir <path>` | default config dir (`/etc/northplane` as root; `<user config dir>/northplane` otherwise) | where to write `config.yaml`, `secret.key`, `northplaned.service` |
 | `--data <path>` | default data dir (`/var/lib/northplane` as root; `$XDG_DATA_HOME/northplane` or `~/.local/share/northplane` on Linux; `~/Library/Application Support/northplane` on macOS) | `dataDir` value written into the config |
+| `--user <name>` | `northplane` | system account in the unit; created with `useradd --system` when missing (root on Linux only) |
 
 Files written:
 
@@ -128,34 +129,37 @@ Files written:
 |---|---|---|
 | `<dir>/config.yaml` | 0640 | the commented template (verbatim on the [Configuration](/docs/administration/configuration/) page) with `dataDir` and `secretKeyFile` filled in |
 | `<dir>/secret.key` | 0600 | 32 random bytes, hex-encoded + newline — the AES-256-GCM master key for secrets at rest. **Back it up.** |
-| `<dir>/northplaned.service` | 0644 | systemd unit (below); errors writing it are ignored |
+| `northplaned.service` | 0644 | systemd unit (below) — written to `/etc/systemd/system/` when running as root on a Linux host that has that directory, otherwise to `<dir>/` |
 
-Both `<dir>` and `<data>` are created with mode 0750. If `<dir>/config.yaml` already exists the command stops with `northplaned: <path> exists — refusing to overwrite` (exit 1) before writing anything else.
+Both `<dir>` and `<data>` are created with mode 0750. If `<dir>/config.yaml` already exists the command stops with `northplaned: <path> exists — refusing to overwrite` (exit 1) before writing anything else. As root on Linux the command also creates the service user when it does not exist (`useradd --system --no-create-home --home-dir <data> --shell nologin <user>`) and chowns `<dir>`, `config.yaml`, `secret.key` and `<data>` to it; when `useradd` fails the output carries a `NOTE:` with the manual steps.
 
 The generated unit (`<cfgPath>` and `<dataDir>` are interpolated):
 
 ```ini title="northplaned.service"
 [Unit]
 Description=Northplane monitoring server
+Documentation=https://github.com/myfoxit/northplane
 After=network-online.target
+Wants=network-online.target
 
 [Service]
-ExecStart=/usr/local/bin/northplaned serve -config <cfgPath>
+ExecStart=<path of the northplaned binary that ran init> serve -config <cfgPath>
 Restart=on-failure
-WatchdogSec=60
-User=northplane
+RestartSec=2
+User=<user>
+Group=<user>
 StateDirectory=northplane
 NoNewPrivileges=yes
 ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
 ReadWritePaths=<dataDir>
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-:::caution[Two things the unit assumes]
-The unit runs as user `northplane`, but `init` does **not** create that user — create it (and make `<dir>`/`<dataDir>` readable/writable for it) before `systemctl enable --now northplaned`. The unit also sets `WatchdogSec=60`, while the binary contains no sd_notify/watchdog code; verify on your systemd version whether the service is restarted by the watchdog or remove the line. The full procedure is in [Installation](/docs/getting-started/installation/).
-:::
+There is no `WatchdogSec` on purpose: the binary does not send sd_notify keep-alives, and a watchdog without them would restart the service every interval. The full procedure is in [Installation](/docs/getting-started/installation/#set-up-as-a-service-with-northplaned-init).
 
 Stdout on success:
 
@@ -282,10 +286,8 @@ The store is opened (migrations run) so this works on a fresh data directory bef
 ## Examples
 
 ```bash
-# First install on a Linux server
+# First install on a Linux server (creates the service user + installs the unit)
 sudo northplaned init
-sudo useradd --system --home /var/lib/northplane northplane
-sudo cp /etc/northplane/northplaned.service /etc/systemd/system/
 sudo systemctl enable --now northplaned
 sudo journalctl -u northplaned -f          # watch for "northplane: listening"
 
