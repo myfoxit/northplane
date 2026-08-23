@@ -65,10 +65,14 @@ jobs:
           SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
           echo "ver=main-${SHA::12}" >> "$GITHUB_OUTPUT"
 
+      # Multi-arch (amd64 + arm64) so `docker compose up` works on Apple
+      # Silicon and arm64 servers too; the Dockerfile cross-compiles, so no
+      # QEMU emulation is involved.
       - name: Build and push image
         uses: docker/build-push-action@v6
         with:
           context: .
+          platforms: linux/amd64,linux/arm64
           push: true
           build-args: VERSION=${{ steps.img.outputs.ver }}
           tags: |

@@ -1,7 +1,13 @@
 # syntax=docker/dockerfile:1
 
+# Multi-arch: the UI, docs and Go stages run on the BUILD platform and
+# cross-compile for the TARGET platform (Go does that natively, the static
+# binaries have no C dependencies), so `docker buildx build --platform
+# linux/amd64,linux/arm64` needs no emulation. Only the tiny distroless runtime
+# stage is per-target.
+
 # --- Stage 1: build the React UI -------------------------------------------
-FROM node:22-alpine AS ui
+FROM --platform=$BUILDPLATFORM node:22-alpine AS ui
 WORKDIR /ui
 COPY web/package.json web/package-lock.json ./
 # --legacy-peer-deps: the lockfile pins typescript@6 while openapi-typescript
@@ -17,7 +23,7 @@ RUN npm run build
 # Served by northplaned itself at /docs/ — every image ships the manual that
 # matches its own version, offline-capable. Same legacy-peer-deps rationale
 # as the UI stage (npm bundled with node:22-alpine).
-FROM node:22-alpine AS docs
+FROM --platform=$BUILDPLATFORM node:22-alpine AS docs
 WORKDIR /docs
 COPY docs/package.json docs/package-lock.json ./
 RUN npm ci --legacy-peer-deps
@@ -25,7 +31,8 @@ COPY docs/ ./
 RUN npm run build:embed
 
 # --- Stage 2: build the Go binary (UI + docs embedded via go:embed) --------
-FROM golang:1.25-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS build
+ARG TARGETOS TARGETARCH
 WORKDIR /src
 RUN apk add --no-cache git
 COPY go.mod go.sum ./
@@ -35,10 +42,10 @@ COPY . .
 COPY --from=ui /ui/dist ./internal/web/dist
 COPY --from=docs /docs/dist ./internal/docs/dist
 ARG VERSION=docker
-RUN CGO_ENABLED=0 go build -trimpath \
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -trimpath \
       -ldflags "-s -w -X main.version=${VERSION}" \
       -o /out/northplaned ./cmd/northplaned \
- && CGO_ENABLED=0 go build -trimpath \
+ && CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -trimpath \
       -ldflags "-s -w -X main.version=${VERSION}" \
       -o /out/np ./cmd/np \
  && mkdir -p /data
