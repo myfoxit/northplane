@@ -14,6 +14,8 @@ import './index.css'
 // light/dark mode (<html class="light">) before first paint — no flash.
 import './theme'
 import './mode'
+// Paints the app logo into the tab icon, tinted with the active theme.
+import './favicon'
 
 // Route-level code splitting (SPEC §12.2): each page is a separate chunk
 // loaded on demand. In dev this means visiting a route only transforms that

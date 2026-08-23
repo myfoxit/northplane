@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -632,6 +633,66 @@ func (a *API) registerUsers() {
 		})
 
 	a.registerPreferences()
+	a.registerBranding()
+}
+
+// registerBranding wires the INSTANCE-wide console look (colour theme +
+// light/dark mode). Three properties make this different from every other
+// config document here:
+//
+//   - It is not tenant-scoped. The document always lives under
+//     model.DefaultTenant, so a cross-tenant operator switching customers in
+//     the console does NOT see the branding change under them — the look
+//     belongs to the installation they are logged into, and a customer running
+//     its own instance brands that instance instead.
+//   - Reading is open to any authenticated actor: every session needs it to
+//     paint the shell, whatever else that actor may do.
+//   - Writing is config:write, so one user cannot re-skin the console for all
+//     their colleagues by accident.
+func (a *API) registerBranding() {
+	a.handle("GET /api/v1/branding", "Get this instance's console branding",
+		"", nil, model.Branding{},
+		func(w http.ResponseWriter, r *http.Request, p *auth.Principal) {
+			if p == nil {
+				a.problem(w, r, http.StatusUnauthorized, "np:auth/required",
+					"authentication required", "")
+				return
+			}
+			b, err := storage.LoadOne[model.Branding](r.Context(), a.Store,
+				model.DefaultTenant, storage.KindBranding, storage.BrandingName)
+			if errors.Is(err, storage.ErrNotFound) {
+				b = &model.Branding{} // unset → the client's shipped default
+			} else if err != nil {
+				a.fail(w, r, err)
+				return
+			}
+			a.writeJSON(w, http.StatusOK, b)
+		})
+
+	a.handle("PUT /api/v1/branding", "Set this instance's console branding",
+		"config:write", model.Branding{}, model.Branding{},
+		func(w http.ResponseWriter, r *http.Request, p *auth.Principal) {
+			var req model.Branding
+			if !a.decode(w, r, &req) {
+				return
+			}
+			// Theme ids are a frontend registry, so they are not validated
+			// here (see model.Branding) — mode is a closed set and is.
+			if req.Mode != "" && !slices.Contains(model.BrandingModes, req.Mode) {
+				a.validationError(w, r, "branding",
+					"mode must be one of light, dark, system")
+				return
+			}
+			before, _ := storage.LoadOne[model.Branding](r.Context(), a.Store,
+				model.DefaultTenant, storage.KindBranding, storage.BrandingName)
+			if _, err := a.Store.PutResource(r.Context(), model.DefaultTenant,
+				storage.KindBranding, storage.BrandingName, req, 0); err != nil {
+				a.fail(w, r, err)
+				return
+			}
+			a.audit(r, p, "branding.update", storage.BrandingName, before, req)
+			a.writeJSON(w, http.StatusOK, req)
+		})
 }
 
 // registerPreferences wires per-actor UI settings (P1 parity: every knob

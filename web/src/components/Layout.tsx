@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { t } from '../i18n'
 import { syncPreferencesFromServer } from '../settings'
+import { syncBrandingFromServer } from '../branding'
 import { CommandPalette } from './CommandPalette'
 import { AISidebar } from './AISidebar'
 import { RefreshControl } from './RefreshControl'
@@ -41,9 +42,14 @@ export function Layout({ children }: { children: ReactNode }) {
   const router = useRouterState()
   const navigate = useNavigate()
 
-  // Adopt server-side preferences once per shell mount (settings.ts keeps
-  // the localStorage cache for instant boot).
-  useEffect(() => { void syncPreferencesFromServer() }, [])
+  // Adopt server-side state once per shell mount; both keep a localStorage
+  // cache for instant boot. Preferences are per user; branding is the
+  // instance's look and is deliberately NOT re-fetched on a tenant switch —
+  // the console must not re-skin when an operator changes customer.
+  useEffect(() => {
+    void syncPreferencesFromServer()
+    void syncBrandingFromServer()
+  }, [])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

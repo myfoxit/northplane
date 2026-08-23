@@ -2,8 +2,9 @@
 // (theme.ts). Mode toggles a `.light` class on <html>; the app's original look
 // is DARK (values on :root, no class), so light mode is the opt-in class and
 // the dark default is byte-for-byte unchanged. 'system' follows the OS via
-// matchMedia. Like theme.ts this is localStorage-only and applied on module
-// load (imported early in main.tsx) so there's no flash on boot.
+// matchMedia. Like theme.ts this is the LOCAL half only — applied on module
+// load (imported early in main.tsx) so there's no flash on boot — while
+// branding.ts persists it to the instance-wide branding document.
 import { useSyncExternalStore } from 'react'
 
 export type Mode = 'light' | 'dark' | 'system'
@@ -60,6 +61,15 @@ export function setMode(m: Mode): void {
 function subscribe(cb: () => void): () => void {
   listeners.add(cb)
   return () => { listeners.delete(cb) }
+}
+
+// onModeChange is subscribe() for non-React consumers (branding.ts persists
+// the change; favicon.ts repaints the tab icon).
+export const onModeChange = subscribe
+
+// getMode is the plain (non-hook) read, for the same consumers.
+export function getMode(): Mode {
+  return current
 }
 
 export function useMode(): Mode {

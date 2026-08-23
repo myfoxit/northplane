@@ -58,9 +58,9 @@ export function Tile({ label, value, tone = 'default' }:
   { label: string; value: ReactNode; tone?: 'default' | 'ok' | 'warn' | 'crit' }) {
   const tones = {
     default: 'border-border',
-    ok: 'border-success/30',
-    warn: 'border-warning/30',
-    crit: 'border-danger/30',
+    ok: 'border-success/20',
+    warn: 'border-warning/20',
+    crit: 'border-danger/20',
   }
   const valueTones = {
     default: 'text-foreground',
@@ -69,7 +69,7 @@ export function Tile({ label, value, tone = 'default' }:
     crit: 'text-danger',
   }
   return (
-    <div className={cn('bg-card border rounded-xl px-4 py-3 shadow-sm', tones[tone])}>
+    <div className={cn('bg-card border rounded-xl px-4 py-3', tones[tone])}>
       <div className="text-xs text-muted-foreground uppercase tracking-wider">{label}</div>
       <div className={cn('text-2xl font-bold mt-0.5 tabular-nums', valueTones[tone])}>{value}</div>
     </div>

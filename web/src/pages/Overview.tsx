@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import { Empty, ErrorState } from '@/components/kit'
 import { humanizeOutput } from '@/lib/humanize'
 import { StatCard, StatusDonut } from '../components/dash/overview-cards'
-import { useSparkHistory } from '../components/dash/spark'
+import { useDelta } from '../components/dash/delta'
 import { t } from '../i18n'
 import { useRefreshInterval } from '../settings'
 
@@ -61,18 +61,13 @@ export function OverviewPage() {
   const problemCount = (s?.hostsDown ?? 0) + (s?.hostsUnreachable ?? 0) + (s?.servicesCritical ?? 0) + (s?.servicesWarning ?? 0) + (s?.servicesUnknown ?? 0)
   const alertCount = critAlerts + warnAlerts
 
-  // Live sparkline history — accumulates real samples across polls (seeded so
-  // the first paint has a baseline). Hooks stay above every early return.
-  const hHostsUp = useSparkHistory('ov.hostsUp', s?.hostsUp)
-  const hSvcOk = useSparkHistory('ov.svcOk', s?.servicesOk)
-  const hProblems = useSparkHistory('ov.problems', s ? problemCount : undefined)
-  const hAlerts = useSparkHistory('ov.alerts', s ? alertCount : undefined)
-  // "since last poll" delta badge; rising problems/alerts read as bad (crit).
-  const deltaBadge = (h: number[]): { badge?: string; badgeTone?: 'ok' | 'crit' } => {
-    const a = h[h.length - 1], b = h[h.length - 2]
-    const d = a != null && b != null ? a - b : 0
-    return d === 0 ? {} : { badge: `${d > 0 ? '+' : ''}${d}`, badgeTone: d > 0 ? 'crit' : 'ok' }
-  }
+  // Movement badges — the last change of each counter across polls. Hooks stay
+  // above every early return.
+  const dProblems = useDelta('ov.problems', s ? problemCount : undefined)
+  const dAlerts = useDelta('ov.alerts', s ? alertCount : undefined)
+  // Rising problems/alerts read as bad (crit), falling as good (ok).
+  const deltaBadge = (d: number): { badge?: string; badgeTone?: 'ok' | 'crit' } =>
+    d === 0 ? {} : { badge: `${d > 0 ? '+' : ''}${d}`, badgeTone: d > 0 ? 'crit' : 'ok' }
 
   const tiles = (
     <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
@@ -80,20 +75,20 @@ export function OverviewPage() {
         badge={hostsTotal ? `${pct(s?.hostsUp ?? 0, hostsTotal)}%` : undefined}
         badgeTone={(s?.hostsDown || s?.hostsUnreachable) ? 'crit' : 'ok'}
         sublabel={`${s?.hostsDown ?? 0} ${t('subDown')} · ${s?.hostsUnreachable ?? 0} ${t('subUnreachable')}`}
-        series={hHostsUp} to="/objects" search={{ kind: 'host', state: 'up' }} />
+        to="/objects" search={{ kind: 'host', state: 'up' }} />
       <StatCard label={t('servicesOk')} value={s?.servicesOk ?? '—'} total={svcTotal || undefined} tone="ok"
         badge={svcTotal ? `${pct(s?.servicesOk ?? 0, svcTotal)}%` : undefined}
         badgeTone={s?.servicesCritical ? 'crit' : s?.servicesWarning ? 'warn' : 'ok'}
         sublabel={`${s?.servicesCritical ?? 0} ${t('stCritical')} · ${s?.servicesWarning ?? 0} ${t('stWarning')}`}
-        series={hSvcOk} to="/objects" search={{ kind: 'service', state: 'ok' }} />
+        to="/objects" search={{ kind: 'service', state: 'ok' }} />
       <StatCard label={t('activeProblems')} value={s ? problemCount : '—'} tone={problemCount ? 'crit' : 'default'}
-        {...deltaBadge(hProblems)}
+        {...deltaBadge(dProblems)}
         sublabel={`${s?.acked ?? 0} ${t('subAcked')} · ${s?.inDowntime ?? 0} ${t('inDowntime')}`}
-        series={hProblems} to="/problems" />
+        to="/problems" />
       <StatCard label={t('openAlerts')} value={alertCount} tone={critAlerts ? 'crit' : warnAlerts ? 'warn' : 'default'}
-        {...deltaBadge(hAlerts)}
+        {...deltaBadge(dAlerts)}
         sublabel={`${critAlerts} ${t('stCritical')} · ${warnAlerts} ${t('stWarning')}`}
-        series={hAlerts} to="/alerts" />
+        to="/alerts" />
     </div>
   )
 

@@ -6,11 +6,13 @@
 // surface via the :root[data-theme="…"] blocks in index.css; the registry of
 // ids + labels + swatch previews lives in theme-data.ts (generated).
 //
-// Deliberately localStorage-only (unlike settings.ts, which is server-backed):
-// a colour theme is a per-browser cosmetic choice, and keeping it off the
-// shared /users/me/preferences document avoids two independent writers racing
-// on the same doc (a PUT there replaces the whole document). Instant boot,
-// no network, no contract change.
+// This module is the LOCAL half of the theme: <html data-theme> plus a
+// localStorage cache, applied on import so boot never flashes the wrong
+// palette. It deliberately knows nothing about the server. The colour theme is
+// an INSTANCE-wide setting (branding.ts owns GET/PUT /branding and is the only
+// writer); keeping the transport there means this store stays synchronous and
+// importable from anywhere, and there is exactly one module talking to the
+// branding document.
 import { useSyncExternalStore } from 'react'
 import { THEMES } from './theme-data'
 
@@ -72,6 +74,15 @@ if (typeof window !== 'undefined') {
 function subscribe(cb: () => void): () => void {
   listeners.add(cb)
   return () => { listeners.delete(cb) }
+}
+
+// onThemeChange is subscribe() for non-React consumers (branding.ts persists
+// the change; favicon.ts repaints the tab icon in the new accent).
+export const onThemeChange = subscribe
+
+// getTheme is the plain (non-hook) read, for the same consumers.
+export function getTheme(): ThemeId {
+  return current
 }
 
 // Reactive read: the switcher (and anything else) re-renders on change.

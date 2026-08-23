@@ -761,7 +761,8 @@ const de = {
   // — appearance / colour theme (Admin → Darstellung) —
   appearance: 'Darstellung',
   colorTheme: 'Farbschema',
-  colorThemeHint: 'Komplettes Farbschema der Oberfläche. Gilt nur für diesen Browser.',
+  colorThemeHint: 'Komplettes Farbschema der Oberfläche. Gilt für diese Instanz — alle Benutzer sehen sie, und ein Mandantenwechsel ändert sie nicht.',
+  brandingReadOnly: 'Nur Administratoren mit config:write können die Darstellung dieser Instanz ändern.',
   modeSystem: 'System',
   modeLight: 'Hell',
   modeDark: 'Dunkel',
@@ -1535,7 +1536,8 @@ const en: Record<keyof typeof de, string> = {
   // — appearance / colour theme (Admin → Appearance) —
   appearance: 'Appearance',
   colorTheme: 'Colour theme',
-  colorThemeHint: 'Full interface palette. Applies to this browser only.',
+  colorThemeHint: 'Full interface palette. Applies to this instance — every user sees it, and switching customer does not change it.',
+  brandingReadOnly: 'Only administrators with config:write can change this instance\'s appearance.',
   modeSystem: 'System',
   modeLight: 'Light',
   modeDark: 'Dark',
