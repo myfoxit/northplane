@@ -13,7 +13,8 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-import { Empty, Spinner, Tile, ErrorState, Field, FormError, SubmitRow, useSave, DeleteButton } from '@/components/kit'
+import { Empty, Spinner, Tile, ErrorState, Field, FormError, SubmitRow, useSave, DeleteButton, DuplicateButton } from '@/components/kit'
+import { copyName } from '@/lib/duplicate'
 import { ObjectPicker } from '../components/dash/pickers'
 import { bsStateMeta, type BSNode } from '../components/dash/util'
 import { t } from '../i18n'
@@ -43,6 +44,7 @@ interface SLAResponse {
 export function BusinessPage() {
   const [selected, setSelected] = useState<string | null>(null) // service name
   const [editing, setEditing] = useState<BusinessService | null>(null)
+  const [copying, setCopying] = useState<BusinessService | null>(null)
   const [creating, setCreating] = useState(false)
 
   const { data: tree, isLoading, isError, error, refetch } = useQuery({
@@ -95,6 +97,7 @@ export function BusinessPage() {
               def={selectedDef}
               nodeState={selectedNode?.state}
               onEdit={() => setEditing(selectedDef)}
+              onCopy={() => setCopying(selectedDef)}
               onDelete={() => remove.mutate(selectedDef.name)}
             />
           ) : (
@@ -106,11 +109,12 @@ export function BusinessPage() {
         </div>
       </div>
 
-      {(creating || editing) && (
+      {(creating || editing || copying) && (
         <BSDialog
-          existing={editing}
+          existing={editing ?? copying}
+          copy={!!copying}
           all={flat ?? []}
-          onClose={() => { setCreating(false); setEditing(null) }}
+          onClose={() => { setCreating(false); setEditing(null); setCopying(null) }}
         />
       )}
     </div>
@@ -163,8 +167,8 @@ function BSTree({ nodes, selected, onSelect, depth = 0 }: {
 
 // ——— detail: SLA card + definition card ———
 
-function BSDetail({ def, nodeState, onEdit, onDelete }: {
-  def: BusinessService; nodeState?: number; onEdit: () => void; onDelete: () => void
+function BSDetail({ def, nodeState, onEdit, onCopy, onDelete }: {
+  def: BusinessService; nodeState?: number; onEdit: () => void; onCopy: () => void; onDelete: () => void
 }) {
   const { data: sla, isLoading } = useQuery({
     queryKey: ['business-sla', def.name],
@@ -185,6 +189,7 @@ function BSDetail({ def, nodeState, onEdit, onDelete }: {
           <CardAction>
             <div className="flex gap-1">
               <Button size="sm" variant="outline" onClick={onEdit}>{t('edit')}</Button>
+              <DuplicateButton onClick={onCopy} />
               <DeleteButton onDelete={onDelete} />
             </div>
           </CardAction>
@@ -245,14 +250,18 @@ function Row({ k, v, mono }: { k: string; v?: string; mono?: boolean }) {
 
 type Binding = 'object' | 'selector' | 'none'
 
-function BSDialog({ existing, all, onClose }: {
-  existing: BusinessService | null; all: BusinessService[]; onClose: () => void
+// BSDialog: `existing` null → create; set → edit; set + `copy` → create a
+// duplicate seeded from that node (binding, rule, SLA, parent) under a fresh
+// name — only the name/version identity differs, and the save is a POST.
+function BSDialog({ existing, copy, all, onClose }: {
+  existing: BusinessService | null; copy?: boolean; all: BusinessService[]; onClose: () => void
 }) {
-  const editing = !!existing
+  const editing = !!existing && !copy
   const initialBinding: Binding = existing?.objectId ? 'object'
     : existing?.selector ? 'selector' : 'none'
 
-  const [name, setName] = useState(existing?.name ?? '')
+  const [name, setName] = useState(
+    copy && existing ? copyName(existing.name, all.map((b) => b.name)) : (existing?.name ?? ''))
   const [parentId, setParentId] = useState(existing?.parentId ?? '')
   const [rule, setRule] = useState<string>(existing?.rule ?? 'worst')
   const [quorumPct, setQuorumPct] = useState<number>(existing?.quorumPct ?? 50)
@@ -293,13 +302,14 @@ function BSDialog({ existing, all, onClose }: {
     save.mutate(doc)
   }
 
-  // parent options exclude self to avoid trivial cycles.
-  const parentOptions = all.filter((b) => b.name !== existing?.name)
+  // parent options exclude self to avoid trivial cycles (a duplicate is a
+  // new node, so its source is a legitimate parent).
+  const parentOptions = all.filter((b) => !editing || b.name !== existing?.name)
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>{editing ? `${t('edit')}: ${existing!.name}` : t('create')}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{copy && existing ? `${t('duplicate')}: ${existing.name}` : editing ? `${t('edit')}: ${existing!.name}` : t('create')}</DialogTitle></DialogHeader>
         <form className="space-y-3" onSubmit={submit}>
           <div className="grid grid-cols-2 gap-3">
             <Field label={t('name')} required>

@@ -20,7 +20,8 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
-import { Empty, ErrorState, Field, FormError, KVEditor, DurationInput, SubmitRow, DeleteButton, useSave } from '@/components/kit'
+import { Empty, ErrorState, Field, FormError, KVEditor, DurationInput, SubmitRow, DeleteButton, useSave, DuplicateButton } from '@/components/kit'
+import { duplicateDoc } from '@/lib/duplicate'
 import { t } from '../../i18n'
 import { SeverityField, ToggleRow } from './common'
 import { excerpt } from './datetime'
@@ -50,12 +51,17 @@ export function RulesTab({ createRef }: { createRef?: RefObject<() => void> }) {
   const { data: rules, isError, error, refetch } = useQuery({ queryKey: rulesApi.queryKey, queryFn: rulesApi.list })
   const { data: groups } = useQuery({ queryKey: groupsApi.queryKey, queryFn: groupsApi.list })
   const { data: policies } = useQuery({ queryKey: policiesApi.queryKey, queryFn: policiesApi.list })
-  const [editing, setEditing] = useState<{ rule: AlertRule; etag: number } | null>(null)
+  const [editing, setEditing] = useState<{ rule: AlertRule; etag: number; copyOf?: string } | null>(null)
 
   const open = async (name?: string) => {
     if (!name) { setEditing({ rule: emptyRule(), etag: 0 }); return }
     const { data, etag } = await rulesApi.get(name)
     setEditing({ rule: data, etag })
+  }
+  // Duplicate: a create (etag 0) seeded from the stored rule under a fresh name.
+  const openCopy = async (name: string) => {
+    const { data } = await rulesApi.get(name)
+    setEditing({ rule: duplicateDoc(data, (rules ?? []).map((r) => r.name)), etag: 0, copyOf: name })
   }
   // Expose "create" to the page header (NP-13).
   useEffect(() => { if (createRef) createRef.current = () => void open() })
@@ -92,6 +98,7 @@ export function RulesTab({ createRef }: { createRef?: RefObject<() => void> }) {
                   <div className="flex gap-1 justify-end">
                     <RowTestButton rule={r} />
                     <Button size="sm" variant="outline" onClick={() => open(r.name)}>{t('edit')}</Button>
+                    <DuplicateButton onClick={() => void openCopy(r.name)} />
                   </div>
                 </TableCell>
               </TableRow>
@@ -162,10 +169,11 @@ function TestResultView({ res }: { res: RuleTestResult }) {
 }
 
 function RuleDialog({ state, groups, policies, onClose }: {
-  state: { rule: AlertRule; etag: number }
+  state: { rule: AlertRule; etag: number; copyOf?: string }
   groups: AlertGroup[]; policies: EscalationPolicy[]; onClose: () => void
 }) {
-  const isNew = state.etag === 0 && !state.rule.name
+  // etag 0 = not stored yet: a blank form or a duplicate (stored docs are ≥ 1).
+  const isNew = state.etag === 0
   const [r, setR] = useState<AlertRule>(state.rule)
   const [source, setSource] = useState<'cel' | 'heartbeat'>(state.rule.heartbeat ? 'heartbeat' : 'cel')
   const set = (patch: Partial<AlertRule>) => setR((prev) => ({ ...prev, ...patch }))
@@ -193,7 +201,7 @@ function RuleDialog({ state, groups, policies, onClose }: {
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{isNew ? t('newRule') : `${t('edit')}: ${state.rule.name}`}</DialogTitle>
+          <DialogTitle>{state.copyOf ? `${t('duplicate')}: ${state.copyOf}` : isNew ? t('newRule') : `${t('edit')}: ${state.rule.name}`}</DialogTitle>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-3">
           <Field label={t('name')} required>

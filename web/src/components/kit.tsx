@@ -5,7 +5,7 @@
 // Dialog/Tabs/Table/Badge/Toggle/TextArea) are intentionally NOT here —
 // consumers use shadcn @/components/ui/* directly.
 import { useState, type ReactNode } from 'react'
-import { Loader2, X, AlertTriangle, RefreshCw } from 'lucide-react'
+import { Loader2, X, AlertTriangle, RefreshCw, Copy } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -241,6 +241,24 @@ export function SubmitRow({ onCancel, saving, label, disabled }: {
         {saving ? <Loader2 className="animate-spin" size={14} /> : (label ?? t('save'))}
       </Button>
     </div>
+  )
+}
+
+// Duplicate button: opens the entity's create form pre-filled from an
+// existing one (see lib/duplicate.ts). Icon-only in table rows (title +
+// aria-label carry the word, like the row's "check now"); `label` adds the
+// visible text for page headers where the other actions are worded too.
+export function DuplicateButton({ onClick, size = 'sm', label, variant }: {
+  onClick: () => void; size?: 'sm' | 'md'; label?: boolean
+  variant?: 'ghost' | 'outline'
+}) {
+  return (
+    <Button
+      size={size === 'md' ? 'default' : 'sm'} variant={variant ?? 'ghost'} type="button"
+      onClick={onClick} title={t('duplicate')} aria-label={t('duplicate')}
+    >
+      <Copy size={13} />{label && t('duplicate')}
+    </Button>
   )
 }
 

@@ -15,7 +15,8 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Empty, Spinner, Field, KVEditor, ListEditor, DurationInput, FormError, SubmitRow, useSave, DeleteButton } from '@/components/kit'
+import { Empty, Spinner, Field, KVEditor, ListEditor, DurationInput, FormError, SubmitRow, useSave, DeleteButton, DuplicateButton } from '@/components/kit'
+import { copyName } from '@/lib/duplicate'
 import { SpecFields } from '../components/objects/SpecFields'
 import { cleanSpec } from '../components/objects/specUtil'
 import { t } from '../i18n'
@@ -65,7 +66,7 @@ const templatesInval: string[][] = [[...templatesApi.queryKey], ['resources', 't
 
 function TemplatesTab() {
   const { data, isLoading } = useQuery({ queryKey: templatesApi.queryKey, queryFn: templatesApi.list })
-  const [editing, setEditing] = useState<{ name: string } | 'new' | null>(null)
+  const [editing, setEditing] = useState<{ name: string; copy?: boolean } | 'new' | null>(null)
   const remove = useSave<string>((name) => templatesApi.remove(name), { invalidate: templatesInval })
 
   return (
@@ -95,6 +96,7 @@ function TemplatesTab() {
                   <TableCell className="text-xs text-muted-foreground font-mono">{(tpl.spec?.templates ?? []).join(', ') || '—'}</TableCell>
                   <TableCell className="text-right whitespace-nowrap">
                     <Button size="sm" variant="ghost" onClick={() => setEditing({ name: tpl.name })}>{t('edit')}</Button>
+                    <DuplicateButton onClick={() => setEditing({ name: tpl.name, copy: true })} />
                     <DeleteButton onDelete={() => remove.mutate(tpl.name)} />
                   </TableCell>
                 </TableRow>
@@ -105,6 +107,8 @@ function TemplatesTab() {
         {editing && (
           <TemplateDialog
             name={editing === 'new' ? null : editing.name}
+            copy={editing !== 'new' && editing.copy}
+            existing={(data ?? []).map((x) => x.name)}
             onClose={() => setEditing(null)}
           />
         )}
@@ -113,24 +117,30 @@ function TemplatesTab() {
   )
 }
 
-function TemplateDialog({ name, onClose }: { name: string | null; onClose: () => void }) {
-  const isEdit = name !== null
-  // Load existing (with ETag) for edit.
+// TemplateDialog: `name` null → create; set → edit; set + `copy` → create a
+// duplicate seeded from that template (same hydration path, but the draft
+// name is a fresh "-copy" and the save is a POST).
+function TemplateDialog({ name, copy, existing, onClose }: {
+  name: string | null; copy?: boolean; existing?: string[]; onClose: () => void
+}) {
+  const hasSource = name !== null
+  const isEdit = hasSource && !copy
+  // Load existing (with ETag) for edit — and as the seed for a duplicate.
   const { data: loaded, isLoading } = useQuery({
     queryKey: [...templatesApi.queryKey, name],
     queryFn: () => templatesApi.get(name!),
-    enabled: isEdit,
+    enabled: hasSource,
   })
 
   const [draftName, setDraftName] = useState('')
   const [kind, setKind] = useState<Kind | ''>('')
   const [labels, setLabels] = useState<Record<string, string>>({})
   const [spec, setSpec] = useState<ObjectSpec>({})
-  const [ready, setReady] = useState(!isEdit)
+  const [ready, setReady] = useState(!hasSource)
 
-  // Hydrate form once the document arrives (edit mode).
-  if (isEdit && loaded && !ready) {
-    setDraftName(loaded.data.name)
+  // Hydrate form once the document arrives (edit / copy mode).
+  if (hasSource && loaded && !ready) {
+    setDraftName(copy ? copyName(loaded.data.name, existing) : loaded.data.name)
     setKind(loaded.data.kind ?? '')
     setLabels(loaded.data.labels ?? {})
     setSpec(loaded.data.spec ?? {})
@@ -151,8 +161,8 @@ function TemplateDialog({ name, onClose }: { name: string | null; onClose: () =>
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>{isEdit ? `${t('edit')}: ${name}` : `${t('templates')} — ${t('create')}`}</DialogTitle></DialogHeader>
-        {isEdit && isLoading ? <Spinner /> : (
+        <DialogHeader><DialogTitle>{copy ? `${t('duplicate')}: ${name}` : isEdit ? `${t('edit')}: ${name}` : `${t('templates')} — ${t('create')}`}</DialogTitle></DialogHeader>
+        {hasSource && isLoading ? <Spinner /> : (
           <form onSubmit={(e) => { e.preventDefault(); save.mutate() }} className="space-y-4">
             <div className="grid grid-cols-2 gap-2">
               <Field label={t('name')} required>
@@ -190,7 +200,7 @@ const commandsInval: string[][] = [[...commandsApi.queryKey]]
 
 function CheckCommandsTab() {
   const { data, isLoading } = useQuery({ queryKey: commandsApi.queryKey, queryFn: commandsApi.list })
-  const [editing, setEditing] = useState<{ name: string } | 'new' | null>(null)
+  const [editing, setEditing] = useState<{ name: string; copy?: boolean } | 'new' | null>(null)
   const remove = useSave<string>((name) => commandsApi.remove(name), { invalidate: commandsInval })
 
   return (
@@ -217,6 +227,7 @@ function CheckCommandsTab() {
                   <TableCell className="text-xs text-muted-foreground font-mono">{cmd.timeout || '—'}</TableCell>
                   <TableCell className="text-right whitespace-nowrap">
                     <Button size="sm" variant="ghost" onClick={() => setEditing({ name: cmd.name })}>{t('edit')}</Button>
+                    <DuplicateButton onClick={() => setEditing({ name: cmd.name, copy: true })} />
                     <DeleteButton onDelete={() => remove.mutate(cmd.name)} />
                   </TableCell>
                 </TableRow>
@@ -225,19 +236,26 @@ function CheckCommandsTab() {
           </Table>
         )}
         {editing && (
-          <CheckCommandDialog name={editing === 'new' ? null : editing.name} onClose={() => setEditing(null)} />
+          <CheckCommandDialog name={editing === 'new' ? null : editing.name}
+            copy={editing !== 'new' && editing.copy} existing={(data ?? []).map((x) => x.name)}
+            onClose={() => setEditing(null)} />
         )}
       </CardContent>
     </Card>
   )
 }
 
-function CheckCommandDialog({ name, onClose }: { name: string | null; onClose: () => void }) {
-  const isEdit = name !== null
+// CheckCommandDialog: `name` null → create; set → edit; set + `copy` → a
+// duplicate seeded from that command under a fresh name (POST).
+function CheckCommandDialog({ name, copy, existing, onClose }: {
+  name: string | null; copy?: boolean; existing?: string[]; onClose: () => void
+}) {
+  const hasSource = name !== null
+  const isEdit = hasSource && !copy
   const { data: loaded, isLoading } = useQuery({
     queryKey: [...commandsApi.queryKey, name],
     queryFn: () => commandsApi.get(name!),
-    enabled: isEdit,
+    enabled: hasSource,
   })
 
   const [draftName, setDraftName] = useState('')
@@ -245,10 +263,10 @@ function CheckCommandDialog({ name, onClose }: { name: string | null; onClose: (
   const [line, setLine] = useState<string[]>([])
   const [env, setEnv] = useState(false)
   const [timeout, setTimeoutV] = useState('')
-  const [ready, setReady] = useState(!isEdit)
+  const [ready, setReady] = useState(!hasSource)
 
-  if (isEdit && loaded && !ready) {
-    setDraftName(loaded.data.name)
+  if (hasSource && loaded && !ready) {
+    setDraftName(copy ? copyName(loaded.data.name, existing) : loaded.data.name)
     setType(loaded.data.type)
     setLine(loaded.data.line ?? [])
     setEnv(!!loaded.data.env)
@@ -271,8 +289,8 @@ function CheckCommandDialog({ name, onClose }: { name: string | null; onClose: (
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>{isEdit ? `${t('edit')}: ${name}` : `${t('checkCommand')} — ${t('create')}`}</DialogTitle></DialogHeader>
-        {isEdit && isLoading ? <Spinner /> : (
+        <DialogHeader><DialogTitle>{copy ? `${t('duplicate')}: ${name}` : isEdit ? `${t('edit')}: ${name}` : `${t('checkCommand')} — ${t('create')}`}</DialogTitle></DialogHeader>
+        {hasSource && isLoading ? <Spinner /> : (
           <form onSubmit={(e) => { e.preventDefault(); save.mutate() }} className="space-y-4">
             <div className="grid grid-cols-2 gap-2">
               <Field label={t('name')} required>
@@ -326,7 +344,7 @@ const WEEKDAY_DE: Record<typeof WEEKDAYS[number], string> = {
 
 function TimePeriodsTab() {
   const { data, isLoading } = useQuery({ queryKey: periodsApi.queryKey, queryFn: periodsApi.list })
-  const [editing, setEditing] = useState<{ name: string } | 'new' | null>(null)
+  const [editing, setEditing] = useState<{ name: string; copy?: boolean } | 'new' | null>(null)
   const remove = useSave<string>((name) => periodsApi.remove(name), { invalidate: periodsInval })
 
   return (
@@ -352,6 +370,7 @@ function TimePeriodsTab() {
                   <TableCell className="text-xs text-muted-foreground">{Object.keys(tp.exceptions ?? {}).length || '—'}</TableCell>
                   <TableCell className="text-right whitespace-nowrap">
                     <Button size="sm" variant="ghost" onClick={() => setEditing({ name: tp.name })}>{t('edit')}</Button>
+                    <DuplicateButton onClick={() => setEditing({ name: tp.name, copy: true })} />
                     <DeleteButton onDelete={() => remove.mutate(tp.name)} />
                   </TableCell>
                 </TableRow>
@@ -360,19 +379,26 @@ function TimePeriodsTab() {
           </Table>
         )}
         {editing && (
-          <TimePeriodDialog name={editing === 'new' ? null : editing.name} onClose={() => setEditing(null)} />
+          <TimePeriodDialog name={editing === 'new' ? null : editing.name}
+            copy={editing !== 'new' && editing.copy} existing={(data ?? []).map((x) => x.name)}
+            onClose={() => setEditing(null)} />
         )}
       </CardContent>
     </Card>
   )
 }
 
-function TimePeriodDialog({ name, onClose }: { name: string | null; onClose: () => void }) {
-  const isEdit = name !== null
+// TimePeriodDialog: `name` null → create; set → edit; set + `copy` → a
+// duplicate seeded from that period under a fresh name (POST).
+function TimePeriodDialog({ name, copy, existing, onClose }: {
+  name: string | null; copy?: boolean; existing?: string[]; onClose: () => void
+}) {
+  const hasSource = name !== null
+  const isEdit = hasSource && !copy
   const { data: loaded, isLoading } = useQuery({
     queryKey: [...periodsApi.queryKey, name],
     queryFn: () => periodsApi.get(name!),
-    enabled: isEdit,
+    enabled: hasSource,
   })
 
   const [draftName, setDraftName] = useState('')
@@ -380,10 +406,10 @@ function TimePeriodDialog({ name, onClose }: { name: string | null; onClose: () 
   const [days, setDays] = useState<Record<string, string[]>>({})
   const [exceptions, setExceptions] = useState<Record<string, string>>({}) // date → "r,r" comma string
   const [exclude, setExclude] = useState<string[]>([])
-  const [ready, setReady] = useState(!isEdit)
+  const [ready, setReady] = useState(!hasSource)
 
-  if (isEdit && loaded && !ready) {
-    setDraftName(loaded.data.name)
+  if (hasSource && loaded && !ready) {
+    setDraftName(copy ? copyName(loaded.data.name, existing) : loaded.data.name)
     setAlias(loaded.data.alias ?? '')
     setDays(loaded.data.days ?? {})
     // exceptions stored as date → string[]; flatten to comma string for the KV editor.
@@ -417,8 +443,8 @@ function TimePeriodDialog({ name, onClose }: { name: string | null; onClose: () 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>{isEdit ? `${t('edit')}: ${name}` : `${t('timePeriod')} — ${t('create')}`}</DialogTitle></DialogHeader>
-        {isEdit && isLoading ? <Spinner /> : (
+        <DialogHeader><DialogTitle>{copy ? `${t('duplicate')}: ${name}` : isEdit ? `${t('edit')}: ${name}` : `${t('timePeriod')} — ${t('create')}`}</DialogTitle></DialogHeader>
+        {hasSource && isLoading ? <Spinner /> : (
           <form onSubmit={(e) => { e.preventDefault(); save.mutate() }} className="space-y-4">
             <div className="grid grid-cols-2 gap-2">
               <Field label={t('name')} required>

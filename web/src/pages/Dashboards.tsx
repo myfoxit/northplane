@@ -24,7 +24,8 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-import { Empty, Spinner, ErrorState, Field, FormError, SubmitRow, useSave, DeleteButton } from '@/components/kit'
+import { Empty, Spinner, ErrorState, Field, FormError, SubmitRow, useSave, DeleteButton, DuplicateButton } from '@/components/kit'
+import { copyName } from '@/lib/duplicate'
 import { WidgetBody } from '../components/dash/widgets'
 import { widgetTypeLabel } from '../components/dash/util'
 import { ObjectPicker, MetricPicker } from '../components/dash/pickers'
@@ -120,6 +121,15 @@ export function DashboardsPage() {
 
   const [name, setName] = useState('')
   const [shared, setShared] = useState(false)
+  // Duplicate: the create dialog seeded from an existing dashboard — same
+  // widgets/layout, fresh name; null = a blank new dashboard.
+  const [copyFrom, setCopyFrom] = useState<DashboardDoc | null>(null)
+  const openCopy = (d: DashboardDoc) => {
+    setCopyFrom(d)
+    setName(copyName(d.name, (data ?? []).map((x) => x.name)))
+    setShared(!!d.shared)
+    setCreating(true)
+  }
 
   if (isError && !data) {
     return <div className="p-8"><ErrorState error={error} onRetry={() => refetch()} /></div>
@@ -129,7 +139,7 @@ export function DashboardsPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-bold">{t('dashboards')}</h1>
-        <Button variant="default" onClick={() => { setName(''); setShared(false); setCreating(true) }}>
+        <Button variant="default" onClick={() => { setCopyFrom(null); setName(''); setShared(false); setCreating(true) }}>
           {t('newDashboard')}
         </Button>
       </div>
@@ -160,7 +170,10 @@ export function DashboardsPage() {
                 >
                   {t('open')} <ArrowRight size={14} />
                 </Link>
-                <DeleteButton onDelete={() => remove.mutate(d.name)} />
+                <div className="flex items-center gap-1">
+                  <DuplicateButton onClick={() => openCopy(d)} />
+                  <DeleteButton onDelete={() => remove.mutate(d.name)} />
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -169,14 +182,17 @@ export function DashboardsPage() {
 
       <Dialog open={creating} onOpenChange={(o) => { if (!o) setCreating(false) }}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>{t('newDashboard')}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{copyFrom ? `${t('duplicate')}: ${copyFrom.name}` : t('newDashboard')}</DialogTitle></DialogHeader>
           <form
             className="space-y-3"
             onSubmit={(e) => {
               e.preventDefault()
               if (!name.trim()) return
+              // A copy carries the source spec (widgets + layout); a blank
+              // dashboard starts with the default counters panel.
+              const spec = copyFrom?.spec ?? { widgets: [defaultWidget('counters')] }
               create.mutate(
-                { name: name.trim(), shared, spec: { widgets: [defaultWidget('counters')] } },
+                { name: name.trim(), shared, spec },
                 { onSuccess: () => navigate({ to: '/dashboards/$name', params: { name: name.trim() } }) },
               )
             }}

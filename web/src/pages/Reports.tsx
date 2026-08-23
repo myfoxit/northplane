@@ -14,7 +14,8 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
-import { Empty, Spinner, ErrorState, Field, ListEditor, FormError, SubmitRow, useSave, DeleteButton } from '@/components/kit'
+import { Empty, Spinner, ErrorState, Field, ListEditor, FormError, SubmitRow, useSave, DeleteButton, DuplicateButton } from '@/components/kit'
+import { copyName } from '@/lib/duplicate'
 import { t } from '../i18n'
 
 const reportApi = resourceApi<Report>('reports')
@@ -64,6 +65,7 @@ async function downloadRender(name: string, format: 'csv' | 'json') {
 export function ReportsPage() {
   const { data, isLoading, isError, error, refetch } = useQuery({ queryKey: reportApi.queryKey, queryFn: reportApi.list })
   const [editing, setEditing] = useState<Report | null>(null) // null = closed
+  const [copying, setCopying] = useState<Report | null>(null)
   const [creating, setCreating] = useState(false)
   const [previewName, setPreviewName] = useState<string | null>(null)
   const [archiveName, setArchiveName] = useState<string | null>(null)
@@ -134,6 +136,7 @@ export function ReportsPage() {
                         </Button>
                         <Button size="sm" variant="ghost" onClick={() => setArchiveName(r.name)}>{t('archive')}</Button>
                         <Button size="sm" variant="ghost" onClick={() => setEditing(r)}>{t('edit')}</Button>
+                        <DuplicateButton onClick={() => setCopying(r)} />
                         <DeleteButton onDelete={() => remove.mutate(r.name)} />
                       </div>
                     </TableCell>
@@ -145,10 +148,12 @@ export function ReportsPage() {
         </Card>
       )}
 
-      {(creating || editing) && (
+      {(creating || editing || copying) && (
         <ReportDialog
-          existing={editing}
-          onClose={() => { setCreating(false); setEditing(null) }}
+          existing={editing ?? copying}
+          copy={!!copying}
+          existingNames={(data ?? []).map((r) => r.name)}
+          onClose={() => { setCreating(false); setEditing(null); setCopying(null) }}
         />
       )}
       {previewName && <PreviewDialog name={previewName} onClose={() => setPreviewName(null)} />}
@@ -181,10 +186,16 @@ function composeSchedule(p: ScheduleParts): string {
   return `monthly:${p.day}${at}`
 }
 
-function ReportDialog({ existing, onClose }: { existing: Report | null; onClose: () => void }) {
-  const editing = !!existing
+// ReportDialog: `existing` null → create; set → edit; set + `copy` → create a
+// duplicate seeded from that report (type, params, schedule, recipients)
+// under a fresh name — the save is a POST.
+function ReportDialog({ existing, copy, existingNames, onClose }: {
+  existing: Report | null; copy?: boolean; existingNames?: string[]; onClose: () => void
+}) {
+  const editing = !!existing && !copy
   const params = (existing?.params ?? {}) as Record<string, unknown>
-  const [name, setName] = useState(existing?.name ?? '')
+  const [name, setName] = useState(
+    copy && existing ? copyName(existing.name, existingNames) : (existing?.name ?? ''))
   const [type, setType] = useState<ReportType>(existing?.type ?? 'availability')
   const [selector, setSelector] = useState(String(params.selector ?? ''))
   const [windowDays, setWindowDays] = useState<number>(Number(params.windowDays ?? 30))
@@ -227,7 +238,7 @@ function ReportDialog({ existing, onClose }: { existing: Report | null; onClose:
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>{editing ? `${t('edit')}: ${existing!.name}` : t('create')}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{copy && existing ? `${t('duplicate')}: ${existing.name}` : editing ? `${t('edit')}: ${existing!.name}` : t('create')}</DialogTitle></DialogHeader>
         <form className="space-y-3" onSubmit={submit}>
           <div className="grid grid-cols-2 gap-3">
             <Field label={t('name')} required>

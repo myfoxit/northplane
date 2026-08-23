@@ -11,7 +11,8 @@ import { Button } from '@/components/ui/button'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { Empty, Spinner, Field, FormError, SubmitRow, useSave, DeleteButton, ListEditor } from '@/components/kit'
+import { Empty, Spinner, Field, FormError, SubmitRow, useSave, DeleteButton, ListEditor, DuplicateButton } from '@/components/kit'
+import { duplicateDoc } from '@/lib/duplicate'
 import { t } from '../../i18n'
 import { StatusBadge, TableActions, RowActions } from './common'
 
@@ -20,6 +21,7 @@ const rolesApi = resourceApi<Role>('roles')
 export function RolesTab() {
   const { data, isLoading } = useQuery({ queryKey: rolesApi.queryKey, queryFn: rolesApi.list })
   const [editing, setEditing] = useState<Role | 'new' | null>(null)
+  const [copying, setCopying] = useState<Role | null>(null)
   return (
     <div className="space-y-4">
       <TableActions onCreate={() => setEditing('new')} label={t('create')} />
@@ -45,12 +47,12 @@ export function RolesTab() {
               <TableCell className="px-3 py-2 text-xs text-muted-foreground">{r.includes?.join(', ') || '—'}</TableCell>
               <TableCell className="px-3 py-2 text-xs text-muted-foreground">{r.idpGroups?.join(', ') || '—'}</TableCell>
               <TableCell className="px-3 py-2">
-                {!r.system && (
-                  <RowActions>
-                    <Button size="sm" variant="ghost" onClick={() => setEditing(r)}>{t('edit')}</Button>
-                    <RoleDelete role={r} />
-                  </RowActions>
-                )}
+                <RowActions>
+                  {!r.system && <Button size="sm" variant="ghost" onClick={() => setEditing(r)}>{t('edit')}</Button>}
+                  {/* System roles are read-only, but a copy is the way to derive a custom role from one. */}
+                  <DuplicateButton onClick={() => setCopying(r)} />
+                  {!r.system && <RoleDelete role={r} />}
+                </RowActions>
               </TableCell>
             </TableRow>
           ))}
@@ -59,6 +61,10 @@ export function RolesTab() {
       {!isLoading && (data?.length ?? 0) === 0 && <Empty text={t('empty')} />}
       {editing && (
         <RoleDialog name={editing === 'new' ? null : editing.name} onClose={() => setEditing(null)} />
+      )}
+      {copying && (
+        <RoleDialog name={copying.name} copy existing={(data ?? []).map((r) => r.name)}
+          onClose={() => setCopying(null)} />
       )}
     </div>
   )
@@ -74,15 +80,20 @@ function RoleDelete({ role }: { role: Role }) {
   )
 }
 
-function RoleDialog({ name, onClose }: { name: string | null; onClose: () => void }) {
-  const isNew = !name
-  // Load the current document + ETag for the edit flow.
+// RoleDialog: `name` null → create; set → edit; set + `copy` → create a
+// duplicate seeded from that role (envelope and `system` flag stripped, so a
+// copy of a built-in role is an ordinary custom role).
+function RoleDialog({ name, copy, existing, onClose }: {
+  name: string | null; copy?: boolean; existing?: string[]; onClose: () => void
+}) {
+  const isNew = !name || !!copy
+  // Load the current document + ETag for the edit/copy flow.
   const { data: loaded, isLoading } = useQuery({
     queryKey: [...rolesApi.queryKey, name],
     queryFn: () => rolesApi.get(name!),
-    enabled: !isNew,
+    enabled: !!name,
   })
-  if (!isNew && isLoading) {
+  if (name && isLoading) {
     return (
       <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
         <DialogContent className="max-w-2xl">
@@ -94,18 +105,20 @@ function RoleDialog({ name, onClose }: { name: string | null; onClose: () => voi
       </Dialog>
     )
   }
+  const src = loaded?.data
   return (
     <RoleForm
-      doc={loaded?.data ?? { name: '', permissions: [] }}
-      etag={loaded?.etag ?? 0}
+      doc={copy && src ? duplicateDoc(src, existing, ['system']) : (src ?? { name: '', permissions: [] })}
+      etag={copy ? 0 : (loaded?.etag ?? 0)}
       isNew={isNew}
+      copyOf={copy ? name ?? undefined : undefined}
       onClose={onClose}
     />
   )
 }
 
-function RoleForm({ doc, etag, isNew, onClose }: {
-  doc: Role; etag: number; isNew: boolean; onClose: () => void
+function RoleForm({ doc, etag, isNew, copyOf, onClose }: {
+  doc: Role; etag: number; isNew: boolean; copyOf?: string; onClose: () => void
 }) {
   const [name, setName] = useState(doc.name)
   const [permissions, setPermissions] = useState<string[]>(doc.permissions ?? [])
@@ -129,7 +142,7 @@ function RoleForm({ doc, etag, isNew, onClose }: {
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{isNew ? t('create') : `${t('edit')}: ${doc.name}`}</DialogTitle>
+          <DialogTitle>{copyOf ? `${t('duplicate')}: ${copyOf}` : isNew ? t('create') : `${t('edit')}: ${doc.name}`}</DialogTitle>
         </DialogHeader>
         <form onSubmit={(e) => { e.preventDefault(); save.mutate(undefined) }} className="space-y-3">
           <Field label={t('name')} required>

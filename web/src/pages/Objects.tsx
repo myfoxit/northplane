@@ -18,7 +18,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { Empty, LabelChips, ErrorState } from '@/components/kit'
+import { Empty, LabelChips, ErrorState, DuplicateButton } from '@/components/kit'
 import { redactSecrets } from '@/lib/redact'
 import { parsePerfdata } from '@/lib/perfdata'
 import { humanizeOutput } from '@/lib/humanize'
@@ -59,6 +59,7 @@ export function ObjectsPage() {
   const parentRef = useRef<HTMLDivElement>(null)
   const [create, setCreate] = useState<'host' | 'service' | null>(null)
   const [edit, setEdit] = useState<NPObject | null>(null)
+  const [copy, setCopy] = useState<NPObject | null>(null)
   const [batch, setBatch] = useState(false)
 
   const patchSearch = (patch: Partial<ObjectsSearch>) =>
@@ -98,6 +99,11 @@ export function ObjectsPage() {
     if (stateFilter === 'problem') return o.state.state !== 0
     return stateLabel(o.kind, o.state.state).toLowerCase() === stateFilter
   }), [all, kindFilter, stateFilter])
+  // Names a duplicate must not collide with: hosts are unique per tenant,
+  // services per host — so the suggested "-copy" name is free from the start.
+  const siblingNames = (o: NPObject) => all
+    .filter((x) => x.kind === o.kind && (o.kind === 'host' || x.hostId === o.hostId))
+    .map((x) => x.name)
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
@@ -202,6 +208,7 @@ export function ObjectsPage() {
                 <div className="shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <Button size="sm" variant="ghost" onClick={() => recheck.mutate(o.id)} title={t('checkNow')} aria-label={t('checkNow')}><RefreshCw size={13} /></Button>
                   <Button size="sm" variant="ghost" onClick={() => setEdit(o)}>{t('edit')}</Button>
+                  <DuplicateButton onClick={() => setCopy(o)} />
                   <ObjectDeleteButton kind={o.kind} onDelete={() => remove.mutate(o.id)} />
                 </div>
               </div>
@@ -217,6 +224,10 @@ export function ObjectsPage() {
       {edit && (
         <ObjectFormDialog open kind={edit.kind} edit={edit} onClose={() => setEdit(null)} />
       )}
+      {copy && (
+        <ObjectFormDialog open kind={copy.kind} copyFrom={copy} existingNames={siblingNames(copy)}
+          onClose={() => setCopy(null)} />
+      )}
       <BatchAddDialog open={batch} onClose={() => setBatch(false)} />
     </div>
   )
@@ -227,6 +238,7 @@ export function ObjectDetailPage() {
   const navigate = useNavigate()
   const [dtOpen, setDtOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
+  const [copyOpen, setCopyOpen] = useState(false)
 
   const { data: obj, isLoading: objLoading, isError: objIsError, error: objError, refetch: refetchObj } = useQuery({
     queryKey: ['objects', id],
@@ -349,6 +361,7 @@ export function ObjectDetailPage() {
         </div>
         <div className="flex gap-2 shrink-0 items-center">
           <Button variant="default" onClick={() => setEditOpen(true)}>{t('edit')}</Button>
+          <DuplicateButton size="md" variant="outline" label onClick={() => setCopyOpen(true)} />
           <Button variant="outline" onClick={() => recheck.mutate()} disabled={recheck.isPending}><RefreshCw size={14} /> {t('checkNow')}</Button>
           <Button variant="outline" onClick={() => setDtOpen(true)}>{t('downtime')}</Button>
           <ObjectDeleteButton kind={obj.kind} size="md" onDelete={() => remove.mutate()} />
@@ -439,6 +452,11 @@ export function ObjectDetailPage() {
 
       <DowntimeDialog open={dtOpen} objectId={obj.id} objectName={obj.name} onClose={() => setDtOpen(false)} />
       {editOpen && <ObjectFormDialog open kind={obj.kind} edit={obj} onClose={() => setEditOpen(false)} />}
+      {copyOpen && (
+        <ObjectFormDialog open kind={obj.kind} copyFrom={obj}
+          existingNames={obj.kind === 'service' ? [obj.name, ...siblings.map((s) => s.name)] : undefined}
+          onClose={() => setCopyOpen(false)} />
+      )}
     </div>
   )
 }

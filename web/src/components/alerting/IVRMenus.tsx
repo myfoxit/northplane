@@ -21,7 +21,8 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
-import { Empty, ErrorState, Field, FormError, SubmitRow, DeleteButton, useSave } from '@/components/kit'
+import { Empty, ErrorState, Field, FormError, SubmitRow, DeleteButton, useSave, DuplicateButton } from '@/components/kit'
+import { duplicateDoc } from '@/lib/duplicate'
 import { t } from '../../i18n'
 import { ToggleRow } from './common'
 
@@ -48,12 +49,18 @@ function emptyMenu(): IVRMenu {
 export function IVRMenusTab({ createRef }: { createRef?: RefObject<() => void> }) {
   const { data: menus, isError, error, refetch } = useQuery({ queryKey: menusApi.queryKey, queryFn: menusApi.list })
   const { data: policies } = useQuery({ queryKey: policiesApi.queryKey, queryFn: policiesApi.list })
-  const [editing, setEditing] = useState<{ menu: IVRMenu; etag: number } | null>(null)
+  const [editing, setEditing] = useState<{ menu: IVRMenu; etag: number; copyOf?: string } | null>(null)
 
   const open = async (name?: string) => {
     if (!name) { setEditing({ menu: emptyMenu(), etag: 0 }); return }
     const { data, etag } = await menusApi.get(name)
     setEditing({ menu: { ...data, options: data.options ?? [] }, etag })
+  }
+  // Duplicate: a create (etag 0) seeded from the stored menu under a fresh name.
+  const openCopy = async (name: string) => {
+    const { data } = await menusApi.get(name)
+    const menu = duplicateDoc({ ...data, options: data.options ?? [] }, (menus ?? []).map((x) => x.name))
+    setEditing({ menu, etag: 0, copyOf: name })
   }
   useEffect(() => { if (createRef) createRef.current = () => void open() })
 
@@ -84,7 +91,10 @@ export function IVRMenusTab({ createRef }: { createRef?: RefObject<() => void> }
                   {(m.options ?? []).map((o) => `${o.digit}=${o.action}`).join(' · ') || '—'}
                 </TableCell>
                 <TableCell className="text-right">
-                  <Button size="sm" variant="outline" onClick={() => open(m.name)}>{t('edit')}</Button>
+                  <div className="flex gap-1 justify-end">
+                    <Button size="sm" variant="outline" onClick={() => open(m.name)}>{t('edit')}</Button>
+                    <DuplicateButton onClick={() => void openCopy(m.name)} />
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
@@ -99,9 +109,10 @@ export function IVRMenusTab({ createRef }: { createRef?: RefObject<() => void> }
 }
 
 function MenuDialog({ state, policies, onClose }: {
-  state: { menu: IVRMenu; etag: number }; policies: EscalationPolicy[]; onClose: () => void
+  state: { menu: IVRMenu; etag: number; copyOf?: string }; policies: EscalationPolicy[]; onClose: () => void
 }) {
-  const isNew = state.etag === 0 && !state.menu.name
+  // etag 0 = not stored yet: a blank form or a duplicate (stored docs are ≥ 1).
+  const isNew = state.etag === 0
   const [m, setM] = useState<IVRMenu>(state.menu)
   const set = (patch: Partial<IVRMenu>) => setM((prev) => ({ ...prev, ...patch }))
 
@@ -132,7 +143,7 @@ function MenuDialog({ state, policies, onClose }: {
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{isNew ? t('create') : `${t('edit')}: ${state.menu.name}`}</DialogTitle>
+          <DialogTitle>{state.copyOf ? `${t('duplicate')}: ${state.copyOf}` : isNew ? t('create') : `${t('edit')}: ${state.menu.name}`}</DialogTitle>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-3">
           <div className="grid grid-cols-2 gap-3">

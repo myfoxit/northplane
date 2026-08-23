@@ -17,7 +17,8 @@ import { Badge } from '@/components/ui/badge'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-import { Empty, Spinner, Field, FormError, SubmitRow, useSave, DeleteButton, KVEditor } from '@/components/kit'
+import { Empty, Spinner, Field, FormError, SubmitRow, useSave, DeleteButton, KVEditor, DuplicateButton } from '@/components/kit'
+import { duplicateDoc } from '@/lib/duplicate'
 import { t } from '../../i18n'
 import { TypeBadge, StatusBadge, TableActions, RowActions } from './common'
 
@@ -181,6 +182,7 @@ const RETRY_FIELDS: FieldSpec[] = [
 export function ChannelsTab() {
   const { data, isLoading } = useQuery({ queryKey: channelsApi.queryKey, queryFn: channelsApi.list })
   const [editing, setEditing] = useState<Channel | 'new' | null>(null)
+  const [copying, setCopying] = useState<Channel | null>(null)
   return (
     <div className="space-y-4">
       <TableActions onCreate={() => setEditing('new')} label={t('create')} />
@@ -205,6 +207,7 @@ export function ChannelsTab() {
                 <RowActions>
                   <TestButton name={ch.name} />
                   <Button size="sm" variant="ghost" onClick={() => setEditing(ch)}>{t('edit')}</Button>
+                  <DuplicateButton onClick={() => setCopying(ch)} />
                   <ChannelDelete channel={ch} />
                 </RowActions>
               </TableCell>
@@ -215,6 +218,10 @@ export function ChannelsTab() {
       {!isLoading && (data?.length ?? 0) === 0 && <Empty text={t('empty')} />}
       {editing && (
         <ChannelDialog name={editing === 'new' ? null : editing.name} onClose={() => setEditing(null)} />
+      )}
+      {copying && (
+        <ChannelDialog name={copying.name} copy existing={(data ?? []).map((c) => c.name)}
+          onClose={() => setCopying(null)} />
       )}
     </div>
   )
@@ -249,14 +256,18 @@ function ChannelDelete({ channel }: { channel: Channel }) {
   )
 }
 
-function ChannelDialog({ name, onClose }: { name: string | null; onClose: () => void }) {
-  const isNew = !name
+// ChannelDialog: `name` null → create; set → edit; set + `copy` → create a
+// duplicate seeded from that channel (envelope stripped, fresh name).
+function ChannelDialog({ name, copy, existing, onClose }: {
+  name: string | null; copy?: boolean; existing?: string[]; onClose: () => void
+}) {
+  const isNew = !name || !!copy
   const { data: loaded, isLoading } = useQuery({
     queryKey: [...channelsApi.queryKey, name],
     queryFn: () => channelsApi.get(name!),
-    enabled: !isNew,
+    enabled: !!name,
   })
-  if (!isNew && isLoading) {
+  if (name && isLoading) {
     return (
       <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
         <DialogContent className="max-w-2xl">
@@ -268,18 +279,20 @@ function ChannelDialog({ name, onClose }: { name: string | null; onClose: () => 
       </Dialog>
     )
   }
+  const src = loaded?.data
   return (
     <ChannelForm
-      doc={loaded?.data ?? { name: '', type: 'email', enabled: true, config: {} }}
-      etag={loaded?.etag ?? 0}
+      doc={copy && src ? duplicateDoc(src, existing) : (src ?? { name: '', type: 'email', enabled: true, config: {} })}
+      etag={copy ? 0 : (loaded?.etag ?? 0)}
       isNew={isNew}
+      copyOf={copy ? name ?? undefined : undefined}
       onClose={onClose}
     />
   )
 }
 
-function ChannelForm({ doc, etag, isNew, onClose }: {
-  doc: Channel; etag: number; isNew: boolean; onClose: () => void
+function ChannelForm({ doc, etag, isNew, copyOf, onClose }: {
+  doc: Channel; etag: number; isNew: boolean; copyOf?: string; onClose: () => void
 }) {
   const [name, setName] = useState(doc.name)
   const [type, setType] = useState<ChannelType>(doc.type)
@@ -305,7 +318,7 @@ function ChannelForm({ doc, etag, isNew, onClose }: {
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{isNew ? t('create') : `${t('edit')}: ${doc.name}`}</DialogTitle>
+          <DialogTitle>{copyOf ? `${t('duplicate')}: ${copyOf}` : isNew ? t('create') : `${t('edit')}: ${doc.name}`}</DialogTitle>
         </DialogHeader>
         <form onSubmit={(e) => { e.preventDefault(); save.mutate(undefined) }} className="space-y-3">
           <div className="grid grid-cols-2 gap-2">
