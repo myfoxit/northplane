@@ -196,11 +196,7 @@ curl -fsS https://<DOMAIN-or-IP>/readyz       # {"ready":true,"subsystems":[…]
 ## Running the stack by hand
 
 1. Provision the host — Docker CE, the `deploy` user, `/opt/northplane` and `secret.key` — with `deploy/provision-server.sh` (see [Provisioning](/docs/deployment/provisioning/)), or create the equivalent by hand: a directory for the project and a `secret.key` containing 64 hex characters (`openssl rand -hex 32 > secret.key`), owned by `65532:65532`, mode 0600.
-2. Log in to the private registry once on the host (a GitHub personal access token with `read:packages`):
-   ```bash
-   echo "<PAT>" | docker login ghcr.io -u <github-user> --password-stdin
-   ```
-3. Copy the files and create `.env`:
+2. Copy the files and create `.env`:
    ```bash
    cd /opt/northplane
    cp /path/to/repo/deploy/docker-compose.yml docker-compose.yml
@@ -259,4 +255,4 @@ docker compose up -d                                       # https://localhost (
 DOMAIN=monitoring.example.net docker compose up -d         # Let's Encrypt
 ```
 
-Differences to the `deploy/` stack: the image is fixed to `ghcr.io/myfoxit/northplane:latest` (uncomment `build: .` to build from source), `NORTHPLANE_BASE_URL` is derived as `https://${DOMAIN:-localhost}`, the secret key is auto-generated inside the data volume (`/var/lib/northplane/secret.key`), there is no bare-IP site, and an optional commented `db: postgres:16` service plus `NORTHPLANE_STORAGE_DSN` line show how to switch to PostgreSQL. The header comment says "create the admin account (/setup)" — with default variables the server instead seeds `admin@localhost` with a generated password printed once in `docker compose logs northplane`; set `NP_DEFAULT_ADMIN_DISABLED=1` in the `northplane` service environment if you want `/setup`. Details in [Installation](/docs/getting-started/installation/).
+Differences to the `deploy/` stack: the image is fixed to `ghcr.io/myfoxit/northplane:latest` (uncomment `build: .` to build from source), `NORTHPLANE_BASE_URL` is derived as `https://${DOMAIN:-localhost}`, the secret key is auto-generated inside the data volume (`/var/lib/northplane/secret.key`), there is no bare-IP site, and an optional commented `db: postgres:16` service plus `NORTHPLANE_STORAGE_DSN` line show how to switch to PostgreSQL. It sets `NP_DEFAULT_ADMIN_DISABLED: "1"`, so the first visit lands on `/setup` to create the admin account; swap that for `NP_DEFAULT_ADMIN_EMAIL`/`NP_DEFAULT_ADMIN_PASSWORD` for unattended installs. Details in [Installation](/docs/getting-started/installation/).

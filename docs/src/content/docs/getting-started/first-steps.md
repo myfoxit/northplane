@@ -309,9 +309,9 @@ spec: { checkCommand: passive, stalenessAfter: 3m }
 
 Then, on **Admin → Agents**:
 
-1. Copy the binary to the host. The tab's one-liner (`curl … install.sh | sh`) fails while the
-   repository is private; take `np-agent` from the release tarball or your source build and put it
-   in `/usr/local/bin` (Windows: `np-agent.exe` from the zip).
+1. Install the binary on the host with the tab's one-liner (`curl … install.sh | sh`; set
+   `NP_BINARIES=np-agent` to skip the server and CLI), or take `np-agent` from the release tarball
+   or your source build and put it in `/usr/local/bin` (Windows: `np-agent.exe` from the zip).
 2. **Create token** with the host name filled in — it mints a token with exactly the scope
    `objects:write` and pastes it into the `agent.yaml` shown below it.
 3. Write `/etc/northplane/agent.yaml` (Windows: `C:\ProgramData\northplane\agent.yaml`):

@@ -17,7 +17,7 @@ Northplane ships as one static binary, `northplaned`, with the web UI and this d
 | Data directory | `dataDir` (`NORTHPLANE_DATA_DIR`): SQLite `core.db`, monthly `events-YYYYMM.db` segments, `tsdb/`, `artifacts/`, and the fallback `secret.key`. Default `/var/lib/northplane` when running as root; the image declares `VOLUME /var/lib/northplane`. See [Storage](/docs/administration/storage/). |
 | Secret key | `secretKeyFile` (`NORTHPLANE_SECRET_KEY_FILE`): a 32-byte hex master key for secrets at rest (AES-256-GCM). Generated on first start if the file is missing; the production stacks bind-mount a persistent `./secret.key` owned by uid 65532. Lose it and every stored secret is unreadable. See [Secrets](/docs/administration/secrets/). |
 | Admin bootstrap | On **every** start the server seeds a break-glass admin from `NP_DEFAULT_ADMIN_EMAIL` / `NP_DEFAULT_ADMIN_PASSWORD` (random password logged once when the variable is unset) unless `NP_DEFAULT_ADMIN_DISABLED` is set or the password is set-but-empty. Because that happens before the listener opens, `/setup` is closed on a default install; use the interactive `/setup` flow only with the seeding disabled. See [Authentication](/docs/administration/authentication/). |
-| Image | `ghcr.io/myfoxit/northplane` — a **private** package: `docker login ghcr.io` with a personal access token that has `read:packages`. Base `gcr.io/distroless/static-debian12:nonroot` (uid 65532), no shell, `EXPOSE 8443`, `ENTRYPOINT northplaned`, `CMD serve`. Tags: `main-<sha12>` per green build of `main`, `latest`, and semver tags from releases. |
+| Image | `ghcr.io/myfoxit/northplane` — public, no login needed. Base `gcr.io/distroless/static-debian12:nonroot` (uid 65532), no shell, `EXPOSE 8443`, `ENTRYPOINT northplaned`, `CMD serve`. Tags: `main-<sha12>` per green build of `main`, `latest`, and semver tags from releases. |
 | Configuration | `config.yaml` (`-config`, default `/etc/northplane/config.yaml` as root) or `NORTHPLANE_*` environment variables; env wins over file. The container stacks use env only. See [Configuration](/docs/administration/configuration/). |
 
 ## Deployment variants
@@ -50,7 +50,7 @@ Federation is orthogonal to all of these: an **edge** instance at a customer sit
 4. **An admin.** Either the break-glass admin (`NP_DEFAULT_ADMIN_EMAIL` + `NP_DEFAULT_ADMIN_PASSWORD`) or `/setup` with seeding disabled. Change the seeded password after the first login.
 5. **Reachable ports** — only the ones you use (table below). The app container itself publishes nothing but 8443; everything else is opt-in.
 6. **Backups.** There is no periodic backup loop in the server (`backup.interval` is parsed but unused); back up `secret.key` and the data volume yourself, or run `northplaned backup` on demand. See the [operations runbook](/docs/deployment/operations/).
-7. **Pull access** to the private GHCR package (a PAT with `read:packages`), or build the image yourself with `docker build --build-arg VERSION=… .` / `make docker`.
+7. **The image** — `docker pull ghcr.io/myfoxit/northplane:latest` (public), or build it yourself with `docker build --build-arg VERSION=… .` / `make docker`.
 
 ## The demo / real switch
 

@@ -97,26 +97,23 @@ Guest list verified 2026-08-23; service details from the lab notes (see the [ope
 
 | Path | Who / how |
 |---|---|
-| Hypervisor `51.83.96.40` | `root` by SSH key (the operator's key); Proxmox web UI on 8006 is IP-allowlisted in `cluster.fw` — use `ssh -N -L 8006:127.0.0.1:8006 root@51.83.96.40` → `https://localhost:8006`, realm `pam` |
+| Hypervisor `51.83.96.40` | `root` by SSH key (the operator's key); the Proxmox web UI (8006) is not exposed — use `ssh -N -L 8006:127.0.0.1:8006 root@51.83.96.40` → `https://localhost:8006` |
 | VMs (`saas1`–`saas4`) | user `rocky` with sudo, via the jump host: `ssh -J root@51.83.96.40 rocky@10.10.10.1X` (the VMs trust a different key than the hypervisor) |
 | CT100 Caddy | no SSH key inside; `ssh root@51.83.96.40 -t 'pct enter 100'` |
 | CI → VM101 | `deploy@51.83.96.40 -p 2201` (DNAT → `10.10.10.11:22`) with the `DEPLOY_SSH_KEY` secret; `deploy` is in the `docker` group (root-equivalent on that VM) |
-| GitHub repository | private; whoever administers `myfoxit/northplane` controls variables/secrets and therefore production (`.env` is rendered from them). `NORTHPLANE_DEMO` is the only variable expected to change |
-| GHCR image | private package; a PAT with `read:packages` pulls it; the pipeline uses its `GITHUB_TOKEN` |
+| GitHub repository | public; whoever administers `myfoxit/northplane` controls variables/secrets and therefore production (`.env` is rendered from them). `NORTHPLANE_DEMO` is the only variable expected to change |
+| GHCR image | public package; the pipeline pushes with its `GITHUB_TOKEN` |
 | Application admin | break-glass `admin@doktrace.com` on np-01 (instance-wide admin); tenant MyFoxIT has its own users; `/register` creates `viewer` accounts for anyone |
 | Agents | API tokens with scope `objects:write` in `/etc/northplane/agent.yaml` on each host (root-readable files) |
 
 ## Open items
 
 1. **np-02 is gone** — repoint `deploy-hetzner` to a new box or remove it; the `HETZNER_*` variables/secrets are stale. Until then every Deploy run is red although production deploys fine. ([Provisioning](/docs/deployment/provisioning/#np-02-recreation-checklist))
-2. **No backups of production** — no `vzdump` job on the Proxmox host, no periodic application backup; `secret.key` and the data volume are single copies. ([Operations → Backups](/docs/deployment/operations/#backups))
+2. **Schedule production backups** — there is no automated job yet; `secret.key` and the data volume need regular off-host copies. ([Operations → Backups](/docs/deployment/operations/#backups))
 3. **Trap/ESPA/FastAGI ports not published on np-01** — `9162/udp`, `2023`, `8123`, `4573` exist only in an unmerged branch of `deploy/docker-compose.vm.yml`; event sources listening on them cannot be reached from the lab network.
 4. **Confirm `/docs/` on doktrace.com after the next deploy** — the image verified on 2026-08-23 08:50 UTC predates the docs embedding; the first Deploy run after the docs merge serves it (check `https://doktrace.com/docs/`).
-5. **Agent install one-liner 404s** — **Admin → Agents** shows `curl -fsSL https://raw.githubusercontent.com/myfoxit/northplane/main/install.sh | sh`, which fails for anonymous users because the repository is private (known issue AGENT-1). ([Roadmap and known issues](/docs/project/roadmap-and-known-issues/))
-6. **Public signup is on** (`NORTHPLANE_ALLOW_SIGNUP=true`, hard-coded in the deploy workflow) — intentional for the showcase; revisit for a customer-facing instance. ([Security](/docs/administration/security/))
-7. **Cloudflare is bypassable** — the origin answers direct connections; Cloudflare's WAF is not a security boundary for the instance.
-8. **`DEPLOY_DOMAIN` variable is unused** by any workflow (informational only).
-9. **Proxmox UI allowlist churns** — the operator's source IP changes; the SSH tunnel is the durable access path.
-10. **Known CI flake** — the `postgres` job's `TestAuditChain` failure (jsonb normalisation) is non-blocking; re-run failed jobs with `gh run rerun --failed <id>` when other jobs flake.
+5. **Public signup is on** (`NORTHPLANE_ALLOW_SIGNUP=true`, hard-coded in the deploy workflow) — intentional for the showcase; revisit for a customer-facing instance. ([Security](/docs/administration/security/))
+6. **`DEPLOY_DOMAIN` variable is unused** by any workflow (informational only).
+7. **Known CI flake** — the `postgres` job's `TestAuditChain` failure (jsonb normalisation) is non-blocking; re-run failed jobs with `gh run rerun --failed <id>` when other jobs flake.
 
 Related: [Deployment overview](/docs/deployment/overview/), [Proxmox VM](/docs/deployment/proxmox-vm/), [CI/CD](/docs/deployment/ci-cd/), [Provisioning](/docs/deployment/provisioning/), [Operations](/docs/deployment/operations/).

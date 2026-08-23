@@ -1,10 +1,14 @@
-# Northplane behind a TLS-terminating Caddy proxy.
+# Northplane — one-command trial or small production install:
 #
-#   Local trial:   docker compose up -d          → https://localhost  (self-signed)
-#   Production:    DOMAIN=monitoring.example.net docker compose up -d
-#                  (public DNS → this host; Caddy fetches a Let's Encrypt cert)
+#   git clone https://github.com/myfoxit/northplane && cd northplane
+#   docker compose up -d                                     → https://localhost
+#   DOMAIN=monitoring.example.net docker compose up -d      → Let's Encrypt cert
 #
-# First run: open the URL in a browser and create the admin account (/setup).
+# Caddy terminates TLS (internal self-signed cert for localhost, automatic
+# Let's Encrypt once DOMAIN has a public DNS record pointing here) and proxies
+# to northplaned inside the compose network. First run: open the URL and create
+# your admin account on /setup. Data (SQLite, metrics, secret key) lives in the
+# northplane-data volume — back it up.
 
 services:
   northplane:
@@ -15,6 +19,10 @@ services:
       NORTHPLANE_LISTEN: ":8443"
       NORTHPLANE_TRUST_PROXY: "true" # Caddy terminates TLS and sets X-Forwarded-*
       NORTHPLANE_BASE_URL: "https://${DOMAIN:-localhost}"
+      # Keep the interactive /setup page open on first start instead of seeding
+      # a break-glass admin with a generated password (set NP_DEFAULT_ADMIN_EMAIL
+      # + NP_DEFAULT_ADMIN_PASSWORD instead for unattended installs).
+      NP_DEFAULT_ADMIN_DISABLED: "1"
       # NORTHPLANE_STORAGE_DSN: "postgres://np:np@db:5432/northplane?sslmode=disable"
     volumes:
       - northplane-data:/var/lib/northplane

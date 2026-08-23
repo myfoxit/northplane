@@ -37,10 +37,9 @@ The agent is a single static binary with no dependencies (it does not read the s
    np-agent -version
    ```
 
-   :::caution
-   The one-liner shown in **Admin → Agents** needs the repository to be public. While the
-   repository is private it answers 404 for anonymous clients — download the release asset with
-   an authenticated client (`gh release download`) or copy the binary from an existing host.
+   :::tip
+   `NP_BINARIES=np-agent curl -fsSL … | sh` installs only the agent; `NP_VERSION=vX.Y.Z` pins a
+   release. Both are documented in [Installation](/docs/getting-started/installation/#installsh).
    :::
 
 2. **Create the host and its services on the server** — the agent does not create anything

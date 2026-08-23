@@ -15,7 +15,6 @@ This page is the single list of things that do not (yet) work as the rest of the
 |---|---|---|---|
 | RBAC-1 | Admin tabs and action buttons are not aligned with the user's permissions — a tenant user sees Tenants/Sites/AI providers/System health/Config bundles with **Create** buttons that `403` | High | Bug |
 | RBAC-2 | Those tabs fire `403` requests in the background (`/roles?limit=500`, `/tenants`, `/ai/policy`) and render empty tables instead of a "no access" state | High | Bug |
-| AGENT-1 | The Admin → Agents install one-liner points at `raw.githubusercontent.com/myfoxit/northplane/main/install.sh` — a private repository, `404` for anyone else | High | Bug |
 | NTF-7 | SNMPv3 trap credentials entered in the UI (`v3AuthSecretRef`/`v3PrivSecretRef`) are never read by the trap listener (`v3AuthPass`/`v3PrivPass`) | High | Bug |
 | DEP-1 | The second production box `np-02` (Hetzner, 91.98.92.10) is gone — the IP was reassigned; the `deploy-hetzner` job fails on every run and the GitHub variables point at a stranger's host | High | Bug |
 | NAV-1 | The 21-tab Admin strip runs off the right edge; it scrolls horizontally but the audit found no visible scroll affordance ("Dead-Letters…" cut off) | High | UX |
@@ -86,7 +85,7 @@ See [Tenancy and RBAC](/docs/concepts/tenancy-rbac/) and [Users, roles and permi
 
 | ID | Severity | Description | Notes |
 |---|---|---|---|
-| AGENT-1 | High · Bug | The Agents tab's install command targets a private repository (`404`). | Install from a release tarball — [Agent](/docs/monitoring/agent/). |
+| AGENT-1 | Low · Doc | The Agents tab's install one-liner 404'd while the repository was private; it works since the repository and the releases are public. Kept for the record. | — |
 | AGT-2 | Medium · Doc | The Agents tab says the host "appears automatically under Objects"; the server rejects results for unknown hosts. | Create hosts/services first (UI, API, bundle, discovery). |
 | AGT-3 | Medium · Doc | An agent batch that grows beyond the server's 1 MiB JSON cap is not handled in code (potential stuck buffer after a long outage). Inferred from code, not reproduced. | Keep `interval` and collector counts reasonable on flaky links. |
 | AGT-4 | Low · Enhancement | No mTLS / enrollment (join/CA) flow — explicitly roadmap in the agent's source. No listener rate limiting or IP allow-listing, no SIGHUP config reload, no Windows service wrapper (`sc.exe` runs the console binary), and the systemd unit's `DynamicUser=yes` versus the readability of `/etc/northplane/agent.yaml` is not addressed. | |
@@ -179,12 +178,12 @@ Further fixes from the same pass worth knowing: report preview uses `POST …:re
 | ID | Severity | Description | Notes |
 |---|---|---|---|
 | DEP-1 | High · Bug | `np-02` (Hetzner standalone box, 91.98.92.10) no longer exists: TCP/22 times out and the IP serves a parking page. The `deploy-hetzner` job fails at "Ship compose stack" on every Deploy run; `HETZNER_HOST`/`HETZNER_KNOWN_HOSTS` point at a stranger's host. | A red Deploy run does **not** mean production missed the rollout — `deploy` (np-01) is independent and green. Re-provision a new box and rotate the `HETZNER_*` variables/secrets, or remove the job. [Environments](/docs/deployment/environments/), [Provisioning](/docs/deployment/provisioning/) |
-| DEP-2 | Medium · Doc | The default-admin seeding closes `/setup` on default installs: with default env the server seeds `admin@localhost` with a generated password. The Compose file header still says "open the URL … create the admin account (/setup)". | Read the generated password from the logs, set `NP_DEFAULT_ADMIN_EMAIL/PASSWORD`, or set `NP_DEFAULT_ADMIN_DISABLED=1` to use `/setup`. [Authentication](/docs/administration/authentication/) |
+| DEP-2 | Low · Doc | The default-admin seeding closes `/setup` on a bare default install (the server seeds `admin@localhost` with a generated password); the root `docker-compose.yml` sets `NP_DEFAULT_ADMIN_DISABLED` so `/setup` works there. | Read the generated password from the logs, set `NP_DEFAULT_ADMIN_EMAIL/PASSWORD`, or set `NP_DEFAULT_ADMIN_DISABLED=1` to use `/setup`. [Authentication](/docs/administration/authentication/) |
 | DEP-3 | Medium · Enhancement | No periodic backup: `backup.interval` is parsed but no scheduler uses it; only `northplaned backup` on demand. No vzdump job on the production Proxmox host. | Back up `secret.key` and the data volume yourself. [Operations](/docs/deployment/operations/) |
-| DEP-4 | Medium · Doc | The generated systemd unit (`northplaned init`) sets `WatchdogSec=60` although `northplaned` never sends sd_notify, and it assumes a pre-existing `northplane` system user that `init` does not create. Unverified on a systemd host. | Check the journal after the first start; drop `WatchdogSec` if the service is restarted every minute. [Installation](/docs/getting-started/installation/) |
+| DEP-4 | Low · Doc | Fixed: `northplaned init` now creates the service user, installs the unit into `/etc/systemd/system` and no longer sets `WatchdogSec`. Kept for the record. | [Installation](/docs/getting-started/installation/#set-up-as-a-service-with-northplaned-init) |
 | DEP-5 | Low · Doc | The `TLSConfig` comment mentions autocert, but no ACME implementation exists — TLS termination in production is Caddy's job. | [TLS and proxy](/docs/administration/tls-and-proxy/) |
 | DEP-6 | Low · Doc | The production Compose stack does not publish 9162/udp (traps), 2023 (ESPA), 8123 (ESPA-X) or 4573 (FastAGI); those inputs are unavailable on `np-01` until the ports are added. | [Proxmox VM](/docs/deployment/proxmox-vm/) |
-| DEP-7 | Low · Doc | The container image (`ghcr.io/myfoxit/northplane`) and the repository are private — pulls and `install.sh` need credentials. Cloudflare in front of doktrace.com blocks Python user agents. | |
+| DEP-7 | Low · Doc | Cloudflare in front of doktrace.com blocks Python user agents (HTTP 403) — scripts need a curl-like `User-Agent`. | |
 | DEP-8 | Low · Doc | `/register` is publicly enabled on production (`NORTHPLANE_ALLOW_SIGNUP=true`, creates viewers). | Intentional for the showcase; turn off for private instances. |
 
 ## Development and documentation

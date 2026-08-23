@@ -1,0 +1,41 @@
+name: Bug report
+description: Something does not work the way the documentation says it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for the report. Please check the [known issues](https://doktrace.com/docs/project/roadmap-and-known-issues/) first — it may already be listed.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`northplaned version`, the image tag (`ghcr.io/myfoxit/northplane:…`) or the commit"
+      placeholder: "1.0.0 / main-c3c77726de81"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How is it installed?
+      options: [Binary + systemd, Docker, Docker Compose (bundled Caddy), Behind my own proxy, make dev, Other]
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, what happened instead. Logs (`journalctl -u northplaned`, `docker compose logs northplane`) help a lot — redact tokens and passwords.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Create a host with checkCommand builtin:http …
+        2. …
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: OS / distribution, storage backend (SQLite or PostgreSQL), browser for UI issues, reverse proxy if any.
