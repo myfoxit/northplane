@@ -39,6 +39,7 @@ type Config struct {
 	AI         AIConfig         `yaml:"ai"`
 	Backup     BackupConfig     `yaml:"backup"`
 	Federation FederationConfig `yaml:"federation"`
+	TTS        TTSConfig        `yaml:"tts"`
 
 	// DeadManURL: outgoing heartbeat ping (healthchecks.io-compatible,
 	// SPEC §14.2 / P7). Empty = disabled.
@@ -71,6 +72,32 @@ type Config struct {
 	// the viewer role only — an admin promotes them afterwards. Off by
 	// default: most installs are invite-only (SPEC §13.2 stays intact).
 	AllowSignup bool `yaml:"allowSignup"`
+}
+
+// TTSConfig holds server-wide text-to-speech settings; the per-tenant
+// voice/engine choices live in tts-profile resources.
+type TTSConfig struct {
+	// Commands is the allowlist for the "command" engine: bare executable
+	// names (resolved via PATH) or exact absolute paths a tts-profile may
+	// run (profiles only need config:write, so arbitrary commands are not
+	// permitted by default). Empty = built-in list of known TTS binaries
+	// (piper, espeak-ng, flite, say, mimic3, …); ["*"] = any.
+	Commands []string `yaml:"commands"`
+	// CacheDir stores synthesized audio (default <dataDir>/tts-cache).
+	CacheDir string `yaml:"cacheDir"`
+	// CacheMaxMB bounds the cache (default 256 MB); least recently used
+	// clips are evicted first.
+	CacheMaxMB int `yaml:"cacheMaxMb"`
+	// CacheTTL drops clips not used for this long (default 168h).
+	CacheTTL time.Duration `yaml:"cacheTtl"`
+}
+
+// TTSCacheDir returns the synthesized-audio cache directory.
+func (c Config) TTSCacheDir() string {
+	if c.TTS.CacheDir != "" {
+		return c.TTS.CacheDir
+	}
+	return filepath.Join(c.DataDir, "tts-cache")
 }
 
 // StorageConfig selects the relational backend (SPEC §7.3): empty DSN ⇒
@@ -257,6 +284,7 @@ func Defaults() Config {
 		AI:         AIConfig{Provider: "none", Model: "claude-sonnet-4-6"},
 		Backup:     BackupConfig{Interval: 5 * time.Minute},
 		Federation: FederationConfig{Interval: time.Minute},
+		TTS:        TTSConfig{CacheMaxMB: 256, CacheTTL: 7 * 24 * time.Hour},
 	}
 }
 
@@ -444,6 +472,15 @@ func applyEnv(c *Config) {
 	str("NORTHPLANE_SECRET_KEY_FILE", &c.SecretKeyFile)
 	str("NORTHPLANE_BACKUP_TARGET", &c.Backup.Target)
 	str("NORTHPLANE_DEADMAN_URL", &c.DeadManURL)
+	str("NORTHPLANE_TTS_CACHE_DIR", &c.TTS.CacheDir)
+	if v, ok := os.LookupEnv("NORTHPLANE_TTS_COMMANDS"); ok {
+		c.TTS.Commands = nil
+		for _, p := range strings.Split(v, ",") {
+			if p = strings.TrimSpace(p); p != "" {
+				c.TTS.Commands = append(c.TTS.Commands, p)
+			}
+		}
+	}
 	if v, ok := os.LookupEnv("NORTHPLANE_EXEC_POOL_SIZE"); ok {
 		if n, err := strconv.Atoi(v); err == nil {
 			c.ExecPoolSize = n
@@ -538,6 +575,13 @@ ai:
 backup:
   target: ""          # directory for continuous backup; empty = disabled
   interval: 5m
+
+# Text-to-speech for voice alarms (engines/voices are tts-profile resources).
+#tts:
+#  commands: [piper, espeak-ng, flite, say]   # executables the "command" engine may run; ["*"] = any
+#  cacheDir: ""        # synthesized audio cache, default <dataDir>/tts-cache
+#  cacheMaxMb: 256
+#  cacheTtl: 168h
 
 #deadManUrl: "https://hc-ping.com/<uuid>"   # SPEC §14.2 dead-man switch
 `

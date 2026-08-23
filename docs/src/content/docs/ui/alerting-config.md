@@ -1,13 +1,13 @@
 ---
 title: Alerting configuration and other pages
-description: The Alerting page with its four tabs (alert rules with the inline tester, alert groups, escalation policies with the simulator, IVR menus) and a short tour of the Dashboards, Reports, Business services, Discovery, Maintenance and Templates pages.
+description: The Alerting page with its five tabs (alert rules with the inline tester, alert groups, escalation policies with the simulator, IVR menus, text-to-speech profiles) and a short tour of the Dashboards, Reports, Business services, Discovery, Maintenance and Templates pages.
 sidebar:
   order: 5
 ---
 
-The sidebar entry **Alert rules** (Alarm-Regeln) opens `/alerting`, the page where the alarming pipeline is configured: which events become alerts, how alerts are grouped, who is notified in which order, and what callers hear on the phone. Channels, event sources, contacts and heartbeats are configured under [Admin](/docs/ui/admin/). The page heading follows the active tab; the primary button in the header is **New rule** (Regel anlegen) on the rules tab and **Create** (Anlegen) elsewhere.
+The sidebar entry **Alert rules** (Alarm-Regeln) opens `/alerting`, the page where the alarming pipeline is configured: which events become alerts, how alerts are grouped, who is notified in which order, what callers hear on the phone, and how voice alarms are spoken. Channels, event sources, contacts and heartbeats are configured under [Admin](/docs/ui/admin/). The page heading follows the active tab; the primary button in the header is **New rule** (Regel anlegen) on the rules tab and **Create** (Anlegen) elsewhere.
 
-All four tabs are tenant-scoped config documents: reading needs `objects:read`, creating/updating/deleting needs `config:write` (held by `admin`, not by `operator`). Every dialog saves with `If-Match` optimistic locking and shows "Conflict — please reload." on a `409`/`412`.
+All five tabs are tenant-scoped config documents: reading needs `objects:read`, creating/updating/deleting needs `config:write` (held by `admin`, not by `operator`). Every dialog saves with `If-Match` optimistic locking and shows "Conflict — please reload." on a `409`/`412`.
 
 ## Alert rules tab (Alarm-Regeln)
 
@@ -88,6 +88,21 @@ Data: `GET /api/v1/ivr-menus`. List columns **Name**, **Language** (Sprache), nu
 | for `say`: **Text** | |
 
 An IVR menu is attached to a `voice-inbound` (Twilio) or `asterisk-inbound` (FastAGI) event source under **Admin → Event sources**; the call flow, PIN gate, recording and transcription are described in [Voice and IVR](/docs/alarming/voice-and-ivr/).
+
+## Text-to-speech tab (Sprachausgabe)
+
+Data: `GET /api/v1/tts-profiles`. List columns **Name** (the profile `default` is badged — it applies wherever no profile is named), **Engine**, **Language**, **Language detection** (mode and candidate languages) and **Voice(s)**. The dialog groups:
+
+| Group | Fields |
+|---|---|
+| **Engine** | engine select (`command`, `edge`, `openai`, `elevenlabs`, `azure`, `google`, `polly`, `http`), **Fallback profile**, and the engine's config keys as reported by `GET /api/v1/tts/engines` (secret keys masked, `$SECRET:name$` hint); **More settings** (Weitere Einstellungen) is a key/value editor for anything else |
+| **Voice per language** | **Default language** (e.g. `de-DE`), **Default voice**, **Speaking rate**, the language → voice map, and **Load voices** which fetches the engine's catalogue (`POST /api/v1/tts:voices` with the unsaved profile) — pick a voice per language |
+| **Language detection** | mode `off` / `per message` / `per sentence`, candidate languages |
+| **Pronunciation & normalisation** | lexicon rows (word → spoken as, match case, inside words), regex rows (pattern → replacement), spell-out list, numbers mode and digit threshold, URLs mode, toggles for acronyms, units, symbols, IP addresses, identifiers, built-in lexicon |
+| **Audio** | sample rate, format (PCM / µ-law), attention signal (chime/alert/gong), gain, lead/trail silence, loudness normalisation, silence trimming, cache switch |
+| **Preview** | a test text with **Normalise only** (shows detected language and the text the engine receives — no engine call) and **Listen** (`POST /api/v1/tts:preview` with the unsaved profile; plays the clip inline) |
+
+Everything the tab edits is explained on [Text-to-speech](/docs/alarming/text-to-speech/).
 
 ## Other pages in brief
 

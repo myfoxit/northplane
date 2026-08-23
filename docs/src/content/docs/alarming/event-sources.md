@@ -320,6 +320,7 @@ A Twilio voice webhook: callers reach an IVR menu that can raise alarms, list, a
 | `menu` | built-in | IVR menu resource name; the built-in menu is 1 = raise alarm + record, 2 = list open alarms, 3 = acknowledge |
 | `language` | `en-US` | TTS language; the menu's own `language` wins; prompts are German for any `de*` value |
 | `voice` | — | provider voice, e.g. `Polly.Vicki` |
+| `ttsProfile` | `default` (if it exists) | [TTS profile](/docs/alarming/text-to-speech/) — prompts are synthesized by Northplane and `<Play>`ed |
 | `allowFrom` | all | comma-separated E.164 prefixes; others get `403 np:ingress/caller` |
 | `escalationPolicy` | — | default policy for menu-raised alarms (an IVR option's policy wins) |
 | `severity` | `critical` | default for trigger-alarm options without a severity |
@@ -375,6 +376,8 @@ A FastAGI listener for your own Asterisk/FreePBX — the same IVR menus as `voic
 | `menu` | built-in | IVR menu name |
 | `language` | `en` | phrase language (`de*` → German); the menu's language wins |
 | `ttsApp` | — | Asterisk application that speaks its argument (`Flite`, `ESpeak`, a piper wrapper …). Empty = prompt-file mode using the `np-*` sound files |
+| `ttsProfile` | `default` (if it exists) | [TTS profile](/docs/alarming/text-to-speech/) — prompts are synthesized by Northplane and played with `STREAM FILE`; `ttsApp` / prompt files are the fallback |
+| `ttsDir` / `ttsDirPBX` | — | directory shared with the PBX for the clips (else a signed URL via `res_http_media_cache`), and the same directory as the PBX sees it |
 | `escalationPolicy` | — | default policy |
 | `severity` | `critical` | default severity |
 | `allowFrom` | all | caller-id prefixes |

@@ -11,18 +11,25 @@ import (
 )
 
 func TestVoiceTwiML(t *testing.T) {
-	xml := voiceTwiML(`Severity CRITICAL. db & web <down>.`, "en-US", "")
+	xml := voiceTwiML(`Severity CRITICAL. db & web <down>.`, "en-US", "", "")
 	if !strings.Contains(xml, "db &amp; web &lt;down&gt;") {
 		t.Fatalf("unescaped TwiML: %s", xml)
 	}
 	if strings.Contains(xml, "<Gather") {
 		t.Fatalf("no gather without callback URL: %s", xml)
 	}
-	xml = voiceTwiML("Press 4", "de-DE", "https://np.test/api/v1/voice/gather/tok")
+	xml = voiceTwiML("Press 4", "de-DE", "https://np.test/api/v1/voice/gather/tok", "")
 	if !strings.Contains(xml, `<Gather numDigits="1"`) ||
 		!strings.Contains(xml, "voice/gather/tok") ||
-		!strings.Contains(xml, `language="de-DE"`) {
+		!strings.Contains(xml, `language="de-DE"`) ||
+		!strings.Contains(xml, "Keine Eingabe erhalten") {
 		t.Fatalf("gather TwiML: %s", xml)
+	}
+	// synthesized clip → <Play> instead of <Say>
+	xml = voiceTwiML("Press 4", "en-US", "https://np.test/gather", "https://np.test/api/v1/tts/audio/abc.1.def.wav?x=1&y=2")
+	if !strings.Contains(xml, `<Play loop="2">https://np.test/api/v1/tts/audio/abc.1.def.wav?x=1&amp;y=2</Play>`) ||
+		strings.Contains(xml, "<Say language=\"en-US\" loop") {
+		t.Fatalf("play TwiML: %s", xml)
 	}
 }
 

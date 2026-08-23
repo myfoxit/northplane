@@ -13,11 +13,11 @@ Northplane is a phone-capable alarm server in both directions. People can **call
 |---|---|---|
 | Inbound calls | event source `voice-inbound`; Twilio posts webhooks to `/api/v1/voice/inbound/…`, Northplane answers with TwiML | event source `asterisk-inbound`; the dialplan hands the call to Northplane's FastAGI listener (port 4573) |
 | Outbound calls | `voice` channel, `provider: twilio` — TTS + `<Gather>` | `voice` channel, `provider: asterisk` — AMI `Originate` into your dialplan |
-| Speech | Twilio TTS (`language`, optional `voice`) | your TTS app (`ttsApp`, e.g. Flite, eSpeak, a piper wrapper) or pre-recorded `np-*` prompt files |
+| Speech | a [TTS profile](/docs/alarming/text-to-speech/) (`<Play>` of Northplane-synthesized clips) or Twilio TTS (`language`, optional `voice`) | a [TTS profile](/docs/alarming/text-to-speech/) (`STREAM FILE` / `NP_AUDIO_URL`), your TTS app (`ttsApp`, e.g. Flite, eSpeak, a piper wrapper) or pre-recorded `np-*` prompt files |
 | Keypad ack on outbound calls | `4` = acknowledge, `6` = resolve via the signed gather callback | the dialplan posts to the same callback (`NP_ACK_URL`) |
 | Inbound SMS | event source `sms-inbound` (Twilio messaging webhook) | — |
 
-Channel configuration keys are listed on [Notification channels](/docs/alarming/channels/); the generic event-source fields (`authMode`, `secretRef`, `rateLimit`, `labels`) are on [Event sources](/docs/alarming/event-sources/); all acknowledgement paths side by side are on [Acknowledge and snooze](/docs/alarming/acknowledge-and-snooze/).
+Channel configuration keys are listed on [Notification channels](/docs/alarming/channels/); the generic event-source fields (`authMode`, `secretRef`, `rateLimit`, `labels`) are on [Event sources](/docs/alarming/event-sources/); all acknowledgement paths side by side are on [Acknowledge and snooze](/docs/alarming/acknowledge-and-snooze/). How the spoken text is produced — engines, voices, language detection, pronunciation rules — is on [Text-to-speech](/docs/alarming/text-to-speech/); this page describes the call flows.
 
 ## IVR menus
 
@@ -107,6 +107,7 @@ spec:
 | `menu` | built-in | IVR menu name |
 | `language` | `en-US` | TTS language when the menu has none |
 | `voice` | — | Twilio `<Say voice>`, e.g. `Polly.Vicki`; the menu's `voice` wins |
+| `ttsProfile` | `default` (if it exists) | [TTS profile](/docs/alarming/text-to-speech/): prompts are synthesized by Northplane and `<Play>`ed instead of `<Say>`d |
 | `allowFrom` | all callers | comma-separated E.164 prefixes (`+49,+43`); only digits and `+` are compared; anything else → `403 np:ingress/caller` |
 | `escalationPolicy` | — | default policy for alarms raised from the menu |
 | `severity` | `critical` | default for `trigger-alarm` options without a severity |
@@ -158,6 +159,8 @@ spec:
 | `menu` | built-in | IVR menu name |
 | `language` | `en` | phrase language in TTS mode (`de*` → German); the menu's `language` wins |
 | `ttsApp` | — | Asterisk application that speaks its argument (`EXEC <ttsApp> "<text>"`), e.g. `Flite`, `ESpeak`, or a Gosub/AGI wrapper around piper. Empty = **prompt-file mode** |
+| `ttsProfile` | `default` (if it exists) | [TTS profile](/docs/alarming/text-to-speech/): prompts are synthesized by Northplane and played with `STREAM FILE` — from `ttsDir` or over a signed URL (`res_http_media_cache`); `ttsApp` / prompt files remain the fallback |
+| `ttsDir` / `ttsDirPBX` | — | directory shared with the PBX for the synthesized clips, and the same directory as the PBX sees it |
 | `escalationPolicy` | — | default policy |
 | `severity` | `critical` | default severity |
 | `allowFrom` | all | comma-separated caller-id prefixes (digits/`+` compared); denied callers see `VERBOSE "northplane: caller not allowed"` and are dropped |
@@ -175,8 +178,9 @@ Point the trunk's inbound route (DID) at the `alarm-line` context. Routing rules
 
 **Conversation.** `ANSWER`; caller id = `agi_callerid`, called number = `agi_dnid`. PIN gate (`GET DATA`, 8 s, **three tries**; trusted contact numbers skip it); greeting; up to **five** menu rounds: options are announced with barge-in (a digit pressed during a prompt is taken), then `WAIT FOR DIGIT` 7 s; no input → goodbye and hang up. `trigger-alarm` speaks "The alarm has been raised…", then with `record: true` records `RECORD FILE <recordDir>/np-<alertId> wav "#" 120000 BEEP` and adds the label `recordingFile=<recordDir>/np-<alertId>.wav` — the audio stays on the PBX. `list-alerts` speaks the index (`SAY NUMBER`) and severity; titles are spoken only in TTS mode. `ack-alert`/`resolve-alert` with several open alarms wait 8 s for the choice. Alert labels: `caller`, `via=asterisk`, then source labels, then option labels; payload `via: asterisk-agi`; dedup key `agi/<agi_uniqueid>`.
 
-**Speech output — two modes.**
+**Speech output — three modes.**
 
+- a TTS profile applies (`ttsProfile`, or a profile named `default`): every prompt, option and alert title is synthesized by Northplane — with language detection and pronunciation rules — and streamed to the caller; see [Text-to-speech](/docs/alarming/text-to-speech/). The two modes below are the fallback when no clip can be produced.
 - `ttsApp` set: every prompt, option and alert title is spoken dynamically through that application. Any app that takes the text as its argument works (`Flite`, `ESpeak`, or a small `Gosub`/`AGI` wrapper that renders piper to a temp file and plays it).
 - `ttsApp` empty: Northplane plays pre-recorded prompt files from the Asterisk sounds directory (e.g. `/var/lib/asterisk/sounds/`) and says digits with `SAY NUMBER`; alert titles are skipped. Record or generate these 20 files once (any format Asterisk can play, e.g. 8 kHz mono `.wav` or `.sln16`):
 
@@ -201,7 +205,7 @@ sox np-greeting-22k.wav -r 8000 -c 1 /var/lib/asterisk/sounds/np-greeting.wav
 
 ## Outbound calls
 
-Outbound calls are notifications through a `voice` channel. The spoken text is the channel template (default `Northplane alert. Severity CRITICAL. <title>. Press 4 to acknowledge, 6 to resolve.`) or, when the alert carries the label **`np.tts`**, exactly that label's value — set it per rule with `setLabels`, per IVR option, or in the manual trigger. The called number is the contact's `phone`.
+Outbound calls are notifications through a `voice` channel. The spoken text is the channel template (default `Northplane alert. Severity CRITICAL. <title>. Press 4 to acknowledge, 6 to resolve.`) or, when the alert carries the label **`np.tts`**, exactly that label's value — set it per rule with `setLabels`, per IVR option, or in the manual trigger. The called number is the contact's `phone`. With a [TTS profile](/docs/alarming/text-to-speech/) (channel key `ttsProfile`, label `np.ttsProfile`, or a profile named `default`) the text is synthesized by Northplane and the providers play the clip — Twilio `<Play>`, Asterisk `NP_AUDIO_URL` / `NP_AUDIO_FILE`, generic `{audioUrl}`; otherwise the providers speak as described below.
 
 <Tabs syncKey="stack">
 <TabItem label="Twilio (cloud)">
@@ -232,7 +236,7 @@ Northplane places the call with inline TwiML:
 </Response>
 ```
 
-The text is read **twice**; one keypress ends the prompt. Without a gather URL (test sends, or no `baseUrl`/ack secret) the call only speaks the text. `language` defaults to `en-US`; a `voice` key is not used for outbound calls. Credentials: `accountSid` plus either `authToken` or (preferred) `apiKeySid` + `apiKeySecret`; `from` is the caller id; `apiBase` overrides the API host. The provider id is the Twilio call `sid`.
+The text is read **twice**; one keypress ends the prompt. Without a gather URL (test sends, or no `baseUrl`/ack secret) the call only speaks the text. `language` defaults to `en-US`; a `voice` key is not used for outbound calls. With a TTS profile the `<Say loop="2">` becomes `<Play loop="2">` of the synthesized clip and the closing phrase follows the detected language. Credentials: `accountSid` plus either `authToken` or (preferred) `apiKeySid` + `apiKeySecret`; `from` is the caller id; `apiBase` overrides the API host. The provider id is the Twilio call `sid`.
 
 </TabItem>
 <TabItem label="Asterisk AMI (on-prem)">
@@ -264,6 +268,7 @@ Northplane logs in to the Asterisk Manager Interface (`Events: off`) and sends `
 | `NP_TEXT` | the spoken text (CR/LF removed, at most 1024 characters) |
 | `NP_SEVERITY` | `CRITICAL`, `WARNING`, `INFO` or `OK` |
 | `NP_ACK_URL` | the signed gather callback (only for real alerts and with `baseUrl` set) |
+| `NP_AUDIO_URL`, `NP_AUDIO_FILE`, `NP_LANG`, `NP_TEXT_SPOKEN` | with a TTS profile: the synthesized clip as signed URL and/or file in `ttsDir`, its language and the normalised text — see [Text-to-speech](/docs/alarming/text-to-speech/) for a dialplan that plays them |
 
 Your dialplan owns speech and keypad handling. A minimal context that speaks the text with Flite, takes one digit and reports `4`/`6` back through the callback (adapt the TTS application and paths to your PBX):
 

@@ -25,6 +25,7 @@ import (
 	"github.com/northplane/northplane/internal/eventbus"
 	"github.com/northplane/northplane/internal/model"
 	"github.com/northplane/northplane/internal/storage"
+	"github.com/northplane/northplane/internal/tts"
 )
 
 // Manager consumes the outbox.
@@ -40,6 +41,9 @@ type Manager struct {
 	Secrets func(tenantID, name string) (string, bool)
 	// SendHook overrides actual transport in tests.
 	SendHook func(channel *model.NotificationChannel, target string, subject, body string) (string, error)
+	// TTS synthesises spoken alarm text for voice channels (nil = the
+	// telephony provider's own speech only).
+	TTS *tts.Service
 
 	statSent, statFailed, statDead atomic.Uint64
 	// statDropped counts immutable notification events that failed to

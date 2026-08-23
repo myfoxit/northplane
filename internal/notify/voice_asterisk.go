@@ -5,7 +5,10 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"log/slog"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -36,12 +39,21 @@ import (
 //	timeoutMs  ring timeout passed to Originate, default 30000
 //	tls        "on" = AMI over TLS (Asterisk tlsenable, port 5039)
 //	insecure   "true" = skip TLS certificate verification
+//	ttsProfile TTS profile for Northplane-side speech (default: "default")
+//	ttsDir     directory shared with the PBX where synthesized clips are
+//	           written (e.g. a bind mount of /var/lib/asterisk/sounds/
+//	           northplane); NP_AUDIO_FILE then names the clip without
+//	           extension for Playback()
+//	ttsDirPBX  the same directory as the PBX sees it (when paths differ)
 //
 // The rendered alert text and ack URL travel as channel variables
 // (NP_TEXT, NP_SEVERITY, NP_ACK_URL) so the dialplan can speak and act
-// on them.
+// on them. With a TTS profile the synthesized announcement is offered
+// as NP_AUDIO_URL (signed, playable by Asterisk ≥ 15 with
+// res_http_media_cache) and/or NP_AUDIO_FILE (ttsDir), plus NP_LANG and
+// NP_TEXT_SPOKEN (the normalised text, for dialplans with their own TTS).
 func (m *Manager) sendAsteriskVoice(ctx context.Context, ch *model.NotificationChannel,
-	to, text string, rc *RenderContext) (string, error) {
+	to, text string, rc *RenderContext, spoken *spokenAudio) (string, error) {
 	host := ch.Config["host"]
 	user := ch.Config["username"]
 	secret := m.resolveSecret(ch.TenantID, ch.Config["secret"])
@@ -109,6 +121,7 @@ func (m *Manager) sendAsteriskVoice(ctx context.Context, ch *model.NotificationC
 	if ack := m.gatherURL(rc); ack != "" {
 		variables = append(variables, "NP_ACK_URL="+amiSanitize(ack))
 	}
+	variables = append(variables, asteriskAudioVars(ch, spoken, m.log)...)
 	if err := amiActionVars(conn, r, "originate", fields, variables); err != nil {
 		return "", fmt.Errorf("asterisk voice: %w", err)
 	}
@@ -210,4 +223,57 @@ func orDefault(s, def string) string {
 		return def
 	}
 	return s
+}
+
+// asteriskAudioVars exposes a synthesized clip to the dialplan: NP_AUDIO_URL
+// (when a public base URL is configured), NP_AUDIO_FILE (when ttsDir is
+// set — the clip is copied there once, named by its cache id), NP_LANG
+// and NP_TEXT_SPOKEN.
+func asteriskAudioVars(ch *model.NotificationChannel, spoken *spokenAudio, log *slog.Logger) []string {
+	if spoken == nil || spoken.res == nil {
+		return nil
+	}
+	var vars []string
+	if spoken.url != "" {
+		vars = append(vars, "NP_AUDIO_URL="+amiSanitize(spoken.url))
+	}
+	if dir := ch.Config["ttsDir"]; dir != "" {
+		if base, err := writeClip(dir, spoken.res.ID, spoken.res.Data); err == nil {
+			pbxDir := orDefault(ch.Config["ttsDirPBX"], dir)
+			vars = append(vars, "NP_AUDIO_FILE="+amiSanitize(filepath.Join(pbxDir, base)))
+		} else if log != nil {
+			log.Warn("asterisk voice: ttsDir write failed", "dir", dir, "err", err)
+		}
+	}
+	if spoken.res.Lang != "" {
+		vars = append(vars, "NP_LANG="+amiSanitize(spoken.res.Lang))
+	}
+	if spoken.res.Text != "" {
+		vars = append(vars, "NP_TEXT_SPOKEN="+amiSanitize(spoken.res.Text))
+	}
+	return vars
+}
+
+// writeClip stores <id>.wav in dir (once) and returns the base name
+// without extension — the form Asterisk's Playback()/STREAM FILE expect.
+func writeClip(dir, id string, data []byte) (string, error) {
+	if id == "" || len(data) == 0 {
+		return "", fmt.Errorf("no clip")
+	}
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, id+".wav")
+	if _, err := os.Stat(path); err == nil {
+		return id, nil
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o640); err != nil { //nolint:gosec // PBX must read the clip
+		return "", err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return "", err
+	}
+	return id, nil
 }

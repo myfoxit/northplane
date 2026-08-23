@@ -34,6 +34,7 @@ import type {
   Incident,
   NPObject,
   Overview,
+  TTSProfile,
 } from './types'
 
 type Schemas = components['schemas']
@@ -105,4 +106,5 @@ export type GeneratedConformance = [
   Expect<ConformsDeep<CheckState, Schemas['CheckState']>>,
   Expect<ConformsDeep<NPObject, Schemas['ObjectView']>>,
   Expect<ConformsDeep<Overview, Schemas['overview']>>,
+  Expect<ConformsDeep<TTSProfile, Schemas['TTSProfile']>>,
 ]

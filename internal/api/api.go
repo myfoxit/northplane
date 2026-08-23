@@ -32,6 +32,7 @@ import (
 	"github.com/northplane/northplane/internal/sse"
 	"github.com/northplane/northplane/internal/storage"
 	"github.com/northplane/northplane/internal/tsdb"
+	"github.com/northplane/northplane/internal/tts"
 )
 
 // API aggregates dependencies and the route table.
@@ -46,6 +47,7 @@ type API struct {
 	Alert   *alerting.Engine
 	Escal   *escalation.Engine
 	Notify  *notify.Manager
+	TTS     *tts.Service // speech for voice alarms (nil in minimal wiring)
 	Auth    *auth.Authenticator
 	OIDC    *auth.OIDC
 	LDAP    *ldap.Syncer // nil when directory sync is unconfigured
@@ -647,6 +649,7 @@ func (a *API) registerAll() {
 	a.registerDiscovery()
 	a.registerWebhookSubs()
 	a.registerTelephony()
+	a.registerTTS()
 	a.registerDirectory()
 	a.registerSites()
 	a.registerAgentConfig()

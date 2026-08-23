@@ -76,6 +76,7 @@ var bundleKindToStorage = map[string]string{
 	"SavedFilter":         storage.KindSavedFilter,
 	"Role":                storage.KindRole,
 	"IVRMenu":             storage.KindIVRMenu,
+	"TTSProfile":          storage.KindTTSProfile,
 }
 
 func (a *API) registerBundles() {

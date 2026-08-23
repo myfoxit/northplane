@@ -25,6 +25,12 @@
 //	                 piper). Empty = prompt-file mode: the operator
 //	                 records/generates the np-* sound files listed in
 //	                 docs/ALARMING.md and dynamic text is skipped.
+//	ttsProfile       Northplane TTS profile (default "default" when it
+//	                 exists): every prompt is synthesized by Northplane
+//	                 and played with STREAM FILE — from ttsDir, or over
+//	                 a signed URL (Asterisk ≥ 15 with res_http_media_cache)
+//	ttsDir           directory shared with the PBX for the clips
+//	ttsDirPBX        the same directory as the PBX sees it
 //	escalationPolicy default policy for phone-raised alarms
 //	severity         default severity (default critical)
 //	allowFrom        comma-separated caller-id prefixes; empty = all
@@ -235,6 +241,10 @@ func (l *listener) serve(conn net.Conn) {
 		src:  src,
 		acts: &apiActions{api: l.api},
 		log:  l.log.With("source", src.Name, "caller", caller),
+	}
+	if l.api != nil && l.api.TTS != nil {
+		conv.tts = l.api.TTS
+		conv.profile = l.api.TTS.Pick(l.ctx, src.TenantID, src.Config["ttsProfile"], nil)
 	}
 	conv.run(l.ctx)
 }

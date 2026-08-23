@@ -77,7 +77,7 @@ See [Tenancy and RBAC](/docs/concepts/tenancy-rbac/) and [Users, roles and permi
 | NTF-4 | Low · UX | The ntfy `url` looks optional in the dialog but delivery fails with "no ntfy target" without it. | |
 | NTF-5 | Low · Doc | Retry backoff jitter is ±10 % (a code comment and the old ALARMING.md say ±20 %); 30 attempts, then dead letter — correct. | [Reliability](/docs/alarming/reliability/) |
 | NTF-8 | Low · Bug | `OutboxItem.channelId` is never populated; dead-letter rows show an empty channel id (the channel is only inside the payload). | |
-| NTF-9 | Low · Doc | The Twilio SMS provider has no `language`; German replies to inbound SMS depend on the **source's** `language`. The `voice` (TTS voice) key is read only by the inbound IVR, not by outbound Twilio calls. | |
+| NTF-9 | Low · Doc | The Twilio SMS provider has no `language`; German replies to inbound SMS depend on the **source's** `language`. The `voice` (Twilio TTS voice) key is read only by the inbound IVR, not by outbound Twilio calls — with a [TTS profile](/docs/alarming/text-to-speech/) voices are chosen per language for both directions. | |
 | NTF-10 | Low · Doc | Ack links are valid until expiry (24 h) rather than one-shot as a comment claims; re-clicking shows the same page, and only `open` alerts are acknowledged. | [Acknowledge and snooze](/docs/alarming/acknowledge-and-snooze/) |
 | NTF-11 | Low · Doc | `NotifyPending`/`NotifyDead` statuses are declared but unused. | |
 

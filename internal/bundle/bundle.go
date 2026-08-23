@@ -34,7 +34,7 @@ type Metadata struct {
 // Known kinds, in apply order (dependencies before dependents).
 var KindOrder = []string{
 	"Tenant", "Role", "TimePeriod", "CheckCommand", "Template",
-	"Contact", "ContactGroup", "Channel", "Schedule", "IVRMenu",
+	"Contact", "ContactGroup", "TTSProfile", "Channel", "Schedule", "IVRMenu",
 	"EscalationPolicy", "EventSource", "AlertGroup", "AlertRule",
 	"Host", "Service", "BusinessService", "Heartbeat",
 	"Dashboard", "Report", "StaticGroup", "WebhookSubscription",

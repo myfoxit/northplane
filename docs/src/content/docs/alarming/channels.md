@@ -260,6 +260,7 @@ spec:
 `provider`: `twilio`, `asterisk` or `generic-http`. With an **empty** provider the channel behaves as `twilio` when `accountSid` is set, otherwise as `generic-http`. Two things apply to every provider:
 
 - The spoken text is the rendered template (default `Northplane alert. Severity {{.Severity}}. {{.Title}}. Press 4 to acknowledge, 6 to resolve.`), **unless** the alert carries the label `np.tts` — then that label's value is spoken instead (set it with a rule's `setLabels`, an IVR option or the manual trigger).
+- **Who speaks:** with a [TTS profile](/docs/alarming/text-to-speech/) — the channel key `ttsProfile`, the alert label `np.ttsProfile`, or a profile named `default` — Northplane synthesizes the text (language detection, pronunciation lexicon, chosen engine/voice) and the provider plays the clip; otherwise, or when every engine fails, the provider speaks as described per provider below.
 - For real alerts (not tests) and when `baseUrl` is configured, a signed callback URL `<baseUrl>/api/v1/voice/gather/<token>` (valid 24 h) is produced; pressing **4** acknowledges, **6** resolves. The mechanics are on [Voice calls and IVR](/docs/alarming/voice-and-ivr/).
 
 **`provider: twilio`**
@@ -268,6 +269,7 @@ spec:
 |---|---|---|
 | `accountSid`, `authToken` / `apiKeySid` + `apiKeySecret`, `from`, `apiBase` | as for SMS | `from` is the caller id |
 | `language` | `en-US` | TwiML `<Say language>` tag, e.g. `de-DE` |
+| `ttsProfile` | `default` (if it exists) | TTS profile; the clip is `<Play>`ed instead of `<Say>`d |
 
 Places `POST {apiBase}/2010-04-01/Accounts/{sid}/Calls.json` with inline TwiML that speaks the text twice inside a one-digit `<Gather>` (10 s) pointing at the callback URL; without a callback URL the text is just spoken twice. Returns the call `sid`. A `voice` key (TTS voice name) is **not** read for outbound calls — it only applies to inbound IVR menus.
 
@@ -286,10 +288,12 @@ Places `POST {apiBase}/2010-04-01/Accounts/{sid}/Calls.json` with inline TwiML t
 | `timeoutMs` | `30000` | ring timeout passed to `Originate` |
 | `tls` | — | `on` = AMI over TLS (TLS 1.2+, Asterisk `tlsenable`) |
 | `insecure` | — | `true` skips certificate verification |
+| `ttsProfile` | `default` (if it exists) | TTS profile; the clip travels as `NP_AUDIO_URL` / `NP_AUDIO_FILE` |
+| `ttsDir` / `ttsDirPBX` | — | directory shared with the PBX for synthesized clips, and the same directory as the PBX sees it |
 
-The call carries the channel variables `NP_TEXT` (spoken text), `NP_SEVERITY` (`CRITICAL`, …) and `NP_ACK_URL` (the gather callback) so the dialplan can speak and acknowledge; a dialplan example is on [Voice calls and IVR](/docs/alarming/voice-and-ivr/). Connection: 10 s dial, 20 s overall deadline, `Login` with `Events: off`, `Originate` with `Async: true`, best-effort `Logoff`; a rejected originate fails with `originate rejected: <message>`. No provider id.
+The call carries the channel variables `NP_TEXT` (spoken text), `NP_SEVERITY` (`CRITICAL`, …) and `NP_ACK_URL` (the gather callback) — plus `NP_AUDIO_URL`, `NP_AUDIO_FILE`, `NP_LANG`, `NP_TEXT_SPOKEN` with a TTS profile — so the dialplan can speak and acknowledge; a dialplan example is on [Voice calls and IVR](/docs/alarming/voice-and-ivr/). Connection: 10 s dial, 20 s overall deadline, `Login` with `Events: off`, `Originate` with `Async: true`, best-effort `Logoff`; a rejected originate fails with `originate rejected: <message>`. No provider id.
 
-**`provider: generic-http`** — HTTP voice gateways: `url` with `{to}`/`{text}` (GET, escaped) or `jsonBody` (POST JSON, unescaped), `username`/`password` (secret) basic auth; HTTP ≥ 300 is an error.
+**`provider: generic-http`** — HTTP voice gateways: `url` with `{to}`/`{text}`/`{audioUrl}` (GET, escaped) or `jsonBody` (POST JSON, unescaped), `username`/`password` (secret) basic auth; HTTP ≥ 300 is an error. `{audioUrl}` is the synthesized clip's signed URL with a TTS profile (empty otherwise), and `{text}` then carries the normalised text.
 
 ```yaml title="channel-voice.yaml"
 kind: Channel
