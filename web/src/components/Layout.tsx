@@ -5,7 +5,7 @@ import { Link, useRouterState, useNavigate } from '@tanstack/react-router'
 import {
   Radar, LayoutDashboard, TriangleAlert, Server, Bell, Siren, Activity, LayoutGrid,
   Network, FileText, Zap, Phone, Wrench, Files, Telescope, Settings, Sparkles, Search, LogOut,
-  Bot,
+  Bot, BookOpen,
 } from 'lucide-react'
 import { t } from '../i18n'
 import { syncPreferencesFromServer } from '../settings'
@@ -126,9 +126,22 @@ export function Layout({ children }: { children: ReactNode }) {
           >
             <Sparkles size={13} /> {t('assistant')} (⌘I)
           </button>
-          <a href="/auth/logout" className="flex items-center gap-1.5 text-xs text-sidebar-foreground/70 hover:text-sidebar-foreground px-1">
-            <LogOut size={12} /> Logout
-          </a>
+          <div className="flex items-center justify-between px-1">
+            {/* The product manual ships inside the binary (internal/docs) and is
+                served publicly at /docs/ — open it in a new tab so the operator
+                keeps their place in the app. */}
+            <a
+              href="/docs/"
+              target="_blank"
+              rel="noopener"
+              className="flex items-center gap-1.5 text-xs text-sidebar-foreground/70 hover:text-sidebar-foreground"
+            >
+              <BookOpen size={12} /> {t('documentation')}
+            </a>
+            <a href="/auth/logout" className="flex items-center gap-1.5 text-xs text-sidebar-foreground/70 hover:text-sidebar-foreground">
+              <LogOut size={12} /> Logout
+            </a>
+          </div>
         </div>
       </aside>
       <main className="flex-1 min-w-0 p-5 overflow-auto">{children}</main>

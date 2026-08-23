@@ -12,6 +12,13 @@ coverage.txt
 /web/node_modules/
 /web/dist/
 
+# Docs site (Astro Starlight): built by `make docs`, staged for go:embed
+/docs/node_modules/
+/docs/dist/
+/docs/.astro/
+/internal/docs/dist/*
+!/internal/docs/dist/.gitkeep
+
 # Fuzz corpora
 testdata/fuzz/
 

@@ -1,0 +1,470 @@
+---
+title: Installation
+description: Every way to install Northplane in depth — release tarball and install.sh, northplaned init with systemd, the distroless Docker image, Docker Compose with bundled Caddy, building from source — plus the platform matrix, the PostgreSQL option, file locations, upgrading and uninstalling.
+sidebar:
+  order: 3
+---
+
+import { Tabs, TabItem, Steps } from '@astrojs/starlight/components';
+
+Northplane is one static binary (`northplaned`) plus the `np` CLI and the `np-agent` host agent.
+Pick the variant that matches how you run services; they all produce the same server with the same
+data layout, so you can start with one and move to another later.
+
+| Variant | Best for | TLS | You get |
+|---|---|---|---|
+| Release tarball (+ `northplaned init`, systemd) | VMs and bare metal, Linux/macOS | your certificate pair, or a reverse proxy with `trustProxy` | `northplaned`, `np`, `np-agent` in `/usr/local/bin` |
+| Docker image | container hosts, Kubernetes, quick trials | your certificate pair, a proxy, or `NORTHPLANE_TLS_INSECURE=true` locally | `northplaned` + `np` in a distroless image (no `np-agent`) |
+| Docker Compose with bundled Caddy | a single box that should just have HTTPS | automatic (Let's Encrypt or an internal CA) | Northplane + Caddy, optional PostgreSQL |
+| Build from source | development, unreleased versions, other platforms | as above | `bin/northplaned`, `bin/np`, `bin/np-agent`, `bin/np-gen` |
+
+The repository `github.com/myfoxit/northplane` and its container package on GHCR are **private** at
+the time of writing. Anonymous downloads fail; you need repository access (and a GitHub personal
+access token with `read:packages` for `docker login ghcr.io`). Everything below assumes you have it
+or build from a checkout.
+
+## Install the binaries or the image
+
+<Tabs syncKey="variant">
+<TabItem label="Release tarball">
+
+### Release assets
+
+Releases are tagged `v*`. Each release carries:
+
+| Asset | Contents |
+|---|---|
+| `northplane_<tag>_linux_amd64.tar.gz`, `northplane_<tag>_linux_arm64.tar.gz` | `northplaned`, `np`, `np-agent`, `LICENSE` |
+| `northplane_<tag>_darwin_amd64.tar.gz`, `northplane_<tag>_darwin_arm64.tar.gz` | `northplaned`, `np`, `np-agent`, `LICENSE` |
+| `northplane_<tag>_windows_amd64.zip` | `np.exe`, `np-agent.exe`, `LICENSE` — **no** `northplaned` (it needs Unix process groups for plugin execution) |
+| `checksums.txt` | `sha256sum` lines for every asset |
+
+The asset name keeps the leading `v` of the tag (`northplane_v1.2.0_linux_amd64.tar.gz`) while the
+version baked into the binaries strips it (`northplaned version` → `northplaned 1.2.0`).
+Binaries are static (`CGO_ENABLED=0`), so they run on any glibc or musl distribution.
+
+### `install.sh`
+
+The repository root contains an installer that resolves the latest release through the GitHub
+API, downloads the matching tarball and `checksums.txt`, verifies the SHA-256, and installs
+`northplaned np np-agent` with mode 0755:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/myfoxit/northplane/main/install.sh | sh
+```
+
+What it does, exactly:
+
+- Supports Linux and macOS on `x86_64`/`amd64` and `aarch64`/`arm64`; needs `curl`, `tar` and
+  `sha256sum` or `shasum`.
+- Installs into `/usr/local/bin`. If that directory is not writable it uses `sudo` **only when
+  `sudo` exists and stdin is a terminal**; in the `curl … | sh` form stdin is the pipe, so a
+  non-root user ends up with `~/.local/bin` (created if missing, with a note if it is not on
+  `PATH`). Run `sh install.sh` from a downloaded copy to get the `sudo` prompt.
+- Is safe to re-run: existing binaries are replaced.
+- Writes no configuration and no service unit; it ends with the hints
+  `northplaned serve  # then open the /setup URL printed in the log` and
+  `sudo northplaned init  # writes config.yaml, secret.key and a systemd unit`.
+
+:::caution[Private repository]
+Both `raw.githubusercontent.com/myfoxit/northplane/main/install.sh` and the releases API return
+**404** to anonymous clients while the repository is private, so the one-liner fails with
+`could not query the latest release`. (The same one-liner is shown on the **Admin → Agents** tab.)
+Download the tarball and `checksums.txt` while logged in to GitHub, or with the GitHub CLI, and
+run the verification and install steps by hand:
+
+```bash
+tag=v1.2.0 os=linux arch=amd64
+gh release download "$tag" --repo myfoxit/northplane \
+  --pattern "northplane_${tag}_${os}_${arch}.tar.gz" --pattern checksums.txt
+grep " northplane_${tag}_${os}_${arch}.tar.gz\$" checksums.txt | sha256sum -c -   # macOS: shasum -a 256 -c -
+tar -xzf "northplane_${tag}_${os}_${arch}.tar.gz"
+sudo install -m 0755 northplaned np np-agent /usr/local/bin/
+northplaned version
+```
+
+At the time of writing the only published release is the pre-release `v0.0.0-rc1` (June 2026);
+the container images tagged `main-<sha>` track the `main` branch and are much newer. If you need
+a current binary, build from source (below).
+:::
+
+A first trial needs no configuration: `northplaned serve` listens on `127.0.0.1:8443` (plain HTTP
+is allowed on loopback) and stores data under your user's data directory. For a permanent install
+continue with [Set up as a service](#set-up-as-a-service-with-northplaned-init).
+
+</TabItem>
+<TabItem label="Docker image">
+
+### Image facts
+
+| Item | Value |
+|---|---|
+| Image | `ghcr.io/myfoxit/northplane` — tags `latest`, `main-<12-char sha>` (pushed for every green CI run of `main`), and for releases `X.Y.Z` and `X.Y`; release images are multi-arch `linux/amd64` + `linux/arm64` |
+| Base | `gcr.io/distroless/static-debian12:nonroot` — **no shell**, runs as uid/gid **65532** |
+| Contents | `/usr/local/bin/northplaned`, `/usr/local/bin/np` (no `np-agent`) with the UI and this documentation embedded |
+| Defaults | `ENV NORTHPLANE_DATA_DIR=/var/lib/northplane`, `ENV NORTHPLANE_LISTEN=:8443`, `VOLUME /var/lib/northplane`, `EXPOSE 8443`, `ENTRYPOINT ["/usr/local/bin/northplaned"]`, `CMD ["serve"]` |
+| Health | probe from outside: `GET /healthz` → `ok`, `GET /readyz` → JSON with subsystems (the image has no shell for a `HEALTHCHECK`) |
+
+Because the listener is bound to all interfaces, the container **refuses to start** unless one of
+these is set: `NORTHPLANE_TLS_CERT_FILE` + `NORTHPLANE_TLS_KEY_FILE` (PEM, readable by uid 65532),
+`NORTHPLANE_TRUST_PROXY=true` (a TLS-terminating proxy in front that sets `X-Forwarded-Proto`), or
+`NORTHPLANE_TLS_INSECURE=true` (development only). The error is
+`no TLS configured on a non-loopback listener — set tls.certFile/keyFile, or trustProxy behind a
+TLS-terminating proxy, or tls.insecure for dev`.
+
+### Run it
+
+```bash
+docker login ghcr.io        # GitHub user + PAT with read:packages
+docker run -d --name northplane --restart unless-stopped \
+  -p 8443:8443 \
+  -v northplane-data:/var/lib/northplane \
+  -v /etc/northplane/certs:/certs:ro \
+  -e NORTHPLANE_TLS_CERT_FILE=/certs/fullchain.pem \
+  -e NORTHPLANE_TLS_KEY_FILE=/certs/privkey.pem \
+  -e NORTHPLANE_BASE_URL=https://monitoring.example.net \
+  ghcr.io/myfoxit/northplane:latest
+```
+
+- Any `config.yaml` key can be set through its `NORTHPLANE_*` environment variable (see
+  [Configuration](/docs/administration/configuration/)); a file mounted at
+  `/etc/northplane/config.yaml` is picked up automatically because that path wins whenever it exists.
+- A bind-mounted data directory must be writable by uid 65532 (`chown 65532:65532 /srv/northplane`).
+  A named volume inherits the ownership from the image.
+- The secrets-at-rest master key defaults to `/var/lib/northplane/secret.key` inside the volume.
+  The production stacks mount a host-side key read-only and point at it with
+  `NORTHPLANE_SECRET_KEY_FILE=/etc/northplane/secret.key`; if that path turns out unusable the server
+  logs `configured secretKeyFile unusable — falling back to the data directory`. Back the key up —
+  without it encrypted secrets are unreadable ([Secrets](/docs/administration/secrets/)).
+- Publish additional ports only for listeners you enable: `9162/udp` (SNMP traps), `2023` (ESPA),
+  `8123` (ESPA-X), `4573` (FastAGI) — see the ports table in the
+  [Deployment overview](/docs/deployment/overview/).
+- Set `NP_DEFAULT_ADMIN_EMAIL` / `NP_DEFAULT_ADMIN_PASSWORD` to choose the break-glass admin, or
+  `NP_DEFAULT_ADMIN_DISABLED=1` to use `/setup`; otherwise read the generated password from
+  `docker logs northplane` ([Quickstart](/docs/getting-started/quickstart/#2-create-the-admin-account)).
+- To run `np` from the image: `docker exec northplane /usr/local/bin/np --server https://127.0.0.1:8443 --insecure --token np_… get hosts`
+  (`http://` when the container runs with `NORTHPLANE_TLS_INSECURE=true`; `--insecure` only skips
+  certificate verification for a certificate that does not match `127.0.0.1`).
+
+Build your own image from a checkout with `make docker` (tags `northplane:<VERSION>`, default
+`1.0.0-dev`) or `docker build --build-arg VERSION=<v> -t northplane .`. The Dockerfile builds the
+UI (Node 22), the documentation and the Go binaries in separate stages.
+
+</TabItem>
+<TabItem label="Docker Compose + Caddy">
+
+### The bundled stack
+
+The repository root ships `docker-compose.yml` and `caddy/Caddyfile`: Northplane on the Compose
+network only, Caddy publishing 80/443 and terminating TLS.
+
+```yaml title="docker-compose.yml (repository root, abbreviated)"
+services:
+  northplane:
+    image: ghcr.io/myfoxit/northplane:latest
+    # build: .          # uncomment to build from source instead of the published image
+    restart: unless-stopped
+    environment:
+      NORTHPLANE_LISTEN: ":8443"
+      NORTHPLANE_TRUST_PROXY: "true"   # Caddy terminates TLS and sets X-Forwarded-*
+      NORTHPLANE_BASE_URL: "https://${DOMAIN:-localhost}"
+      # NORTHPLANE_STORAGE_DSN: "postgres://np:np@db:5432/northplane?sslmode=disable"
+    volumes:
+      - northplane-data:/var/lib/northplane
+    expose:
+      - "8443"
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [northplane]
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMAIN: "${DOMAIN:-localhost}"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://northplane:8443/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+volumes:
+  northplane-data:
+  caddy-data:
+  caddy-config:
+```
+
+```text title="caddy/Caddyfile"
+# DOMAIN=localhost (default) → Caddy issues an internal self-signed cert.
+# DOMAIN=monitoring.example.net (public DNS → this host) → automatic Let's Encrypt.
+{$DOMAIN:localhost} {
+	reverse_proxy northplane:8443
+}
+```
+
+<Steps>
+
+1. Get the two files (clone the repository or copy them) and log in to GHCR — or uncomment
+   `build: .` to build the image from the checkout.
+
+2. Local trial: `docker compose up -d` → `https://localhost` with Caddy's internal CA (accept the
+   browser warning once). Production: `DOMAIN=monitoring.example.net docker compose up -d` with an A
+   record pointing at the host and ports 80/443 reachable — Caddy obtains and renews a Let's Encrypt
+   certificate. `NORTHPLANE_BASE_URL` follows `DOMAIN` automatically.
+
+3. First login: the stack sets no `NP_DEFAULT_ADMIN_*` variables, so the server seeds
+   `admin@localhost` with a generated password — `docker compose logs northplane | grep -i "seeded
+   default admin"`. To use `/setup` instead, add `NP_DEFAULT_ADMIN_DISABLED: "1"` to the
+   `environment:` block before the first start.
+
+4. Watch it: `docker compose ps`, `docker compose logs -f northplane`, `docker compose logs -f caddy`
+   (ACME activity). Caddy's healthcheck probes `http://northplane:8443/healthz` every 30 s because
+   the distroless Northplane container cannot probe itself.
+
+</Steps>
+
+Optional PostgreSQL: uncomment the `db` service (`postgres:16`, volume `pg-data`), set
+`NORTHPLANE_STORAGE_DSN` and add `db` to `depends_on` — see [PostgreSQL](#postgresql-instead-of-sqlite).
+
+The `deploy/` directory holds the CI-managed production variants of the same idea:
+`deploy/docker-compose.yml` + `deploy/Caddyfile` (bundled Caddy with `DOMAIN`, a bare-IP
+`https://{$SERVER_IP}` site with an internal certificate, `ACME_EMAIL`, a host-side `secret.key`
+bind mount, separate data directories for demo and real mode) and `deploy/docker-compose.vm.yml`
+(no Caddy — an external proxy terminates TLS). They are documented in
+[Docker Compose deployment](/docs/deployment/docker-compose/) and
+[Proxmox VM](/docs/deployment/proxmox-vm/).
+
+</TabItem>
+</Tabs>
+
+## Set up as a service with `northplaned init`
+
+`northplaned init` writes a configuration directory for a permanent install. Run it as root on the
+target host:
+
+```bash
+sudo northplaned init                     # --dir /etc/northplane --data /var/lib/northplane
+```
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--dir` | `/etc/northplane` as root; `~/.config/northplane` (macOS: `~/Library/Application Support/northplane`) otherwise | configuration directory |
+| `--data` | `/var/lib/northplane` as root; `~/.local/share/northplane` / `$XDG_DATA_HOME/northplane` (macOS: `~/Library/Application Support/northplane`) otherwise | data directory written into the config |
+
+It creates both directories (0750) and writes three files; it **refuses to overwrite** an existing
+`config.yaml` (`<path> exists — refusing to overwrite`):
+
+| File | Mode | Content |
+|---|---|---|
+| `<dir>/config.yaml` | 0640 | the commented bootstrap template: `listen: "127.0.0.1:8443"`, `dataDir`, `secretKeyFile`, empty `storage.dsn` (= SQLite), empty `tls`, commented `oidc`/`ldap`/`federation` blocks, `ai.provider: none`, `backup.target: ""`. Shown verbatim in [Configuration](/docs/administration/configuration/). |
+| `<dir>/secret.key` | 0600 | 32 random bytes as 64 hex characters — the AES-256-GCM master key for secrets at rest. **Back it up.** |
+| `<dir>/northplaned.service` | 0644 | the systemd unit below; copy it to `/etc/systemd/system/` |
+
+```ini title="/etc/northplane/northplaned.service (generated)"
+[Unit]
+Description=Northplane monitoring server
+After=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/northplaned serve -config /etc/northplane/config.yaml
+Restart=on-failure
+WatchdogSec=60
+User=northplane
+StateDirectory=northplane
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/northplane
+
+[Install]
+WantedBy=multi-user.target
+```
+
+The command ends with:
+
+```text
+next steps:
+  1. review /etc/northplane/config.yaml (TLS, storage backend, OIDC)
+  2. systemctl enable --now northplaned
+  3. open /setup in the browser to create the admin account
+     (or headless: northplaned bootstrap-admin -config /etc/northplane/config.yaml)
+```
+
+:::caution[Two things the generated unit does not do for you]
+- The unit runs as `User=northplane`, but `init` does **not** create that account. Create it and
+  give it the files before the first start.
+- `WatchdogSec=60` tells systemd to expect `WATCHDOG=1` keep-alive pings, and `northplaned` does
+  not send any (it has no sd_notify integration). systemd's documented behaviour is to terminate
+  the service with `SIGABRT` when the pings stay out for 60 s, after which `Restart=on-failure`
+  starts it again — a restart loop. If `journalctl -u northplaned` shows watchdog timeouts,
+  delete the `WatchdogSec=60` line.
+:::
+
+A complete first start on a systemd host:
+
+<Steps>
+
+1. Install the binaries (tarball or source build) and run `sudo northplaned init`.
+
+2. Create the service user and hand over the files:
+
+   ```bash
+   sudo useradd --system --home-dir /var/lib/northplane --shell /usr/sbin/nologin northplane
+   sudo chown -R northplane:northplane /var/lib/northplane
+   sudo chgrp northplane /etc/northplane /etc/northplane/config.yaml
+   sudo chown northplane:northplane /etc/northplane/secret.key   # keep mode 0600
+   ```
+
+   If `secret.key` is not readable by the service user, the server warns
+   `configured secretKeyFile unusable — falling back to the data directory` and generates a second
+   key under `/var/lib/northplane/secret.key` — workable, but then the key in `/etc/northplane` is
+   not the one in use.
+
+3. Review `/etc/northplane/config.yaml`. To serve the network set `listen: ":8443"` **and** either
+   `tls.certFile`/`tls.keyFile` or `trustProxy: true` behind a TLS-terminating proxy; the loopback
+   default exists so that plaintext is never exposed by accident. Set `baseUrl` to the public URL
+   (used in notification links, ack links and OIDC redirects). Keys and defaults:
+   [Configuration](/docs/administration/configuration/), TLS options:
+   [TLS and proxy](/docs/administration/tls-and-proxy/).
+
+4. Install and start the unit (remove `WatchdogSec=60` per the caution above):
+
+   ```bash
+   sudo cp /etc/northplane/northplaned.service /etc/systemd/system/northplaned.service
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now northplaned
+   journalctl -u northplaned -f
+   ```
+
+   Environment variables such as `NP_DEFAULT_ADMIN_DISABLED=1` or `NP_DEFAULT_ADMIN_PASSWORD=…` go
+   into a drop-in (`sudo systemctl edit northplaned` → `[Service]` / `Environment=…`).
+
+5. Create the admin: open `https://<host>/setup` (only open while no local user and no API token
+   exist and the default-admin seeding is disabled — see
+   [Quickstart](/docs/getting-started/quickstart/#2-create-the-admin-account)), or run
+   `sudo -u northplane northplaned bootstrap-admin -config /etc/northplane/config.yaml` for a
+   headless `*:*` token.
+
+</Steps>
+
+No SIGHUP reload exists: configuration changes need `systemctl restart northplaned`. Shutdown is
+graceful (SIGTERM, 30 s budget for in-flight requests and workers).
+
+## Build from source
+
+Prerequisites: **Go 1.25** and **Node.js 22** (npm). The Go build is CGO-free (pure-Go SQLite), so
+no C toolchain is needed.
+
+```bash
+git clone https://github.com/myfoxit/northplane.git && cd northplane
+make all          # = make web (UI) + make docs (this manual) + make build
+./bin/northplaned version
+```
+
+| Target | What it does |
+|---|---|
+| `make web` | `npm ci` + Vite build in `web/`, copies `web/dist` to `internal/web/dist` (embedded via `go:embed`) |
+| `make docs` | `npm ci` + Astro/Starlight build in `docs/` (fails on broken links), stages `docs/dist` into `internal/docs/dist` |
+| `make build` | `go build -ldflags "-X main.version=$(VERSION)"` → `bin/northplaned`, `bin/np`, `bin/np-agent`, `bin/np-gen`; `VERSION` defaults to `1.0.0-dev` |
+| `make docker` | builds the container image `northplane:$(VERSION)` |
+| `make test` / `make race` | `go vet` + `go test` (CI runs the race detector) |
+| `make dev` | hot-reload development loop: Vite on `:5173`, auto-rebuilt backend on `127.0.0.1:8443`, demo data seeded (`NP_DEV_DEMO=0` to skip) |
+
+A plain `go build ./cmd/northplaned` also works, but it embeds whatever `internal/web/dist` is
+committed (which may be stale) and no documentation — `/docs/` then answers `501 documentation not
+embedded in this build — run make docs`. Release-style static cross builds:
+
+```bash
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath \
+  -ldflags "-s -w -X main.version=1.2.0" -o northplaned ./cmd/northplaned
+```
+
+Cross-compiling `northplaned` for Windows is not supported (CI skips it); `np` and `np-agent` build
+for `windows/amd64`. The development workflow (worktrees, lint, tests, e2e) is described in
+[Development setup](/docs/development/setup/).
+
+## Platform matrix
+
+| | Linux amd64 / arm64 | macOS amd64 / arm64 | Windows amd64 |
+|---|---|---|---|
+| `northplaned` | yes — tarball, container image, source | yes — tarball, source | **no** (not built: plugin execution needs Unix process groups) |
+| `np` | yes | yes | yes (`np.exe` in the release zip) |
+| `np-agent` | yes — load, memory, disk, processes, network, plugins | yes — same as Linux | yes (`np-agent.exe`) — memory, disk, CPU, processes, plugins; no load or network collectors; runs as a console process under `sc.exe` |
+| `install.sh` | yes | yes | no — use the release zip |
+| Service manager | systemd unit from `northplaned init`; agent unit snippet in **Admin → Agents** | launchd plist snippet for the agent in **Admin → Agents** | `sc.exe create` snippet for the agent |
+| Container | `linux/amd64`, `linux/arm64` | via Docker Desktop (Linux image) | via Docker Desktop (Linux image) |
+
+`builtin:icmp` uses unprivileged datagram ICMP first and falls back to a raw socket; on Linux
+without root or `cap_net_raw` it reports `UNKNOWN - icmp socket: …`. Nagios plugins for
+`exec:` checks are looked up under `pluginsDir`, auto-detected from `/usr/lib/nagios/plugins`,
+`/usr/lib64/nagios/plugins`, `/usr/local/libexec/nagios`, `/opt/homebrew/libexec`, then
+`<dataDir>/plugins`.
+
+## PostgreSQL instead of SQLite
+
+SQLite (default, `storage.dsn: ""`) is the fully supported and CI-green backend and needs nothing
+else. PostgreSQL is selected by a DSN:
+
+```yaml title="config.yaml"
+storage:
+  dsn: "postgres://np:secret@db:5432/northplane?sslmode=require"
+  eventRetentionMonths: 12
+```
+
+or `NORTHPLANE_STORAGE_DSN=postgres://…`. Facts to know before you choose it:
+
+- Driver `pgx`; schema migrations run automatically on every start (also by `northplaned migrate`).
+  Pool: 16 open / 8 idle connections. Events are stored in monthly partitions; the `janitor`
+  enforces `eventRetentionMonths` nightly.
+- The **NP-TSDB stays on local disk** under `<dataDir>/tsdb` regardless of the relational backend —
+  the data directory (and its `secret.key`) is still required and still needs backups.
+- `northplaned backup` does not dump PostgreSQL; the manifest records the schema version and a note
+  that relational backup is the operator's job (`pg_dump`/PITR). The TSDB is still copied.
+- Known caveat: the audit-log chain verification (`POST /api/v1/audit:verify`, `np audit verify`)
+  fails on PostgreSQL because `jsonb` normalises the stored JSON that the row hash was computed
+  over. The CI job for PostgreSQL is non-blocking for this reason.
+- Moving an existing SQLite install: stop the server, run
+  `northplaned storage migrate --to "postgres://…" -config /etc/northplane/config.yaml`, point
+  `storage.dsn` at the target, start again (offline copy; the TSDB is untouched).
+
+The Compose file has a commented `postgres:16` service ready to uncomment. Details, table layout
+and sizing: [Storage](/docs/administration/storage/).
+
+## Where files live
+
+| What | Location |
+|---|---|
+| Config file | `-config <path>`; default `/etc/northplane/config.yaml` as root; for other users `/etc/northplane/config.yaml` **if it exists**, else `~/.config/northplane/config.yaml` (Linux) / `~/Library/Application Support/northplane/config.yaml` (macOS). A missing file is fine — defaults and `NORTHPLANE_*` variables apply. |
+| Data directory (`dataDir`) | `/var/lib/northplane` as root; `$XDG_DATA_HOME/northplane` or `~/.local/share/northplane` (Linux); `~/Library/Application Support/northplane` (macOS); `/var/lib/northplane` in the container. Holds `core.db` (+ `-wal`/`-shm`), `events-YYYYMM.db` segments, `tsdb/`, `artifacts/`, optionally `plugins/` and the fallback `secret.key`. |
+| Secret key | `secretKeyFile` from the config (`northplaned init` writes `<config dir>/secret.key`); fallback `<dataDir>/secret.key`, generated on first start. |
+| Binaries | `/usr/local/bin/{northplaned,np,np-agent}` (tarball/installer), `bin/` (source build), `/usr/local/bin/{northplaned,np}` in the image. |
+| Agent config | `/etc/northplane/agent.yaml` (root or if it exists), else `~/.config/northplane/agent.yaml`; Windows `C:\ProgramData\northplane\agent.yaml` — see [Agent](/docs/monitoring/agent/). |
+
+## Upgrading
+
+Upgrades are in-place: replace the binary (or pull the new image tag) and restart; pending schema
+migrations are applied automatically on start and the embedded UI and docs are always the matching
+version. Back up `secret.key` and the data directory (or run `northplaned backup`) first, and read
+[Upgrades](/docs/administration/upgrades/) for rollback notes per variant.
+
+## Uninstalling
+
+There is no uninstall script. Remove what the variant created:
+
+```bash
+# systemd install
+sudo systemctl disable --now northplaned
+sudo rm /etc/systemd/system/northplaned.service && sudo systemctl daemon-reload
+sudo rm /usr/local/bin/northplaned /usr/local/bin/np /usr/local/bin/np-agent
+sudo rm -r /etc/northplane /var/lib/northplane        # config, secret.key, database, TSDB
+sudo userdel northplane
+
+# docker run
+docker rm -f northplane && docker volume rm northplane-data
+
+# docker compose (also removes the Caddy volumes)
+docker compose down -v
+```
+
+Agents are removed on their hosts the same way (`systemctl disable --now np-agent`,
+`/etc/northplane/agent.yaml`, the binary); revoke their API tokens under **Admin → API tokens**.

@@ -13,15 +13,27 @@ RUN npm ci --legacy-peer-deps
 COPY web/ ./
 RUN npm run build
 
-# --- Stage 2: build the Go binary (UI embedded via go:embed) ---------------
+# --- Stage 1b: build the documentation site (Astro Starlight) --------------
+# Served by northplaned itself at /docs/ — every image ships the manual that
+# matches its own version, offline-capable. Same legacy-peer-deps rationale
+# as the UI stage (npm bundled with node:22-alpine).
+FROM node:22-alpine AS docs
+WORKDIR /docs
+COPY docs/package.json docs/package-lock.json ./
+RUN npm ci --legacy-peer-deps
+COPY docs/ ./
+RUN npm run build:embed
+
+# --- Stage 2: build the Go binary (UI + docs embedded via go:embed) --------
 FROM golang:1.25-alpine AS build
 WORKDIR /src
 RUN apk add --no-cache git
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-# Replace the committed UI with the freshly built one.
+# Replace the committed UI with the freshly built one; stage the docs build.
 COPY --from=ui /ui/dist ./internal/web/dist
+COPY --from=docs /docs/dist ./internal/docs/dist
 ARG VERSION=docker
 RUN CGO_ENABLED=0 go build -trimpath \
       -ldflags "-s -w -X main.version=${VERSION}" \

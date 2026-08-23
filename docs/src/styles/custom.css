@@ -1,0 +1,58 @@
+/* Northplane docs — brand accent (the app's default theme "Obsidian & Fire",
+   accent #FF5C3A; the logo mark is lucide's radar glyph). Generated against
+   Starlight's theme tokens; light and dark both carry enough contrast. */
+:root {
+	--sl-color-accent-low: #3d1407;
+	--sl-color-accent: #e8512f;
+	--sl-color-accent-high: #ffc7b8;
+	--sl-color-white: #ffffff;
+	--sl-color-gray-1: #eceef2;
+	--sl-color-gray-2: #c0c2c7;
+	--sl-color-gray-3: #888b96;
+	--sl-color-gray-4: #545861;
+	--sl-color-gray-5: #353841;
+	--sl-color-gray-6: #24272f;
+	--sl-color-black: #17181c;
+}
+:root[data-theme='light'] {
+	--sl-color-accent-low: #ffe0d8;
+	--sl-color-accent: #c7431f;
+	--sl-color-accent-high: #5e1a08;
+	--sl-color-white: #17181c;
+	--sl-color-gray-1: #24272f;
+	--sl-color-gray-2: #353841;
+	--sl-color-gray-3: #545861;
+	--sl-color-gray-4: #888b96;
+	--sl-color-gray-5: #c0c2c7;
+	--sl-color-gray-6: #eceef2;
+	--sl-color-gray-7: #f5f6f8;
+	--sl-color-black: #ffffff;
+}
+
+/* slightly denser reference tables */
+.sl-markdown-content table {
+	font-size: var(--sl-text-sm);
+}
+.sl-markdown-content table code {
+	white-space: nowrap;
+}
+
+/* landing hero: keep the wordmark tight */
+.hero h1 {
+	letter-spacing: -0.02em;
+}
+
+/* inline kbd */
+.sl-markdown-content kbd {
+	font: var(--sl-text-code-sm) var(--__sl-font-mono);
+	border: 1px solid var(--sl-color-gray-5);
+	border-radius: 0.25rem;
+	padding: 0 0.3rem;
+	background: var(--sl-color-gray-6);
+}
+
+/* landing hero: the radar mark is a favicon-scale glyph — keep it modest */
+.hero img {
+	max-width: 13rem;
+	margin-inline: auto;
+}

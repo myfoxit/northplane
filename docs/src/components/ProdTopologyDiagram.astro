@@ -1,0 +1,81 @@
+---
+import Diagram from './Diagram.astro';
+---
+
+<Diagram
+	title="Production topology np-01"
+	description="doktrace.com on the Proxmox host 51.83.96.40: the central Caddy container terminates TLS, the app runs in VM saas1, CI deploys over a DNAT'd SSH port."
+	viewBox="0 0 900 470"
+>
+	<rect x="20" y="40" width="150" height="44" class="box" />
+	<text x="95" y="58" text-anchor="middle" class="t">Users · Cloudflare proxy</text>
+	<text x="95" y="74" text-anchor="middle" class="t-muted">A record → 51.83.96.40</text>
+	<rect x="20" y="120" width="150" height="44" class="box" />
+	<text x="95" y="138" text-anchor="middle" class="t">GitHub Actions</text>
+	<text x="95" y="154" text-anchor="middle" class="t-muted">Deploy workflow → :2201</text>
+	<rect x="20" y="200" width="150" height="44" class="box" />
+	<text x="95" y="218" text-anchor="middle" class="t">Twilio · agents · clients</text>
+	<text x="95" y="234" text-anchor="middle" class="t-muted">HTTPS webhooks / API</text>
+
+	<rect x="210" y="12" width="670" height="446" class="box-soft" />
+	<text x="226" y="34" class="t-head">51.83.96.40 · ns3147660 · Proxmox VE 9.2 (vmbr0 public, vmbr1 10.10.10.0/24)</text>
+	<rect x="226" y="48" width="170" height="104" class="box" />
+	<text x="311" y="68" text-anchor="middle" class="t-accent">iptables DNAT</text>
+	<text x="238" y="90" class="t-sm">tcp/80, 443 → 10.10.10.10</text>
+	<text x="238" y="106" class="t-sm">tcp/2201 → 10.10.10.11:22</text>
+	<text x="238" y="128" class="t-muted">MASQUERADE for vmbr1</text>
+
+	<path d="M170 62 H 226" class="edge" marker-end="url(#dg-production-topology-np-01-arrow)" />
+	<path d="M170 142 H 200 V 106 H 226" class="edge" marker-end="url(#dg-production-topology-np-01-arrow)" />
+	<path d="M170 222 H 200 V 96 H 226" class="edge" />
+
+	<rect x="430" y="48" width="230" height="104" class="box" />
+	<text x="545" y="68" text-anchor="middle" class="t-accent">CT100 caddy · 10.10.10.10</text>
+	<text x="442" y="90" class="t-sm">Let's Encrypt (HTTP-01) · zstd/gzip</text>
+	<text x="442" y="106" class="t-sm">sites/saas1.caddy: doktrace.com →</text>
+	<text x="442" y="122" class="t-sm">reverse_proxy 10.10.10.11:8443</text>
+	<text x="442" y="138" class="t-sm">health /healthz every 30 s</text>
+	<text x="676" y="90" class="t-muted">trusted_proxies =</text>
+	<text x="676" y="104" class="t-muted">Cloudflare ranges</text>
+	<path d="M396 80 H 430" class="edge" marker-end="url(#dg-production-topology-np-01-arrow)" />
+
+	<rect x="430" y="170" width="430" height="150" class="box-accent" />
+	<text x="645" y="190" text-anchor="middle" class="t-accent">VM101 saas1 · 10.10.10.11 · Rocky Linux 9 · production</text>
+	<text x="442" y="212" class="t-sm">/opt/northplane: docker-compose.yml (vm variant) · .env · secret.key (uid 65532)</text>
+	<text x="442" y="230" class="t-sm">image ghcr.io/myfoxit/northplane:main-&lt;sha12&gt; · volume northplane-data</text>
+	<text x="442" y="248" class="t-sm">:8443 plaintext on vmbr1 only · NORTHPLANE_TRUST_PROXY=true</text>
+	<text x="442" y="266" class="t-sm">data dir /var/lib/northplane/&#123;real|demo&#125; — the demo/real switch</text>
+	<text x="442" y="284" class="t-sm">sshd :22 ← CI as user deploy · np-agent (np-prod) → https://doktrace.com</text>
+	<text x="442" y="304" class="t-muted">/docs/ · /api/docs · /register open · real-data mode since 2026-08-20</text>
+	<path d="M545 152 V 170" class="edge-accent" marker-end="url(#dg-production-topology-np-01-arrow-accent)" />
+	<path d="M396 106 H 412 V 190 H 430" class="edge" marker-end="url(#dg-production-topology-np-01-arrow)" />
+
+	<rect x="226" y="340" width="150" height="104" class="box" />
+	<text x="301" y="360" text-anchor="middle" class="t-accent">CT110 targets</text>
+	<text x="238" y="380" class="t-sm">10.10.10.20 — lab targets:</text>
+	<text x="238" y="396" class="t-sm">nginx, snmpd, NRPE, BIND,</text>
+	<text x="238" y="412" class="t-sm">chrony, np-agent listener,</text>
+	<text x="238" y="428" class="t-sm">valid/expiring/expired certs</text>
+
+	<rect x="392" y="340" width="150" height="104" class="box" />
+	<text x="467" y="360" text-anchor="middle" class="t-accent">VM102 saas2</text>
+	<text x="404" y="380" class="t-sm">10.10.10.12 — netlab:</text>
+	<text x="404" y="396" class="t-sm">containerlab, 2× Cisco IOSv,</text>
+	<text x="404" y="412" class="t-sm">SR Linux, SNMP + traps</text>
+	<text x="404" y="428" class="t-sm">→ prod (10.10.10.11)</text>
+
+	<rect x="558" y="340" width="150" height="104" class="box" />
+	<text x="633" y="360" text-anchor="middle" class="t-accent">VM103 saas3</text>
+	<text x="570" y="380" class="t-sm">10.10.10.13 — alarmlab:</text>
+	<text x="570" y="396" class="t-sm">Mosquitto, Mailpit, GreenMail,</text>
+	<text x="570" y="412" class="t-sm">ntfy, echo sink :9000,</text>
+	<text x="570" y="428" class="t-sm">ESPA drivers</text>
+
+	<rect x="724" y="340" width="140" height="104" class="box" />
+	<text x="794" y="360" text-anchor="middle" class="t-accent">VM104 saas4</text>
+	<text x="736" y="380" class="t-sm">10.10.10.14 — np-staging:</text>
+	<text x="736" y="396" class="t-sm">second northplane,</text>
+	<text x="736" y="412" class="t-sm">federation EDGE of prod</text>
+	<text x="736" y="428" class="t-sm">(site vm104-edge)</text>
+	<path d="M794 340 V 324" class="edge" marker-end="url(#dg-production-topology-np-01-arrow)" />
+</Diagram>

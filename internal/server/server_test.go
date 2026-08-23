@@ -479,3 +479,55 @@ func TestTLSPolicy(t *testing.T) {
 		}
 	})
 }
+
+// TestDocsMountedPublic locks in how the embedded documentation is wired:
+// reachable without any credentials (it is read before an operator can log
+// in), never swallowed by the SPA catch-all or its login gate, and served
+// under its own Content-Security-Policy. In a plain `go build` (no staged
+// docs) the handler answers 501 with a pointer to `make docs`; a build that
+// carries the site answers 200 — both are "mounted and public".
+func TestDocsMountedPublic(t *testing.T) {
+	ts := bootServer(t)
+	noRedirect := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+
+	// the bare /docs path is canonicalised to the subtree form by net/http
+	resp, err := noRedirect.Get(ts.base + "/docs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode/100 != 3 || resp.Header.Get("Location") != "/docs/" {
+		t.Fatalf("/docs: %d → %q, want a redirect → /docs/", resp.StatusCode, resp.Header.Get("Location"))
+	}
+
+	// an anonymous *browser navigation* (Accept: text/html) must NOT be sent
+	// to /login the way SPA routes are
+	req, _ := http.NewRequest(http.MethodGet, ts.base+"/docs/", nil)
+	req.Header.Set("Accept", "text/html")
+	resp, err = noRedirect.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusOK:
+		if !bytes.Contains(body, []byte("<html")) && !bytes.Contains(body, []byte("<!DOCTYPE")) && !bytes.Contains(body, []byte("<!doctype")) {
+			t.Fatalf("/docs/: 200 but not an HTML document: %.120q", body)
+		}
+	case http.StatusNotImplemented:
+		if !bytes.Contains(body, []byte("make docs")) {
+			t.Fatalf("/docs/: 501 without the make-docs hint: %q", body)
+		}
+	default:
+		t.Fatalf("/docs/: %d (%.120q), want 200 (docs staged) or 501 (plain build) — never a login redirect", resp.StatusCode, body)
+	}
+	if csp := resp.Header.Get("Content-Security-Policy"); resp.StatusCode == http.StatusOK && !strings.Contains(csp, "'wasm-unsafe-eval'") {
+		t.Fatalf("/docs/: SPA policy leaked onto the documentation: %q", csp)
+	}
+	if resp.Header.Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatal("/docs/: baseline security headers missing")
+	}
+}

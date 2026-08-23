@@ -1,0 +1,609 @@
+---
+title: API overview
+description: Conventions of the Northplane REST API — authentication, tenant header, RFC 9457 errors, pagination, ETag/If-Match, idempotency, limits, SSE, NDJSON exports, ingest and telephony webhooks — with curl examples per resource family and the link to the generated reference.
+sidebar:
+  order: 5
+---
+
+import { LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+Northplane is API-first: every capability of the UI, the `np` CLI, the AI agent and the MCP server exists as a REST endpoint under `/api/v1/` first. This page documents the conventions that apply to the whole API and the handful of endpoints that are not in the OpenAPI document (ingest, telephony webhooks, ack links). Request and response schemas of every operation live in the generated reference.
+
+<CardGrid>
+  <LinkCard title="REST API reference" href="/docs/reference/api/" description="Every operation with parameters, schemas and required permission — generated from the OpenAPI 3.1 document (224 operations)." />
+  <LinkCard title="Swagger UI on your instance" href="/docs/reference/api-overview/#openapi-document-and-swagger-ui" description="Open /api/docs on any running instance to try requests with your session or a token; /api/openapi.json is the document itself." />
+</CardGrid>
+
+Operation pages are addressed as `/docs/reference/api/operations/<operationId>/`, where `operationId` is the lower-cased method plus the path with `/api/v1/` and `/` turned into `_`, braces removed and `:`/`-` turned into `_` — for example [get_hosts](/docs/reference/api/operations/get_hosts/), [post_alerts_id_ack](/docs/reference/api/operations/post_alerts_id_ack/), [put_objects_id](/docs/reference/api/operations/put_objects_id/), [post_config_bundles_apply](/docs/reference/api/operations/post_config_bundles_apply/).
+
+## Base URL and shape
+
+| Item | Value |
+|---|---|
+| Base path | `https://<instance>/api/v1/` — no version negotiation; the path is the version |
+| Format | JSON request and response bodies (`application/json`), UTF-8; YAML for config bundles; a few text/NDJSON/SSE/iCalendar responses (listed below) |
+| Document | OpenAPI 3.1 at `GET /api/openapi.json`; `info.version` = the server version |
+| Router | Go `net/http` `ServeMux` method+pattern routes; unmatched paths and wrong methods are answered by the mux with plain-text `404 page not found` / `405 Method Not Allowed` (plus `Allow`), **not** with a problem document |
+| Request id | every response carries `X-Request-Id: <UUIDv7>`; audit entries record it |
+| Tags | the first path segment after `/api/v1/` (`objects`, `alerts`, `ai`, …); `system` for the rest |
+
+## Authentication
+
+Two credential types are accepted everywhere (API, `/mcp`, SPA gate):
+
+| Credential | How | Notes |
+|---|---|---|
+| API token | `Authorization: Bearer np_<48 hex>` | minted via [post_api_tokens](/docs/reference/api/operations/post_api_tokens/) or **Admin → API tokens**; the secret is shown once; stored as an 8-char lookup prefix plus argon2id hash. Checks on every request: expiry (`expiresAt`), IP binding (`ipBind` CIDRs, compared with the TCP peer address — `X-Forwarded-For` is **not** used), scopes or role permissions. `lastUsedAt` is updated asynchronously. Tokens with `aiAgent: true` audit as actor type `ai_agent`. |
+| Session cookie | `Cookie: np_session=…` | set by the server-rendered `/login` form (local or LDAP), OIDC callback, `/setup` or `/register`; `HttpOnly`, `SameSite=Lax`, `Secure` on HTTPS (directly or via `X-Forwarded-Proto: https` with `trustProxy: true`), `Path=/`; TTL 12 h, 30 d with "remember me"; stored server-side (survives restarts) |
+
+Anything else is anonymous. A present-but-invalid credential is rejected by the middleware **before routing** with `401 np:auth/invalid` — on every path the API handler serves, including `/healthz`, `/readyz`, `/metrics` and the ingest routes. Only Bearer values starting with `np_` are inspected, so ingest source tokens that do not start with `np_` pass through to the per-source check.
+
+There is **no JSON login endpoint**: browsers log in through the HTML form `POST /login` (fields `email`, `password`), SSO through `/auth/oidc` → `/auth/callback`, logout via `/auth/logout`. Integrations use tokens. `GET /api/v1/whoami` ([get_whoami](/docs/reference/api/operations/get_whoami/)) returns the effective identity:
+
+```bash
+curl -s https://np.example.com/api/v1/whoami -H "Authorization: Bearer np_…"
+```
+```json
+{"actorType":"token","actorId":"0199…","name":"ci-deploy","tenantId":"00000000-0000-7000-8000-000000000001","permissions":["objects:read","objects:write"]}
+```
+
+Details of tokens, scopes, rotation and expiry: [API tokens](/docs/administration/api-tokens/). Login, sessions, OIDC and LDAP: [Authentication](/docs/administration/authentication/).
+
+## Authorization
+
+Every route declares one required permission (`x-required-permission` in the OpenAPI document, shown on each operation page). Evaluation order per request: CSRF check → authentication required (when the route has a permission) → permission check → handler.
+
+| Situation | Response |
+|---|---|
+| route needs a permission, no credential | `401 np:auth/required` (`authentication required`) |
+| credential present, permission missing | `403 np:auth/forbidden`, `detail` = the missing permission, e.g. `objects:read` |
+| route has an empty permission but the handler needs an identity (`whoami`, `branding`, preferences, push subscriptions, `me:change-password`) | `401 np:auth/required` when anonymous |
+
+Permissions are `resource:action` strings; wildcards `admin:*`, `*:*` and `*` imply their resource/action families. Generic config documents use the `resourceCRUD` convention: read = `objects:read`, write = `config:write` (prefix `config`), or `oncall:read`/`oncall:write` for contacts, contact groups and schedules, or `admin:read`/`admin:write` for roles. The full permission list, the built-in roles and the route→permission table are in [Users, roles and permissions](/docs/administration/users-roles-permissions/); the model is explained in [Tenancy and RBAC](/docs/concepts/tenancy-rbac/).
+
+## Tenant header
+
+Every principal belongs to one tenant; all reads and writes are scoped to it. A caller holding `admin:tenants` (or a wildcard implying it) can act on another tenant per request with `X-Northplane-Tenant: <tenant-id>` — the tenant **ID** (UUID), not the slug. For unprivileged callers the header is silently ignored. Audit entries of cross-tenant mutations land in the **acted-on** tenant with the operator as actor. Tokens are tenant-bound at mint time (the creator's effective tenant).
+
+:::caution[Routes that ignore the header]
+`POST /alerts/{id}:ack` always uses the caller's own tenant; `GET /users` lists all users of the installation; branding is instance-wide; ingest, telephony and ack-link routes resolve the tenant from the event source or alert across all tenants. See [Tenants and sites](/docs/administration/tenants-and-sites/).
+:::
+
+## Request conventions
+
+| Topic | Rule |
+|---|---|
+| JSON bodies | read with a **1 MiB** cap; decoded with standard `encoding/json` (unknown fields tolerated, `Content-Type` not enforced); malformed JSON → `422 np:validation/body` with the decoder's message in `detail` |
+| Bundle bodies | `POST /config/bundles:plan` and `:apply` read up to **8 MiB** of multi-document YAML (JSON is valid YAML); larger → `413 np:bundle/size` |
+| Ingest bodies | webhook/alertmanager/telephony: 1 MiB → `413 np:ingress/size` |
+| Optional bodies | `:ack`, `:test-notification`, `/{name}:test` accept an empty body |
+| Durations | `model.Duration` fields (`interval`, `timeout`, `expectEvery`, `grace`, `after`, `pendingFor`, `duration`, …) are Go duration strings (`"30s"`, `"5m"`, `"24h"`); a bare integer is accepted on input and means **seconds** |
+| Timestamps | RFC 3339 UTC on output; query parameters are parsed with RFC 3339 (fractional seconds and offsets accepted) |
+| IDs | UUIDv7 (time-ordered, lowercase, 36 chars) for hosts, services, alerts, incidents, events, tokens, users, downtimes, silences; configuration documents (templates, rules, channels, …) are addressed by **name** in URLs — `/templates/{name}` also accepts the document's UUID |
+| Label selector | `env=prod,role in (db,cache),!legacy,site!=wien` — comma = AND; operators `=`/`==`, `!=`, `in (…)`, `notin (…)`, bare key (exists), `!key` (not exists); used by `selector=` query parameters, silences, downtimes, business services, dashboards and the SSE filter; unparseable → `422 np:validation/selector` (SSE: plain 400). Grammar reference: [Object model](/docs/concepts/object-model/) |
+
+## Response conventions
+
+| Topic | Rule |
+|---|---|
+| Success JSON | `Content-Type: application/json`, HTML not escaped, trailing newline |
+| Lists | `{"items":[…],"nextCursor":"…"}` — `nextCursor` omitted on the last page |
+| Status codes | `200` default; `201` on creates; `202` for asynchronous acceptance (`POST /results`, `/objects/{id}/check-now`, `/discovery/scans`, dead-letter replay, ingest, alertmanager); `204` on deletes, `PUT /secrets/{name}`, `POST /sites/{name}:heartbeat`, `DELETE /push-subscriptions`, `:set-password`, `me:change-password`; `304` on a conditional `sites:pull`; `428` when `If-Match` is missing; `409` conflicts; `422` validation; `413` too large; `429` rate-limited; `501` not implemented (PDF render, LDAP unconfigured); `502` upstream failure (channel test, AI provider, LDAP sync); `503` not ready (storage, secret store without key, AI disabled, results pipeline stalled) |
+| `ETag` | `ETag: "<version>"` (the integer document version, quoted) on GET/POST/PUT of objects and configuration documents and on `PUT /incidents/{id}`; not on lists |
+| Downloads | `Content-Disposition: attachment; …` on CSV report renders, archived reports and the GDPR contact export |
+| Non-JSON bodies | `application/yaml` (bundle export, `sites:pull`), `text/calendar` (schedule ICS), `text/html` (report render, ack link page), `text/xml` TwiML (voice webhooks), `application/x-ndjson` (exports), `text/event-stream` (SSE), `application/openmetrics-text; version=1.0.0; charset=utf-8` (`/metrics`) |
+
+## Error format
+
+Errors are RFC 9457 problem documents (`Content-Type: application/problem+json`):
+
+```json
+{
+  "type": "https://northplane.dev/problems/np/validation/name",
+  "title": "validation failed",
+  "status": 422,
+  "detail": "name required",
+  "code": "np:validation/name",
+  "instance": "/api/v1/hosts"
+}
+```
+
+`type` is `https://northplane.dev/problems/` plus the code with `:` replaced by `/`. `detail` is omitted when empty. There is **no multi-field validation** — each 422 carries one code (`np:validation/<field-or-kind>`) and one free-text detail; bundle validation joins several messages with `; `. The exception is `POST /objects:batch`, which reports per-item `results[].error` strings. Clients should branch on `code`, not on `title`.
+
+Two kinds of errors are **not** problem documents: unmatched routes/methods (plain-text 404/405 from the router) and the per-request deadline (`503` with the text body `request timeout`).
+
+## Error catalog
+
+| HTTP | `code` | When |
+|---|---|---|
+| 401 | `np:auth/required` | a permission-protected route called without credentials; `whoami`, branding, preferences, push, change-password when anonymous |
+| 401 | `np:auth/invalid` | a Bearer `np_…` token or a session cookie is present but invalid/expired (middleware, any path) |
+| 403 | `np:auth/forbidden` | missing permission (`detail` = permission) |
+| 403 | `np:auth/csrf` | cookie-authenticated request with `Sec-Fetch-Site: cross-site` |
+| 403 | `np:auth/scope` | folder outside the role's scope (defined, but folder scopes are never populated today, so it cannot trigger) |
+| 403 | `np:auth/bad-password` | `me:change-password` with a wrong old password |
+| 404 | `np:not-found` | resource does not exist (or belongs to another tenant) |
+| 409 | `np:conflict/version` | `If-Match` does not match the stored version (`detail` like `version conflict: have 2, expected 1`) |
+| 409 | `np:conflict/duplicate` | create with an existing name |
+| 409 | `np:conflict/idempotency` | `Idempotency-Key` reused with a different body |
+| 409 | `np:conflict` | AI chat/connection name already exists |
+| 409 | `np:ai/busy` | a turn is already streaming on that AI chat |
+| 409 | `np:bundle/token` | `applyToken` unknown, expired or of another tenant |
+| 409 | `np:users/last-admin`, `np:users/email-in-use` | user-management guards |
+| 413 | `np:validation/size`, `np:bundle/size`, `np:ingress/size` | body over the cap (1 MiB JSON / 8 MiB bundle / 1 MiB ingest) |
+| 422 | `np:validation/<field>` | validation failure; seen fields: `body, name, spec, host, selector, title, severity, escalationPolicy, until, target, comment, window, expiresAt, match, textRegex, override, heartbeat, token, tenant, user, password, preferences, branding, endpoint, keys, cidr, batch, bundle, rule, message, chatId, messageId, trigger`; plus `np:validation/<kind>` for configuration documents, e.g. `np:validation/alert-rule` |
+| 422 | `np:ingress/mapping`, `np:ingress/format` | CEL mapping failed / body not JSON / not an Alertmanager payload |
+| 422 | `np:bundle/apply` | bundle apply failed at document X |
+| 428 | `np:precondition/if-match` | mutating PUT without `If-Match` |
+| 429 | `np:ingress/rate` | per-source token bucket exhausted (`Retry-After: 5` on webhook ingest) |
+| 501 | `np:reports/pdf` | PDF rendering needs the Chromium sidecar (not shipped) |
+| 501 | `np:directory/unconfigured` | LDAP not configured |
+| 502 | `np:notify/test-failed` | channel test notification failed |
+| 502 | `np:ai/provider`, `np:ai/execute` | AI provider error / approved action failed on execution |
+| 502 | `np:directory/sync` | LDAP sync failed |
+| 503 | `np:secrets/nokey` | secret store has no usable master key |
+| 503 | `np:ai/disabled` | server-level AI provider is `none` (legacy assistant, incident summaries) |
+| 404 / 403 / 401 / 403 | `np:ingress/unknown-source`, `np:ingress/disabled`, `np:ingress/auth`, `np:ingress/caller` | ingest and telephony webhooks |
+| 403 | `np:sites/disabled` | federation site disabled (heartbeat/pull) |
+| 500 | `np:internal` | unexpected errors and recovered panics |
+
+## Pagination, filtering, sorting
+
+Cursor pagination is keyset-based: the cursor is the last item's id (UUIDv7, time-ordered) or, for configuration documents, its name — treat it as opaque. Every list endpoint documents `cursor` and `limit` in the OpenAPI document. `nextCursor` is set when a page is exactly `limit` long, so a full last page may still return a cursor: fetch until `items` is empty or `nextCursor` is absent. Sorting is fixed per endpoint; there is no `sort`/`order` parameter. Non-integer `limit` values are ignored; unparseable `since`/`from`/`to` are ignored (no 422).
+
+| Endpoint | Default `limit` | Maximum (above it the default applies) | Order | Filters |
+|---|---|---|---|---|
+| `GET /objects`, `/hosts`, `/services` | 200 | 5000 | `id` ascending (oldest first) | `selector`, `hostId`, `folder`, `q` (name/spec substring), `withState=false` |
+| `GET /alerts` | 100 | 1000 | `id` descending (newest first) | `objectId`, `ruleId`, `incidentId`, `status` (CSV of `open,acked,resolved,expired`), `severity` (CSV), `since` (RFC 3339) |
+| `GET /incidents` | 50 | 500 | `id` descending | `open=true` |
+| `GET /events` | 200 | 1000 | `ts`, `id` descending | `objectId`, `sourceId`, `severity`, `types` (CSV), `from`, `to` |
+| `GET /<configuration kind>` (templates, contacts, channels, alert-rules, dashboards, …) | 500 | 2000 | `name` ascending | `q` (name/document substring) |
+| `GET /problems` | 500 | — | worst state first, then oldest hard change; unhandled before handled | `includeHandled=true` |
+| `GET /audit` | 200 | 5000 | `seq` descending | `actorId`, `actorType`, `action`, `resource`; `afterSeq` = "older than" in this listing |
+| `GET /notifications/dead-letters` | 100 | — | newest first | — |
+| `GET /reports/{name}/archive` | 100 | — | newest first | — |
+| `GET /downtimes`, `/silences` | all (cap 1000) | — | `start` / `expiresAt` descending | `active=true` |
+| `GET /ai/conversations` | 50 | — | `updatedAt` descending | — |
+| `GET /ai/actions` | 100 | — | newest first | `status` |
+| `GET /heartbeats`, `/tenants`, `/users`, `/api-tokens`, `/sites:overview`, `/schedules/{name}/overrides` | all, no paging | — | — | — |
+
+## Optimistic concurrency (ETag / If-Match)
+
+Every object, configuration document and incident carries an integer `version` (starts at 1, +1 per write) and returns it as `ETag: "<version>"`. Updates must send it back:
+
+| Rule | Detail |
+|---|---|
+| Required on | `PUT /objects/{id}`; `PUT /<kind>/{name}` for every `resourceCRUD` kind (templates, check-commands, time-periods, alert-rules, alert-groups, escalation-policies, schedules, contacts, contact-groups, channels, event-sources, business-services, dashboards, reports, saved-filters, roles, webhooks, sites, ivr-menus); `PUT /incidents/{id}` |
+| Missing | `428 np:precondition/if-match` |
+| Stale | `409 np:conflict/version` |
+| Header parsing | `W/`, quotes and spaces are stripped, the rest parsed as an integer — `If-Match: 3`, `"3"` and `W/"3"` all work; `0` counts as missing |
+| Not required on | `PUT /users/{id}`, `PUT /branding`, `PUT /users/{id}/preferences`, `PUT /secrets/{name}`, `PUT /ai/policy`, `PUT /ai/connections/{id}`, `PUT /ai/chats/{id}`, `POST /heartbeats` (upsert), all `:verb` POSTs — last write wins there |
+| Creates | duplicate name → `409 np:conflict/duplicate` (atomic in SQL) |
+| Renames | objects cannot be renamed via PUT → `422 np:validation/name` ("rename is not supported — recreate the object"); for configuration documents the `name` in the body is overwritten by the path name |
+
+```bash
+NP=https://np.example.com; TOK=np_…
+# create → 201, ETag: "1"
+curl -si -X POST $NP/api/v1/hosts -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+  -d '{"name":"web01","folder":"/prod","labels":{"env":"prod","role":"web"},"spec":{"address":"10.0.0.5","checkCommand":"builtin:icmp"}}'
+# update without If-Match → 428 np:precondition/if-match; with a stale value → 409 np:conflict/version
+curl -si -X PUT $NP/api/v1/objects/$ID -H "Authorization: Bearer $TOK" -H 'If-Match: "1"' -H 'Content-Type: application/json' \
+  -d '{"spec":{"checkCommand":"builtin:icmp","runbook":"step 1"}}'          # → 200, ETag: "2"
+```
+
+## Idempotency
+
+Only `POST /api/v1/downtimes` honours an `Idempotency-Key` header. The key is scoped per tenant and remembered together with the SHA-256 of the body for **24 h** (purged by the janitor): the same key with the same body replays the stored status and body with `Idempotency-Replayed: true`; the same key with a different body → `409 np:conflict/idempotency`; the body cap inside the idempotent path is 1 MiB (`413 np:validation/size`).
+
+```bash
+curl -s -X POST $NP/api/v1/downtimes -H "Authorization: Bearer $TOK" -H 'Idempotency-Key: maint-2026-08-30' \
+  -H 'Content-Type: application/json' \
+  -d '{"objectId":"'$HOST'","type":"fixed","start":"2026-08-30T22:00:00Z","end":"2026-08-31T02:00:00Z","comment":"planned maintenance"}'
+```
+
+Bundle applies use a different mechanism: `POST /config/bundles:plan` returns an `applyToken` (`ap_…`, valid 10 min, single-use, tenant-bound) that `POST /config/bundles:apply?applyToken=…` consumes — see [Config bundles](/docs/administration/config-bundles/).
+
+## Limits, timeouts and rate limits
+
+| Limit | Value |
+|---|---|
+| HTTP server | `ReadHeaderTimeout` 10 s, `ReadTimeout` 60 s, `IdleTimeout` 120 s, `MaxHeaderBytes` 1 MiB, **no** `WriteTimeout` |
+| Per-request deadline | 30 s (`503`, text body `request timeout`) for everything except the streaming paths `/api/v1/stream`, `/api/v1/events:export`, `/api/v1/ai/chat`, `/mcp`, `/mcp/*` — note that `/api/v1/audit:export` is **not** exempt |
+| Body caps | 1 MiB JSON, 8 MiB bundles, 1 MiB ingest/telephony (optional bodies of `:ack` and test endpoints are read with the same 1 MiB limit) |
+| Login throttle | `POST /login`, `/setup`, `/register`: per client IP, burst 8, refill 1 per 15 s; exhausted → the page re-renders with `Retry-After: 30` |
+| Ingest rate limit | per event source: `rateLimit` events/s (default 50), `burst` (default 200); webhook → `429 np:ingress/rate` + `Retry-After: 5`; Alertmanager over-limit alerts are silently dropped (still 202); inbound voice/SMS → 429 |
+| Everything else | no rate limiting |
+| Graceful shutdown | 30 s budget for in-flight requests and workers |
+
+Hard-coded constants that operators sometimes look for in `config.yaml` (session TTL, password length, login limiter, TSDB retention) are listed as "not configurable" on the [Configuration](/docs/administration/configuration/) page.
+
+## CSRF, CORS and cookies
+
+- **CSRF:** cookie-authenticated requests whose browser sets `Sec-Fetch-Site: cross-site` are rejected with `403 np:auth/csrf`; no CSRF token or custom header is needed for same-origin calls. Token-authenticated requests are unaffected. Raw routes (ingest, ack link, health) are not wrapped and therefore not CSRF-checked.
+- **CORS:** none — no `Access-Control-*` headers are emitted. Browser code on another origin cannot call the API; integrate server-side with tokens.
+- **Cookies:** `np_session` as described above; logout deletes the server-side session and clears the cookie.
+- **SPA gating:** logged-out document navigations (GET with `Accept: text/html`, not `/assets/`) are redirected to `/login`; API calls are never redirected — they get `401` problem documents.
+- **Security headers** on every response: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: same-origin`, HSTS on HTTPS; a CSP on non-`/api/` paths. See [TLS and reverse proxy](/docs/administration/tls-and-proxy/).
+
+## Custom verbs and sub-resources
+
+Actions use a Google-style `:verb` suffix on a collection or item; sub-resources use a plain path segment. The router splits the last path segment at its last `:`, so `{id}:ack` and a plain `{id}` route can coexist.
+
+| Family | Verbs |
+|---|---|
+| alerts | `POST /alerts/{id}:ack`, `:resolve`, `:snooze` |
+| incidents | `POST /incidents/{id}:merge`, `:resolve`, `:summarize` |
+| tokens | `POST /api-tokens/{id}:rotate` |
+| channels / rules / policies / checks | `POST /channels/{name}:test-notification`, `POST /alert-rules:test`, `POST /alert-rules/{name}:test`, `POST /escalation-policies/{name}:simulate`, `POST /check-commands:test`, `GET /check-commands:builtins` |
+| objects / bundles | `POST /objects:batch`, `POST /config/bundles:plan`, `:apply`, `GET /config/bundles:export` |
+| events / audit | `GET /events:export`, `GET /audit:export`, `POST /audit:verify`, `GET /contacts/{name}:data-export` |
+| notifications / reports | `POST /notifications/dead-letters/{id}:replay`, `POST /reports/{name}:render`, `:run` |
+| business / sites / users | `GET /business-services:tree`, `GET /sites:overview`, `POST /sites/{name}:heartbeat`, `GET /sites/{name}:pull`, `POST /users/{id}:set-password`, `POST /users/me:change-password`, `POST /directory:sync` |
+| AI | `POST /ai/actions/{id}:approve`, `:deny`, `POST /ai/connections/{id}:test` |
+| sub-resources | `/objects/{id}/check-now`, `/effective-config`, `/impact`, `/metrics`; `/heartbeats/{name}/beat`; `/schedules/{name}/overrides`, `/timeline`, `/stats`, `/ics`; `/reports/{name}/archive`; `/business-services/{name}/sla`; `/ai/connections/{id}/models` |
+
+## Unauthenticated and raw routes
+
+Routes registered **outside** the permission wrapper (no RBAC, not in the OpenAPI document):
+
+| Route | Auth | Purpose |
+|---|---|---|
+| `GET /healthz` | none | liveness: `200 ok` (text) as soon as the listener is up |
+| `GET /readyz` | none | readiness JSON; `503` when a subsystem is not ok |
+| `GET /metrics` | none (restrict at the network/proxy layer) | OpenMetrics text — families on [Observability](/docs/administration/observability/) |
+| `GET /api/openapi.json`, `GET /api/docs`, `GET /api/docs/{asset}` | none | OpenAPI document + vendored Swagger UI |
+| `POST /api/v1/ingest/{source}` | per-source `authMode` | generic webhook ingest (below) |
+| `POST /api/v1/ingest/{source}/alertmanager` | per-source | Alertmanager v2 receiver (below) |
+| `GET /api/v1/ack/{token}` | signed token | one-click acknowledgement from notifications (below) |
+| `POST /api/v1/voice/gather/{token}` | signed token | Twilio DTMF callback for outbound calls (below) |
+| `POST /api/v1/voice/inbound/{source}`, `…/menu`, `…/transcription`, `POST /api/v1/sms/inbound/{source}` | per-source (+ optional Twilio signature) | inbound telephony (below) |
+
+In the document but **fully anonymous** (empty permission, no identity check): [get_system_health](/docs/reference/api/operations/get_system_health/) and [get_system_info](/docs/reference/api/operations/get_system_info/) — they expose version, goroutines and queue depths; restrict them at the proxy if that matters to you. Empty permission but identity required: `whoami`, `GET /branding`, `GET`/`PUT /users/{id}/preferences`, `POST`/`DELETE /push-subscriptions`, `POST /users/me:change-password`.
+
+Health and readiness responses, the `/system/health` counters and the Prometheus families are documented on [Observability](/docs/administration/observability/); the security implications on [Security](/docs/administration/security/).
+
+## Ingest endpoints
+
+Ingest is how external systems push events into the alarming pipeline. The event-source resource ([post_event_sources](/docs/reference/api/operations/post_event_sources/), Admin → Event sources) defines `type`, `enabled`, `authMode`, `secretRef`, `mapping`, `rateLimit`, `burst`, `labels`. Every type is documented on [Event sources](/docs/alarming/event-sources/); this section covers the two HTTP endpoints precisely.
+
+### Generic webhook ingest
+
+`POST /api/v1/ingest/{source}` — `{source}` is the event source's **name or id**, resolved across all tenants (ingest URLs carry no tenant; names are effectively global for this purpose). The handler does not check the source `type` — any enabled source accepts posts here. Processing order and responses:
+
+1. unknown source → `404 np:ingress/unknown-source`
+2. `enabled: false` → `403 np:ingress/disabled`
+3. body over 1 MiB → `413 np:ingress/size`
+4. authentication per `authMode` → `401 np:ingress/auth`
+5. rate limit (token bucket per source: `rateLimit` events/s, default 50; `burst`, default 200) → `429 np:ingress/rate`, `Retry-After: 5`
+6. normalisation (identity or CEL `mapping`) → `422 np:ingress/mapping` with `mapping <field>: <error>` in `detail`
+7. the event is persisted as type `ingress` and published to the rule engine → **`202 Accepted`, empty body**
+
+| `authMode` | What the request must carry |
+|---|---|
+| `none` | nothing |
+| `token` (default, also for unknown values) | `Authorization: Bearer <secret>` **or** `?token=<secret>`; constant-time compare against the secret named by `secretRef`; no secret stored → always 401. Do not choose secrets starting with `np_` (the API middleware would treat them as Northplane tokens). Prefer the header — query strings end up in access logs. |
+| `hmac` | `X-Northplane-Signature: <hex>` or `X-Hub-Signature-256: sha256=<hex>`: lowercase hex HMAC-SHA256 over the raw body with the secret (`sha256=` prefix optional) |
+| `basic` | HTTP Basic — only the **password** is compared with the secret, the username is ignored |
+
+Without a `mapping`, the body must already be the normal form: `{"summary","severity","dedupKey","labels":{…},"resolve":bool}` — a missing `summary` becomes `event from <source name>`, the raw body is archived as `payload`, and invalid JSON → `422` ("payload is not normal-form JSON and source has no mapping"). With a `mapping`, the body is any JSON; each mapping value is a CEL expression over the variable `payload` (cost limit 5000); targets: `summary`, `severity` (`critical|warning|info|ok`, invalid → `info`), `dedupKey`, `resolve` (must evaluate to bool), `labels.<key>`; other targets are ignored; an evaluation error (including a missing key) fails the request with 422. A `resolve: true` event clears the open alert that holds the same `dedupKey`.
+
+```bash
+# normal-form payload, token auth
+curl -s -X POST $NP/api/v1/ingest/ci -H 'Authorization: Bearer s3cr3t' -H 'Content-Type: application/json' \
+  -d '{"summary":"deploy failed","severity":"critical","dedupKey":"deploy-42","labels":{"service":"checkout"}}'   # → 202
+
+# HMAC auth
+BODY='{"summary":"disk /var full on db1","severity":"critical","dedupKey":"db1/disk"}'
+SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$SECRET" | awk '{print $NF}')
+curl -s -X POST $NP/api/v1/ingest/grafana -H "X-Northplane-Signature: $SIG" -H 'Content-Type: application/json' -d "$BODY"
+```
+
+### Alertmanager receiver
+
+`POST /api/v1/ingest/{source}/alertmanager` — same source lookup and authentication; **does not check `enabled`**; non-JSON → `422 np:ingress/format`; read/auth failures → `401`. Body: the Alertmanager v2 webhook payload `{"alerts":[{"status","labels","annotations","fingerprint"}]}` (other top-level fields ignored). Per alert: `dedupKey = "am-" + fingerprint`; severity from `labels.severity` (`critical`/`page` → critical, `info`/`none` → info, else warning); `summary = annotations.summary` or `labels.alertname`; labels = alert labels merged with the source labels; `status: resolved` → `resolve: true` and severity `ok`; one `ingress` event per alert. Over-limit alerts are dropped silently. Always `202`.
+
+```bash
+curl -s -X POST $NP/api/v1/ingest/prom/alertmanager -H 'Authorization: Bearer s3cr3t' -H 'Content-Type: application/json' -d '{"alerts":[
+ {"status":"firing","fingerprint":"abc","labels":{"severity":"critical","alertname":"HighCPU"},"annotations":{"summary":"CPU > 90%"}},
+ {"status":"resolved","fingerprint":"def","labels":{"alertname":"DiskFull"}}]}'   # → 202
+```
+
+### Passive results and heartbeat beats
+
+Two more "push in" endpoints are regular, token-authenticated API routes: [post_results](/docs/reference/api/operations/post_results/) (`objects:write`, `202 {"accepted":n,"rejected":[…]}`; unknown hosts/services are rejected, never created — see [Plugins and Nagios](/docs/monitoring/plugins-and-nagios/) and [Agent](/docs/monitoring/agent/)) and [post_heartbeats_name_beat](/docs/reference/api/operations/post_heartbeats_name_beat/) / [get_heartbeats_name_beat](/docs/reference/api/operations/get_heartbeats_name_beat/) (`objects:write`, `{"status":"ok"}`; the GET form exists for `curl` in cron but still needs the Bearer header — see [Heartbeats](/docs/monitoring/heartbeats/)).
+
+## Telephony webhooks
+
+Inbound phone and SMS alarms arrive as Twilio webhooks on raw routes; `{source}` is an event source of type `voice-inbound` or `sms-inbound` (id or name, resolved across tenants). The flows, TwiML, IVR menus and the Asterisk alternative are documented on [Voice and IVR](/docs/alarming/voice-and-ivr/).
+
+| Route | Purpose |
+|---|---|
+| `POST /api/v1/voice/inbound/{source}` | fresh call → PIN gate or main menu (TwiML) |
+| `POST /api/v1/voice/inbound/{source}/menu?state=…` | DTMF dispatch (`state=pin\|menu\|record-done\|ack\|resolve`) |
+| `POST /api/v1/voice/inbound/{source}/transcription?alert=…` | Twilio transcription callback (stores label `transcript`, answers 204) |
+| `POST /api/v1/sms/inbound/{source}` | inbound SMS: ack keyword or new alarm/event; answers TwiML `<Message>` |
+| `POST /api/v1/voice/gather/{token}` | DTMF callback of an **outbound** alarm call: form field `Digits`, `4` = acknowledge (open alerts), `6` = resolve (open or acked), anything else → "Not acknowledged. Goodbye."; the token is the ack-link token below |
+
+Authentication of the inbound routes, in order: the source must exist, be of the expected type and be enabled (`404 np:ingress/unknown-source`, `403 np:ingress/disabled`); form body up to 1 MiB; the source's `authMode` (`token` via `?token=<secret>` is the practical choice for Twilio — the UI suggests `https://<host>/api/v1/voice/inbound/<source-id>?token=<secret>` and Twilio's follow-up posts reuse it); optionally `X-Twilio-Signature` (HMAC-SHA1 over the public URL plus sorted form fields) when the source config sets `twilioAuthToken` — this requires a correct `baseUrl`; `allowFrom` caller-prefix allow-list → `403 np:ingress/caller`; per-source rate limit → `429`.
+
+## Ack link
+
+Notifications can embed a one-click acknowledgement URL `<baseUrl>/api/v1/ack/<token>` (rendered only when `baseUrl` is configured). The token is `<alertId>.<contactId>.<unixExpiry>.<hex of the first 16 bytes of HMAC-SHA256(secret, "alertId|contactId|exp")>`, signed with a server-generated secret persisted in the KV store, valid **24 h**. `GET /api/v1/ack/{token}` needs no login: it verifies the token, finds the alert across tenants, acknowledges it if it is still `open` (actor = contact name), stops the escalation chain, writes the audit entry (`via: ack-link`) and emits an `ack` event — then always answers the HTML page "✓ Quittiert" (also when the alert was already acknowledged or resolved). Invalid or expired → `403` with a German text; unknown alert → `404`. The token is not consumed on use; re-clicking is a no-op. All acknowledgement paths are compared on [Acknowledge and snooze](/docs/alarming/acknowledge-and-snooze/).
+
+## SSE stream
+
+`GET /api/v1/stream` ([get_stream](/docs/reference/api/operations/get_stream/), `events:read`) is a Server-Sent Events feed of everything published on the event bus of the caller's tenant (or the `X-Northplane-Tenant` tenant for `admin:tenants` holders). Event types and payloads: [Events](/docs/concepts/events/).
+
+| Item | Detail |
+|---|---|
+| Query | `types=a,b` (exact event-type match), `selector=…` (label selector matched against `payload.labels`; invalid → plain-text 400) |
+| Headers | `Content-Type: text/event-stream`, `Cache-Control: no-cache`, `X-Accel-Buffering: no`; exempt from the 30 s deadline |
+| Frame | `event: <type>` / `id: <event id>` / `data: <Event JSON>` / blank line. Event JSON: `{"id","tenantId","ts","type","objectId"?,"sourceId"?,"severity"?,"payload":{…}}` |
+| Comments | `: connected <RFC 3339>` on connect; every 15 s either `: ping` or — when the subscriber's 512-frame buffer overflowed — `event: resync` with `data: {}`, after which the client should re-fetch state |
+| Resume | send `Last-Event-ID: <uuidv7>`; the server replays persisted events of the tenant from 1 s before that id's timestamp (ascending, at most 500, filtered by `types`/`selector`, ids ≤ the last one skipped) before going live |
+| Auth | Bearer token or session cookie; there is **no `?token=`** — browsers' `EventSource` must rely on the cookie. The embedded UI itself does not use this stream (it polls); the stream is for integrations such as the alarm app |
+
+```bash
+curl -N "$NP/api/v1/stream?types=alert_opened,state_change" -H "Authorization: Bearer $TOK" -H "Last-Event-ID: 0199…"
+```
+```text
+: connected 2026-08-23T10:15:00Z
+event: alert_opened
+id: 0199a4c2-7d1e-7b3a-9e1f-2c4d6e8f0a1b
+data: {"id":"0199a4c2-…","tenantId":"…","ts":"2026-08-23T10:15:00Z","type":"alert_opened","severity":"critical","payload":{"alertId":"…","title":"db1 is CRITICAL","severity":"critical","rule":"demo-critical","labels":{"env":"prod"}}}
+
+: ping
+```
+
+For push delivery to your own HTTP endpoint instead of a held-open connection, use webhook subscriptions ([Outgoing webhooks](/docs/alarming/webhooks-out/)).
+
+## NDJSON exports
+
+| Endpoint | Permission | Behaviour |
+|---|---|---|
+| [get_events_export](/docs/reference/api/operations/get_events_export/) `GET /api/v1/events:export` | `events:read` | `application/x-ndjson`, one Event per line, same filters as `/events` (`objectId`, `sourceId`, `severity`, `types`, `from`, `to`), ascending by `ts`, internal pages of 1000, hard stop at **100 000** events; `cursor`/`limit` ignored; exempt from the 30 s deadline |
+| [get_audit_export](/docs/reference/api/operations/get_audit_export/) `GET /api/v1/audit:export` | `admin:audit` | whole tenant audit log ascending by `seq`, pages of 1000, no filters, no cap; **not** exempt from the 30 s deadline — very large logs may be cut, prefer paging `GET /audit` |
+
+Audit line shape: `{"seq","ts","tenantId","actorType","actorId","action","resource","sourceIp","requestId","before","after","prevHash","hash"}`; [post_audit_verify](/docs/reference/api/operations/post_audit_verify/) returns `{"intact":true,"verified":N}` or `{"intact":false,"verified":N,"error":"…"}`.
+
+```bash
+curl -s "$NP/api/v1/events:export?types=state_change&from=2026-08-01T00:00:00Z" -H "Authorization: Bearer $TOK" > events.ndjson
+curl -s "$NP/api/v1/audit:export" -H "Authorization: Bearer $TOK" | jq -c 'select(.action=="alert.ack")'
+```
+
+## OpenAPI document and Swagger UI
+
+- `GET /api/openapi.json` — the OpenAPI 3.1 document, generated at startup from the route registry (the same registry that installs the handlers, so it cannot drift), cached in memory, `Cache-Control: no-cache`. Each operation carries `summary`, `tags`, `operationId`, `security` (`bearerToken`) and `x-required-permission`; request/response schemas are reflected from the Go types (required = non-pointer without `omitempty`); list endpoints get `cursor` and `limit`; the `default` response is the problem document.
+- `GET /api/docs` — a vendored Swagger UI (works air-gapped) with filter, "Try it out" enabled, `withCredentials` (your browser session is used automatically) and an Authorize dialog that accepts an `np_…` token.
+- `northplaned openapi` — prints the same document without a running server ([northplaned CLI](/docs/reference/cli-northplaned/#openapi)). `make types` uses it to regenerate `web/src/types.gen.ts` and the copy of the document this reference is rendered from (`docs/src/assets/openapi.json`); CI fails on drift.
+
+:::note[Known gaps of the generated document]
+Schemas carry no descriptions or enums (reflection only). The success status is a heuristic: `POST /schedules/{name}/overrides` is documented as 200 but returns 201, `POST /ai/chat` is documented as 201 but is an SSE stream, `PUT /secrets/{name}` is documented as 200 but returns 204. Routes with an empty permission that still need an identity are not distinguishable in the document. The `status` filter description of `GET /alerts` mentions statuses that do not exist — the real values are `open,acked,resolved,expired`.
+:::
+
+## Generating a typed client
+
+The embedded UI consumes the API through types generated by [openapi-typescript](https://github.com/openapi-ts/openapi-typescript) — the same works for your own TypeScript integration:
+
+```bash
+curl -s https://np.example.com/api/openapi.json -o northplane-openapi.json     # or: northplaned openapi > northplane-openapi.json
+npx openapi-typescript northplane-openapi.json -o northplane.d.ts
+```
+
+```ts
+import type { paths } from './northplane'
+
+type Host = paths['/api/v1/hosts']['post']['responses']['201']['content']['application/json']
+type ProblemDoc = paths['/api/v1/hosts']['post']['responses']['default']['content']['application/problem+json']
+```
+
+Any other OpenAPI 3.1 generator works too; the document validates as 3.1.0. Remember that ingest, telephony and ack-link routes are not in the document.
+
+## curl cookbook
+
+All examples assume:
+
+```bash
+NP=https://np.example.com
+TOK=np_…
+alias npc='curl -s -H "Authorization: Bearer $TOK" -H "Content-Type: application/json"'
+```
+
+### Hosts, services, objects
+
+```bash
+# create a host → 201 Object + ETag: "1"      [post_hosts]
+npc -X POST $NP/api/v1/hosts -d '{"name":"web01","folder":"/prod","labels":{"env":"prod","role":"web"},
+  "spec":{"address":"10.0.0.5","checkCommand":"builtin:icmp","interval":"30s","templates":["linux-base"]}}'
+
+# create a service on it (host by name or id) → 201      [post_services]
+npc -X POST $NP/api/v1/services -d '{"name":"http","host":"web01","labels":{"env":"prod"},
+  "spec":{"checkCommand":"builtin:http","args":["https://web01/health"],"interval":"30s","contactGroups":["ops"]}}'
+
+# list by selector, with live state; page with cursor      [get_objects]
+npc "$NP/api/v1/objects?selector=env%3Dprod,role%3Dweb&limit=100"
+npc "$NP/api/v1/objects?cursor=<last id>&limit=100"
+
+# one object with live state, its effective config and its business impact
+npc $NP/api/v1/objects/$ID                      # [get_objects_id]
+npc $NP/api/v1/objects/$ID/effective-config     # [get_objects_id_effective_config] → {"spec":{…},"templateChain":[…]}
+npc $NP/api/v1/objects/$ID/impact               # [get_objects_id_impact] → ["Shop","Checkout"]
+
+# update (If-Match required), recheck now (202), delete (204)
+npc -X PUT $NP/api/v1/objects/$ID -H 'If-Match: "1"' -d '{"spec":{"checkCommand":"builtin:icmp","runbook":"see wiki"}}'
+npc -X POST $NP/api/v1/objects/$ID/check-now    # [post_objects_id_check_now]
+npc -X DELETE $NP/api/v1/objects/$ID            # [delete_objects_id]
+
+# bulk create (partial mode: per-item errors; default all-or-nothing → 422 with partial results)      [post_objects_batch]
+npc -X POST $NP/api/v1/objects:batch -d '{"mode":"partial",
+  "hosts":[{"name":"db01","folder":"/prod","labels":{"env":"prod","role":"db"},"spec":{"address":"10.0.0.7","checkCommand":"builtin:icmp"}}],
+  "services":[{"name":"postgres","host":"db01","spec":{"checkCommand":"builtin:tcp","args":["5432"],"interval":"30s"}}]}'
+# → {"created":2,"failed":0,"results":[{"name":"db01","id":"0199…"},{"name":"postgres","id":"0199…"}]}
+
+# current problems (worst first), metrics of an object, a time-series query
+npc "$NP/api/v1/problems?includeHandled=true"                                   # [get_problems]
+npc $NP/api/v1/objects/$ID/metrics                                              # [get_objects_id_metrics]
+npc -X POST $NP/api/v1/metrics/query -d '{"objectId":"'$ID'","metric":"time","from":"2026-08-22T10:00:00Z","to":"2026-08-23T10:00:00Z","stepSeconds":300,"agg":"avg"}'   # [post_metrics_query]
+```
+
+Operation pages: [post_hosts](/docs/reference/api/operations/post_hosts/), [post_services](/docs/reference/api/operations/post_services/), [get_objects](/docs/reference/api/operations/get_objects/), [get_objects_id](/docs/reference/api/operations/get_objects_id/), [get_objects_id_effective_config](/docs/reference/api/operations/get_objects_id_effective_config/), [put_objects_id](/docs/reference/api/operations/put_objects_id/), [delete_objects_id](/docs/reference/api/operations/delete_objects_id/), [post_objects_batch](/docs/reference/api/operations/post_objects_batch/), [post_objects_id_check_now](/docs/reference/api/operations/post_objects_id_check_now/), [get_problems](/docs/reference/api/operations/get_problems/), [post_metrics_query](/docs/reference/api/operations/post_metrics_query/). Field reference: [Object model](/docs/concepts/object-model/), [Hosts and services](/docs/monitoring/hosts-and-services/), [Metrics and TSDB](/docs/monitoring/metrics-and-tsdb/).
+
+### Passive results
+
+```bash
+# [post_results] → 202 {"accepted":2,"rejected":["unknown host ghost"]}
+npc -X POST $NP/api/v1/results -d '{"results":[
+  {"host":"web01","state":0,"output":"agent alive | uptime=120s;;;;"},
+  {"host":"web01","service":"http","state":"CRITICAL","output":"HTTP CRITICAL - connect refused | time=5.0s;1;3;0;"},
+  {"host":"ghost","state":0,"output":"nobody home"}]}'
+```
+
+`state` is `0–3` or `OK/WARNING/CRITICAL/UNKNOWN`, `UP/DOWN/UNREACHABLE` (case-insensitive); omit `service` for a host result; output is parsed Nagios-style (`text | perfdata`, further lines = long output). A stalled pipeline answers `503` with `server busy` in `rejected`.
+
+### Alerts
+
+```bash
+# raise an alarm manually (bypasses suppression, starts the escalation chain) → 201; 200 if folded by dedupKey      [post_alerts]
+npc -X POST $NP/api/v1/alerts -d '{"title":"Water leak basement","severity":"critical","labels":{"np.sound":"np_sirene"},
+  "escalationPolicy":"facility-24x7","dedupKey":"leak-b1"}'
+
+npc "$NP/api/v1/alerts?status=open,acked&severity=critical&since=2026-08-23T00:00:00Z"   # [get_alerts]
+npc -X POST $NP/api/v1/alerts/$ALERT:ack -d '{"comment":"on it"}'                         # [post_alerts_id_ack]   → 200 Alert
+npc -X POST $NP/api/v1/alerts/$ALERT:snooze -d '{"until":"2026-08-24T08:00:00Z"}'          # [post_alerts_id_snooze] → acked now, re-opens at until
+npc -X POST $NP/api/v1/alerts/$ALERT:resolve                                               # [post_alerts_id_resolve]
+```
+
+Operation pages: [post_alerts](/docs/reference/api/operations/post_alerts/), [get_alerts](/docs/reference/api/operations/get_alerts/), [get_alerts_id](/docs/reference/api/operations/get_alerts_id/), [post_alerts_id_ack](/docs/reference/api/operations/post_alerts_id_ack/), [post_alerts_id_snooze](/docs/reference/api/operations/post_alerts_id_snooze/), [post_alerts_id_resolve](/docs/reference/api/operations/post_alerts_id_resolve/). Semantics: [Alerts and incidents](/docs/concepts/alerts-incidents/), [Acknowledge and snooze](/docs/alarming/acknowledge-and-snooze/).
+
+### Incidents
+
+```bash
+npc -X POST $NP/api/v1/incidents -d '{"title":"Checkout degraded","severity":"critical","summary":"payment API slow","alertIds":["'$ALERT'"]}'   # [post_incidents] → 201
+npc "$NP/api/v1/incidents?open=true"                                   # [get_incidents]
+npc $NP/api/v1/incidents/$INC                                          # [get_incidents_id] → {"incident":…,"alerts":[…]}
+npc -X PUT $NP/api/v1/incidents/$INC -H 'If-Match: "1"' -d '{"title":"Checkout degraded (EU)","severity":"critical","ticketUrl":"https://jira/X-1"}'   # [put_incidents_id]
+npc -X POST $NP/api/v1/incidents/$INC:merge -d '{"sourceIds":["'$INC2'"]}'   # [post_incidents_id_merge]
+npc -X POST $NP/api/v1/incidents/$INC:summarize                        # [post_incidents_id_summarize] (503 np:ai/disabled without ai.provider)
+npc -X POST $NP/api/v1/incidents/$INC:resolve                          # [post_incidents_id_resolve] resolves its alerts too
+```
+
+Operation pages: [post_incidents](/docs/reference/api/operations/post_incidents/), [get_incidents](/docs/reference/api/operations/get_incidents/), [get_incidents_id](/docs/reference/api/operations/get_incidents_id/), [put_incidents_id](/docs/reference/api/operations/put_incidents_id/), [post_incidents_id_merge](/docs/reference/api/operations/post_incidents_id_merge/), [post_incidents_id_resolve](/docs/reference/api/operations/post_incidents_id_resolve/), [post_incidents_id_summarize](/docs/reference/api/operations/post_incidents_id_summarize/).
+
+### Silences and downtimes
+
+```bash
+# silence: expiresAt mandatory, at most 90 days; selector and/or textRegex      [post_silences]
+npc -X POST $NP/api/v1/silences -d '{"selector":"env=staging","comment":"deploy","expiresAt":"2026-08-23T12:00:00Z"}'
+npc "$NP/api/v1/silences?active=true"; npc -X DELETE $NP/api/v1/silences/$SID         # [get_silences] [delete_silences_id]
+
+# downtime: objectId or selector, fixed or flexible, optional RRULE subset, Idempotency-Key honoured      [post_downtimes]
+npc -X POST $NP/api/v1/downtimes -H 'Idempotency-Key: backup-window-w35' -d '{"selector":"env=prod,role=db","type":"fixed",
+  "start":"2026-08-30T22:00:00Z","end":"2026-08-31T00:00:00Z","rrule":"FREQ=WEEKLY;BYDAY=SA","comment":"weekly backup window"}'
+npc "$NP/api/v1/downtimes?active=true"; npc -X DELETE $NP/api/v1/downtimes/$DID       # [get_downtimes] [delete_downtimes_id]
+```
+
+Operation pages: [post_silences](/docs/reference/api/operations/post_silences/), [get_silences](/docs/reference/api/operations/get_silences/), [delete_silences_id](/docs/reference/api/operations/delete_silences_id/), [post_downtimes](/docs/reference/api/operations/post_downtimes/), [get_downtimes](/docs/reference/api/operations/get_downtimes/), [delete_downtimes_id](/docs/reference/api/operations/delete_downtimes_id/). Semantics (RRULE subset, flexible downtimes, re-arm): [Maintenance](/docs/monitoring/maintenance/).
+
+### Schedules and overrides
+
+```bash
+npc -X POST $NP/api/v1/schedules -d '{"name":"primary","timeZone":"Europe/Vienna","layers":[{"name":"weekly","participants":["alice","bob"],"unit":"weekly","length":"168h","anchor":"2026-01-05T08:00:00Z"}]}'   # [post_schedules]
+npc "$NP/api/v1/oncall/now?schedule=primary"                                                    # [get_oncall_now]
+npc -X POST $NP/api/v1/schedules/primary/overrides -d '{"contactId":"'$CONTACT'","start":"2026-08-24T08:00:00Z","end":"2026-08-25T08:00:00Z","reason":"swap"}'   # [post_schedules_name_overrides] → 201
+npc "$NP/api/v1/schedules/primary/timeline?days=14"; npc "$NP/api/v1/schedules/primary/stats?days=30"   # [get_schedules_name_timeline] [get_schedules_name_stats]
+curl -s $NP/api/v1/schedules/primary/ics -H "Authorization: Bearer $TOK" > oncall.ics            # [get_schedules_name_ics] text/calendar, −7 d … +60 d
+```
+
+Operation pages: [post_schedules](/docs/reference/api/operations/post_schedules/), [get_oncall_now](/docs/reference/api/operations/get_oncall_now/), [post_schedules_name_overrides](/docs/reference/api/operations/post_schedules_name_overrides/), [get_schedules_name_timeline](/docs/reference/api/operations/get_schedules_name_timeline/), [get_schedules_name_stats](/docs/reference/api/operations/get_schedules_name_stats/), [get_schedules_name_ics](/docs/reference/api/operations/get_schedules_name_ics/). See [Contacts and on-call](/docs/alarming/contacts-and-oncall/).
+
+### Channels and test notifications
+
+```bash
+npc -X POST $NP/api/v1/channels -d '{"name":"ops-mail","type":"email","enabled":true,"config":{"smtp":"smtp.example.net:587","from":"np@example.net","username":"np","password":"$SECRET:smtp-pass$"}}'   # [post_channels]
+npc -X POST $NP/api/v1/channels/ops-mail:test-notification -d '{"target":"ops@example.net"}'   # [post_channels_name_test_notification] → {"result":"sent","detail":"…"} or 502 np:notify/test-failed
+```
+
+Operation pages: [post_channels](/docs/reference/api/operations/post_channels/), [post_channels_name_test_notification](/docs/reference/api/operations/post_channels_name_test_notification/). Every channel type and its config keys: [Channels](/docs/alarming/channels/).
+
+### API tokens
+
+```bash
+# [post_api_tokens] → 201 {"token":"np_…","meta":{…}} — the secret is shown once
+npc -X POST $NP/api/v1/api-tokens -d '{"name":"ci-deploy","scopes":["objects:read","objects:write"],"ipBind":["10.0.0.0/8"],"expiresAt":"2027-01-01T00:00:00Z"}'
+npc $NP/api/v1/api-tokens                            # [get_api_tokens] metadata only
+npc -X POST $NP/api/v1/api-tokens/$TID:rotate        # [post_api_tokens_id_rotate] → new secret, old one revoked immediately
+npc -X DELETE $NP/api/v1/api-tokens/$TID             # [delete_api_tokens_id] → 204
+```
+
+Operation pages: [post_api_tokens](/docs/reference/api/operations/post_api_tokens/), [get_api_tokens](/docs/reference/api/operations/get_api_tokens/), [post_api_tokens_id_rotate](/docs/reference/api/operations/post_api_tokens_id_rotate/), [delete_api_tokens_id](/docs/reference/api/operations/delete_api_tokens_id/). See [API tokens](/docs/administration/api-tokens/).
+
+### Secrets
+
+```bash
+npc -X PUT $NP/api/v1/secrets/smtp-pass -d '{"value":"s3cr3t"}'   # [put_secrets_name] → 204 (503 np:secrets/nokey without a master key)
+npc $NP/api/v1/secrets                                            # [get_secrets] → ["smtp-pass","grafana-ingest"] (names only, plain array)
+npc -X DELETE $NP/api/v1/secrets/smtp-pass                        # [delete_secrets_name] → 204
+```
+
+Reference secrets as `$SECRET:name$` in channel/event-source config or via `secretRef`. Operation pages: [put_secrets_name](/docs/reference/api/operations/put_secrets_name/), [get_secrets](/docs/reference/api/operations/get_secrets/), [delete_secrets_name](/docs/reference/api/operations/delete_secrets_name/). See [Secrets](/docs/administration/secrets/).
+
+### Config bundles
+
+```bash
+# plan (objects:read) → {"plan":[{"action","kind","name","host","diff"}],"warnings":[],"applyToken":"ap_…"}      [post_config_bundles_plan]
+curl -s -X POST $NP/api/v1/config/bundles:plan -H "Authorization: Bearer $TOK" -H 'Content-Type: application/yaml' --data-binary @bundle.yaml
+# apply directly, or apply the cached plan by token, or dry-run, or prune unmanaged objects      [post_config_bundles_apply]
+curl -s -X POST "$NP/api/v1/config/bundles:apply" -H "Authorization: Bearer $TOK" -H 'Content-Type: application/yaml' --data-binary @bundle.yaml
+curl -s -X POST "$NP/api/v1/config/bundles:apply?applyToken=ap_…" -H "Authorization: Bearer $TOK"
+curl -s -X POST "$NP/api/v1/config/bundles:apply?dryRun=true" -H "Authorization: Bearer $TOK" --data-binary @bundle.yaml
+curl -s -X POST "$NP/api/v1/config/bundles:apply?prune=true&selector=env%3Dprod" -H "Authorization: Bearer $TOK" --data-binary @bundle.yaml
+# export (objects:read) → application/yaml      [get_config_bundles_export]
+curl -s "$NP/api/v1/config/bundles:export?folder=/prod" -H "Authorization: Bearer $TOK" > bundle.yaml
+```
+
+Operation pages: [post_config_bundles_plan](/docs/reference/api/operations/post_config_bundles_plan/), [post_config_bundles_apply](/docs/reference/api/operations/post_config_bundles_apply/), [get_config_bundles_export](/docs/reference/api/operations/get_config_bundles_export/). Format, kind order, idempotency: [Config bundles](/docs/administration/config-bundles/).
+
+### Reports
+
+```bash
+npc -X POST $NP/api/v1/reports -d '{"name":"prod-availability","type":"availability","params":{"selector":"env=prod","windowDays":30,"target":99.9},"schedule":"weekly:monday@07:00","email":["ops@example.net"],"keep":12}'   # [post_reports]
+curl -s -X POST "$NP/api/v1/reports/prod-availability:render?format=json" -H "Authorization: Bearer $TOK"   # [post_reports_name_render] html|csv|json (pdf → 501)
+npc -X POST $NP/api/v1/reports/prod-availability:run        # [post_reports_name_run] render, archive and e-mail now
+npc $NP/api/v1/reports/prod-availability/archive            # [get_reports_name_archive]
+curl -s -OJ $NP/api/v1/reports/prod-availability/archive/$AID -H "Authorization: Bearer $TOK"   # [get_reports_name_archive_id] attachment
+```
+
+Operation pages: [post_reports](/docs/reference/api/operations/post_reports/), [post_reports_name_render](/docs/reference/api/operations/post_reports_name_render/), [post_reports_name_run](/docs/reference/api/operations/post_reports_name_run/), [get_reports_name_archive](/docs/reference/api/operations/get_reports_name_archive/), [get_reports_name_archive_id](/docs/reference/api/operations/get_reports_name_archive_id/). See [Reports](/docs/monitoring/reports/).
+
+### Dashboards
+
+```bash
+# [post_dashboards] — spec is owned by the frontend (zod-validated there); 12-column grid
+npc -X POST $NP/api/v1/dashboards -d '{"name":"NOC","shared":true,"spec":{"time":"24h","refresh":"30s","widgets":[
+  {"type":"counters","w":12,"h":2},
+  {"type":"problems","title":"Open problems","limit":20,"selector":"env=prod","w":6,"h":6},
+  {"type":"metric","title":"web01 latency","object":"'$ID'","metric":"time","range":"3h","w":6,"h":6}]}}'
+npc $NP/api/v1/dashboards/NOC                                                   # [get_dashboards_name] → ETag
+npc -X PUT $NP/api/v1/dashboards/NOC -H 'If-Match: "1"' -d @dashboard.json      # [put_dashboards_name]
+```
+
+Operation pages: [post_dashboards](/docs/reference/api/operations/post_dashboards/), [get_dashboards_name](/docs/reference/api/operations/get_dashboards_name/), [put_dashboards_name](/docs/reference/api/operations/put_dashboards_name/). Widget types and config: [Dashboards](/docs/monitoring/dashboards/).
+
+## Headers quick reference
+
+| Header | Direction | Meaning |
+|---|---|---|
+| `Authorization: Bearer np_…` | request | API token |
+| `Cookie: np_session=…` | request | browser session |
+| `X-Northplane-Tenant: <tenant-id>` | request | act on another tenant (needs `admin:tenants`) |
+| `If-Match: "<version>"` | request | required on PUT of objects, configuration documents and incidents |
+| `If-None-Match: "<etag>"` | request | conditional `GET /sites/{name}:pull` (304) |
+| `Idempotency-Key` | request | `POST /downtimes` only (24 h window) |
+| `Last-Event-ID` | request | SSE resume |
+| `X-Northplane-Signature` / `X-Hub-Signature-256` | request (ingest) / response (outgoing webhooks) | HMAC-SHA256 hex, `sha256=` prefix optional on ingest, always present on outgoing webhooks |
+| `X-Twilio-Signature` | request | Twilio webhook signature (when `twilioAuthToken` is configured) |
+| `ETag: "<version>"` | response | on object/document GET, POST, PUT; content hash on `sites:pull` |
+| `X-Request-Id` | response | UUIDv7 per request, also in audit entries |
+| `Idempotency-Replayed: true` | response | replayed idempotent response |
+| `Retry-After` | response | `5` on ingest 429; `30` on the login throttle |
+| `Content-Disposition` | response | CSV/archive/GDPR downloads |

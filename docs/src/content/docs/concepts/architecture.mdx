@@ -1,0 +1,203 @@
+---
+title: Architecture
+description: How the single northplaned process is built — request path, monitoring and alarming pipelines, background workers, storage, NP-TSDB, event bus, API-first design and security posture.
+sidebar:
+  order: 1
+---
+
+import ArchitectureDiagram from '../../../components/ArchitectureDiagram.astro';
+
+Northplane is one Go binary, `northplaned`, that runs everything: the HTTP API, the embedded React UI and this documentation, the check scheduler and executor, the alarming engine, notification delivery, the SNMP-trap/MQTT/ESPA/FastAGI listeners, the MCP server, the federation edge worker and the housekeeping jobs. There is no message broker, no separate worker process and no external time-series database. State lives in one SQLite file (or a PostgreSQL database), monthly event segments and the bundled NP-TSDB under a single data directory.
+
+This page explains how the pieces fit together. The pages that follow in this section explain the data model ([Object model](/docs/concepts/object-model/)), the check life cycle ([Checks and states](/docs/concepts/checks-and-states/)), the [event stream](/docs/concepts/events/), the [alert and incident model](/docs/concepts/alerts-incidents/), [tenancy and RBAC](/docs/concepts/tenancy-rbac/) and [federation](/docs/concepts/federation/).
+
+## Overview
+
+<ArchitectureDiagram />
+
+## Detailed block diagram
+
+```text
+ browser (React SPA)   np CLI   np-agent   MCP clients (HTTP)   webhooks · Alertmanager · Twilio · cron beats
+        │                │         │             │                           │
+        └────────────────┴─────────┴─────────────┴───────────────────────────┘
+                                          │  HTTPS 443
+                                ┌─────────▼─────────┐
+                                │  reverse proxy    │   Caddy / nginx terminates TLS
+                                │  (optional)       │   → trustProxy: true, listen :8443
+                                └─────────┬─────────┘
+                                          │  http(s) :8443
+┌─────────────────────────────────────────▼──────────────────────────────────────────────────┐
+│ northplaned — one Go process                                                               │
+│                                                                                            │
+│ root mux   /api/  /metrics /healthz /readyz   /auth/ /login /setup /register /status/      │
+│            /mcp   /docs/   /  (SPA + assets)                                               │
+│ wrapping   securityHeaders → 30 s request deadline (streams exempt) → API middleware       │
+│            (X-Request-Id, panic recovery, metrics, auth np_… | np_session)                 │
+│            → per route: CSRF → login required → RBAC permission → handler                  │
+│                                                                                            │
+│ ┌─ monitoring ─────────────────────────────┐  ┌─ alarming ───────────────────────────────┐ │
+│ │ catalog (in-memory effective config)     │  │ ingress adapters: webhook, alertmanager, │ │
+│ │   → scheduler (timing wheel, 1 s slots)  │  │   traps (UDP), mailin (IMAP), mqttin,    │ │
+│ │   → executor (builtin pool / exec pool)  │  │   espa (TCP), agi, telephony, beats      │ │
+│ │   → results → pipeline → state machine   │  │   → events → alerting engine (CEL rules, │ │
+│ │       → state_change events, NP-TSDB     │  │   dedup, pendingFor, suppression)        │ │
+│ │   passive results: POST /api/v1/results, │  │   → alerts → escalation (persisted       │ │
+│ │   np-agent push, freshness probes        │  │   timers) → notify → outbox → channels   │ │
+│ └──────────────────────────────────────────┘  │   correlator · webhook-dispatcher        │ │
+│                                               └──────────────────────────────────────────┘ │
+│                                                                                            │
+│ event bus (in-memory channels)   results 8192 · events 16384 · notifications 4096          │
+│                                  subscribers: SSE hub, correlator, webhook dispatcher      │
+│                                                                                            │
+│ workers  scheduler executor pipeline alerting correlator escalation notify traps mailin    │
+│          mqttin espa agi api-janitor webhook-dispatcher report-scheduler dead-man          │
+│          [ldap-sync] [federation-edge] [ai]          — all supervised, restart after 1 s   │
+│                                                                                            │
+│ storage  core.db (SQLite WAL) or PostgreSQL · events-YYYYMM.db segments / partitions       │
+│          NP-TSDB  dataDir/tsdb  ·  secret.key (AES-256-GCM secret store) · audit chain     │
+└────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+## The process at a glance
+
+| Part | What it does | Where to read more |
+|---|---|---|
+| HTTP server | One listener (`listen`, default `127.0.0.1:8443`); TLS from `tls.certFile`/`tls.keyFile`, or plaintext behind a trusted proxy (`trustProxy`) or on loopback. | [TLS and proxy](/docs/administration/tls-and-proxy/) |
+| REST API | `/api/v1/...`, RFC 9457 errors, cursor pagination, `If-Match` versioning, OpenAPI 3.1 generated from the route registry. | [API overview](/docs/reference/api-overview/) |
+| Embedded UI | React single-page app compiled into the binary (`//go:embed`), served at `/`. | [Navigation](/docs/ui/navigation/) |
+| Embedded docs | This Starlight site, served at `/docs/` without login. | [Documentation](/docs/development/documentation/) |
+| Catalog | In-memory cache of every object with its resolved (effective) spec, template chain, command class and argv — the scheduler and pipeline never touch SQL on the hot path. | [Object model](/docs/concepts/object-model/) |
+| Scheduler | 86 400-slot timing wheel (1 s granularity, 250 ms tick), deterministic splay, priority lane for check-now and retries. | [Checks and states](/docs/concepts/checks-and-states/) |
+| Executor | Runs `builtin:` checks in-process (pool 1024) and `exec:` Nagios plugins as child processes (pool `execPoolSize`, default `min(256, 32×CPU)`); sends freshness probes for passive/agent objects. | [Builtin checks](/docs/monitoring/builtin-checks/), [Plugins and Nagios](/docs/monitoring/plugins-and-nagios/) |
+| Pipeline + state machine | Turns results into soft/hard states, host UP/DOWN/UNREACHABLE, flapping, events and TSDB samples; batches writes every 250 ms or 500 results. | [Checks and states](/docs/concepts/checks-and-states/) |
+| Alerting engine | Single goroutine consuming the event queue; CEL rules, dedup, `pendingFor`, suppression, heartbeats, auto-close, snooze wake-up on a 5 s tick. | [Alerts and incidents](/docs/concepts/alerts-incidents/), [Alert rules](/docs/alarming/alert-rules/) |
+| Escalation + notify | Persisted escalation timers (2 s poll), outbox with retries/DLQ (3 s poll), channel drivers. | [Escalation policies](/docs/alarming/escalation-policies/), [Reliability](/docs/alarming/reliability/) |
+| Listeners | SNMP trap receiver (UDP), IMAP poller, MQTT subscriber, ESPA/ESPA-X TCP, FastAGI for Asterisk, Twilio webhooks. | [Event sources](/docs/alarming/event-sources/) |
+| AI / MCP | Agent chat, approvals and the MCP server (stdio and `/mcp`) share one tool registry that re-checks REST permissions. | [Agent chat](/docs/ai/agent-chat/), [MCP server](/docs/ai/mcp-server/) |
+| Federation edge | Optional worker that pulls a config bundle from a main instance and reports status. | [Federation](/docs/concepts/federation/) |
+
+## Request path
+
+1. **Proxy (optional).** In the reference deployments Caddy terminates TLS on 443 and forwards to `northplane:8443` over plain HTTP; the server runs with `NORTHPLANE_TRUST_PROXY=true`, `NORTHPLANE_LISTEN=:8443` and `NORTHPLANE_BASE_URL=https://<domain>`. Without a proxy, give `northplaned` its own certificate pair. A non-loopback listener with neither TLS nor `trustProxy` nor `tls.insecure` refuses to start. See [TLS and proxy](/docs/administration/tls-and-proxy/).
+2. **Root mux.** The server mounts the API handler at `/api/`, `/metrics`, `/healthz`, `/readyz`; the server-rendered auth pages at `/auth/`, `/login`, `/setup`, `/register`, `/status/`; the MCP Streamable-HTTP endpoint at `/mcp`; the documentation at `/docs/`; and the SPA at `/`. Every response passes through `securityHeaders` (nosniff, `X-Frame-Options: DENY`, CSP for non-API paths, HSTS on HTTPS) and a 30 s `http.TimeoutHandler`; the streaming paths `/api/v1/stream`, `/api/v1/events:export`, `/api/v1/ai/chat` and `/mcp` are exempt from the deadline.
+3. **API middleware.** Assigns `X-Request-Id` (UUIDv7), recovers panics into `np:internal`, records `np_http_*` metrics and authenticates: `Authorization: Bearer np_…` resolves an API token (prefix lookup + argon2id verify, expiry, IP bind); otherwise the `np_session` cookie resolves a DB-backed session; otherwise the request is anonymous.
+4. **Per route.** Cookie sessions with `Sec-Fetch-Site: cross-site` are rejected (`np:auth/csrf`); routes with a permission require a principal (`np:auth/required`) holding that permission (`np:auth/forbidden`); then the handler runs with the tenant from `X-Northplane-Tenant` (only for `admin:tenants` holders) or the principal's own tenant.
+5. **SPA gate.** An unauthenticated *document* navigation to `/` is redirected to `/login`; API calls are never redirected, they get a 401 problem document. The UI polls the API (no SSE) at the user's refresh interval.
+
+Details and the full error catalog are in the [API overview](/docs/reference/api-overview/); the authentication flows are in [Authentication](/docs/administration/authentication/).
+
+## The monitoring pipeline
+
+```text
+catalog.Entry ──► scheduler (due) ──► executor ──► CheckResult ──► pipeline
+                                                                   ├─ host mapping (UP/DOWN/UNREACHABLE)
+                                                                   ├─ state machine (soft/hard, flapping)
+                                                                   ├─ check_state upsert (batched)
+                                                                   ├─ state_change / flapping events ──► event bus
+                                                                   ├─ retry timer (soft) / parent cascade
+                                                                   └─ perfdata ──► NP-TSDB
+```
+
+- Object create/update pushes the entry into the catalog and the scheduler; template, check-command and time-period changes reload the whole tenant catalog and re-schedule.
+- Active checks (`builtin:`/`exec:`) are dispatched from the wheel; passive and agent objects only get freshness probes when `stalenessAfter` is set; results for them arrive via `POST /api/v1/results`.
+- The pipeline keeps `check_state` rows in memory and flushes them in batches; failed flushes are re-queued.
+
+[Checks and states](/docs/concepts/checks-and-states/) explains the timing and state rules; [Metrics and NP-TSDB](/docs/monitoring/metrics-and-tsdb/) the perfdata path.
+
+## The alarming pipeline
+
+```text
+event sources ─┐
+state_change  ─┼─► event bus ─► alerting engine ─► alert (dedup, pendingFor, suppression)
+heartbeats    ─┘                                    ├─► alert_opened event ─► correlator (storms → incident)
+incident_update (API)                               ├─► escalation chain (persisted timers)
+                                                    │      └─► notify ─► outbox ─► channels (email, SMS, voice, push, …)
+                                                    └─► webhook subscriptions (outgoing)
+```
+
+Every input becomes an `Event`; alert rules (CEL) decide what becomes an alert; escalation policies decide who is notified and when; channels deliver through the outbox with retries and a dead-letter queue. Manual alarms (API, phone, SMS, app) create alerts directly and bypass rules and suppression. Read [Alerts and incidents](/docs/concepts/alerts-incidents/) for the model and the [Alarming overview](/docs/alarming/overview/) for the end-to-end walk-through.
+
+## Background workers
+
+`serve` starts every worker under a supervisor: a panic is logged as `server: background worker panicked; restarting` and the worker restarts after 1 s. On SIGINT/SIGTERM the HTTP server drains and workers get a 30 s shutdown budget.
+
+| Worker | Cadence | Job |
+|---|---|---|
+| `scheduler` | 250 ms tick | timing wheel, due objects → queue |
+| `executor` | continuous | runs builtin/exec checks, freshness probes |
+| `pipeline` | batch 250 ms / 500 results | results → state machine → events → TSDB |
+| `alerting` | event-driven + 5 s tick | rules, pending alerts, heartbeats, auto-close, suppression re-arm, snooze wake |
+| `correlator` | 10 s sweep | alarm storms → incident |
+| `escalation` | 2 s poll | due escalation steps (table `escalations`) |
+| `notify` | 3 s poll or bus wake-up | outbox delivery, retries, dead letters |
+| `traps`, `mailin`, `mqttin`, `espa`, `agi` | 30 s reconcile | listeners/pollers for the matching event-source types |
+| `api-janitor` | 30 s / 10 min / hourly | downtime depths + flexible downtimes; expired sessions + idempotency rows; nightly (02:00–03:59 local) TSDB maintenance + event retention, otherwise TSDB flush |
+| `webhook-dispatcher` | bus subscriber | outgoing webhook subscriptions → outbox |
+| `report-scheduler` | 10 s after start, then 1 min | scheduled reports |
+| `dead-man` | `deadManInterval` (1 m) | GET `deadManUrl`; skipped when the results queue exceeds 7000 |
+| `ldap-sync` | `ldap.syncInterval` (15 m) | only with `ldap.url` |
+| `federation-edge` | `federation.interval` (1 m) | only in `federation.mode: edge` |
+| `ai` | — | only when the AI service exposes a run loop |
+
+See [Observability](/docs/administration/observability/) for health endpoints, `/metrics` and logs.
+
+## Storage
+
+| Store | Default | Notes |
+|---|---|---|
+| Relational core | SQLite `<dataDir>/core.db`, WAL, pool 16, writes serialised in-process | `storage.dsn: postgres://…` switches to PostgreSQL (pgx, pool 16/8). Schema migrations (currently 9) run automatically on every open; `northplaned storage migrate --to` copies between backends offline. |
+| Events | `<dataDir>/events-YYYYMM.db` monthly segment files (SQLite) or `events_YYYYMM` range partitions (PostgreSQL) | Append-only; `storage.eventRetentionMonths` (default 12, `0` = forever) drops whole months nightly. |
+| Config documents | table `resources` (`tenant_id, kind, name, doc JSON, version`) | Templates, rules, channels, policies, schedules, dashboards, roles, sites, … — the same documents that YAML [config bundles](/docs/administration/config-bundles/) carry. |
+| Dedicated tables | `objects`, `object_labels`, `check_state`, `alerts`, `incidents`, `downtimes`, `silences`, `heartbeats`, `users`, `tenants`, `sessions`, `api_tokens`, `secrets`, `audit_log`, `outbox`, `escalations`, `idempotency`, `kv`, `push_subscriptions`, `report_archive`, `ai_*` | Hot-path and security-relevant data. |
+| Secrets | table `secrets`, AES-256-GCM, master key in `secret.key` | Referenced as `$SECRET:name$`; see [Secrets](/docs/administration/secrets/). |
+| Audit | `audit_log` with a SHA-256 hash chain | `POST /api/v1/audit:verify`, `np audit verify`; no purge. |
+| NP-TSDB | `<dataDir>/tsdb` | see below |
+| Backup | `northplaned backup` → `backup.target` | `VACUUM INTO` copy of `core.db`, event segments, TSDB tree, manifest; no periodic loop. |
+
+Everything about files, DSNs, retention and restore is on the [Storage](/docs/administration/storage/) page.
+
+## NP-TSDB
+
+Every check result's perfdata (`'label'=value[UOM];warn;crit;min;max`) becomes samples in the embedded time-series store: one series per `(objectId, metric, unit)` plus `np_exec_time` per result. Raw samples are kept in a WAL and flushed into immutable two-hour blocks (Gorilla compression); 5-minute and 1-hour aggregates are built nightly; retention is hard-coded at **30 days raw, 400 days 5-minute, 5 years 1-hour**, with a cap of 100 000 series. `POST /api/v1/metrics/query` picks the finest tier with data for the requested range. The TSDB is backend-independent — it is not touched by `storage migrate` and is copied as a directory by `backup`. Details: [Metrics and NP-TSDB](/docs/monitoring/metrics-and-tsdb/).
+
+## Event bus
+
+The bus is in-memory only (Go channels): `Results` (executor → pipeline, 8192), `Events` (ingress and pipeline → alerting engine, 16384, blocking — never dropped), `Notifications` (outbox wake-ups, 4096) and `AI` (256, dropped under load). Subscribers — the SSE hub (buffer 512), the correlator (1024) and the webhook dispatcher (1024) — see every event of every tenant and filter themselves; a slow subscriber loses messages and is flagged for resync. Persistence is *not* a bus feature: producers insert events into the event store before or while publishing, so the stored history is complete even when a live subscriber overflows. Engine and API lifecycle events (`alert_opened`, `ack`, `config`, …) are published *fan-out only*, i.e. they reach SSE, webhooks and the correlator but do not re-enter the alert rules. See [Events](/docs/concepts/events/).
+
+## API-first
+
+There is exactly one way to read or change anything: the REST API under `/api/v1`.
+
+- The React UI and the `np` CLI are ordinary REST clients. The `np-agent` pushes results to `POST /api/v1/results` and pulls central checks from `GET /api/v1/agent/checks`.
+- Every route is registered through one helper that records method, path, summary, permission and request/response types; the OpenAPI 3.1 document (`GET /api/openapi.json`, `northplaned openapi`) and the TypeScript types of the UI are generated from that registry, and each operation carries `x-required-permission`. Swagger UI is served at `/api/docs`.
+- The AI tools and the MCP server (Streamable HTTP at `/mcp`, stdio via `northplaned mcp`) do not go through HTTP handlers — they call the store and services directly — but every tool checks the same permission name as the equivalent REST route and mutating tools go through a propose/approve gate; nothing is reachable through AI that the same principal could not do over the REST API.
+- YAML [config bundles](/docs/administration/config-bundles/) are the declarative form of the same documents: `np apply`, the Admin tab, the Nagios importer, the AI config tools and the federation edge all call one applier.
+
+## Embedding
+
+The binary embeds the UI build (`internal/web/dist`, `Cache-Control: immutable` for `/assets/*`), this documentation (`/docs/`, public, own CSP, pre-compressed) and the vendored Swagger UI. A build without the UI answers `501 UI not embedded in this build`; a build without the docs answers 501 at `/docs/`. Because the UI is part of the binary, server and UI can never be out of sync; the CI type-drift gate (`make types-check`) enforces that the generated TypeScript types match the OpenAPI document.
+
+## Security posture (summary)
+
+| Area | Behaviour |
+|---|---|
+| Transport | TLS 1.2+ with a configured cert/key; plaintext only on loopback, with `tls.insecure` (dev) or behind a proxy with `trustProxy`. No ACME — terminate at Caddy/nginx. HSTS when HTTPS. |
+| Authentication | Local accounts (argon2id, passwords ≥ 12 chars, per-IP login throttle), OIDC (code + PKCE), LDAP/AD (sync + search-then-bind), API tokens (`np_` + 48 hex, hashed, scopes/roles, expiry, IP bind, shown once). |
+| Sessions | `np_session` cookie: HttpOnly, SameSite=Lax, Secure on HTTPS; 12 h or 30 d with "remember me"; DB-backed. Cross-site cookie requests to the API are rejected (`np:auth/csrf`); no CORS. |
+| Authorization | Permission strings `resource:action` with wildcards, per-route checks, built-in roles `admin`/`operator`/`viewer`/`ai-agent`, custom roles with includes and IdP group mapping. See [Tenancy and RBAC](/docs/concepts/tenancy-rbac/). |
+| Isolation | Every row is tenant-scoped; cross-tenant reads return 404; only `admin:tenants` may switch tenants with `X-Northplane-Tenant`. |
+| Secrets | AES-256-GCM secret store keyed by `secret.key` (0600); values are write-only through the API; `$SECRET:name$` references in channel/source/check config. |
+| Audit | Hash-chained audit log for every mutation and login; NDJSON export; integrity verification. |
+| Headers | `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: same-origin`, CSP with `frame-ancestors 'none'` on non-API paths. |
+| Ingest | Per-source auth (`token`/`hmac`/`basic`/`none`), per-source rate limits (50 ev/s, burst 200), optional Twilio signature verification, SSRF guards in HTTP checks, discovery and webhooks. |
+| Unauthenticated by design | `/healthz`, `/readyz`, `/metrics`, `/api/openapi.json`, `/api/docs`, `/docs/`, `GET /api/v1/system/health`, `GET /api/v1/system/info`, public status pages — restrict at the proxy where needed. |
+| Be aware | `X-Forwarded-For` is not used (source IPs behind a proxy are the proxy's address); role folder/selector scopes are stored but not enforced; system roles are editable through the API. |
+
+The hardening checklist lives on the [Security](/docs/administration/security/) page.
+
+## Where to go next
+
+- [Installation](/docs/getting-started/installation/) and the [Deployment overview](/docs/deployment/overview/) for how the process is run in practice.
+- [Configuration](/docs/administration/configuration/) for every `config.yaml` key and environment variable mentioned here.
+- [Backend](/docs/development/backend/) for the Go package map behind these components.

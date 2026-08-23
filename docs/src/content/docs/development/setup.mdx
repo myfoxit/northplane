@@ -1,0 +1,265 @@
+---
+title: Development setup
+description: Prerequisites, repository layout, the make dev hot-reload loop, every Make target, the worktree convention and the formatting/lint gates for working on Northplane.
+sidebar:
+  order: 1
+---
+
+import { FileTree, Steps } from '@astrojs/starlight/components';
+
+Northplane is one Go module (`github.com/northplane/northplane`) that builds four binaries — `northplaned`, `np`, `np-agent`, `np-gen` — plus a React SPA (`web/`) and this documentation site (`docs/`). Both front-ends are embedded into `northplaned` with `go:embed`, so a finished build is a single static file. This page takes you from a clone to a running hot-reload loop.
+
+## Prerequisites
+
+| Tool | Version | Why |
+|---|---|---|
+| Go | 1.25 (`go 1.25.0` in `go.mod`; CI uses `actions/setup-go` with `1.25`) | backend, CLI, agent, `go:embed` |
+| Node.js + npm | 22 (CI and the Docker build stages use `node:22`) | Vite build of `web/`, Astro build of `docs/`, `openapi-typescript`, Playwright |
+| make, git, curl | any recent | Makefile targets, `scripts/dev.sh` |
+| `lsof`, `xxd`, `shasum` | stock macOS/Linux | used by `scripts/dev.sh` (port handling, key generation, source hashing) |
+| golangci-lint | v2.12.2 — `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2` | the CI lint gate; optional locally but recommended |
+| Docker | optional | `make docker`, the Compose stacks, the PostgreSQL test matrix |
+| Chromium | installed by `make e2e` (`npx playwright install chromium`) | end-to-end tests |
+
+There is no CGO anywhere: SQLite is the pure-Go `modernc.org/sqlite` driver, so a plain toolchain cross-compiles every target with `CGO_ENABLED=0`. Nagios plugins are a runtime option, not a build dependency (see [Plugins and Nagios](/docs/monitoring/plugins-and-nagios/)).
+
+:::note[npm and the peer-dependency conflict]
+`web/package-lock.json` pins `typescript@6` while `openapi-typescript` still declares a `^5` peer range. npm 11 (local machines, CI) tolerates this; the older npm bundled in `node:22-alpine` aborts `npm ci`, which is why the Dockerfile runs `npm ci --legacy-peer-deps` in both Node stages. If your local `npm ci` stops on the peer conflict, add the same flag — it only skips the cosmetic abort; the lockfile tree is installed either way.
+:::
+
+## Clone and first build
+
+<Steps>
+
+1. Clone the repository (it is private — you need access to `myfoxit/northplane`).
+
+   ```bash
+   git clone git@github.com:myfoxit/northplane.git
+   cd northplane
+   ```
+
+2. Build the UI once so the binary embeds a current SPA. The committed `internal/web/dist` is a snapshot and can lag behind `web/src`.
+
+   ```bash
+   make web
+   ```
+
+3. Build the four binaries into `bin/`.
+
+   ```bash
+   make build
+   ./bin/northplaned version
+   ```
+
+4. Optional: build the documentation site and stage it for embedding. Without this step a locally built server answers `/docs/` with HTTP 501 (see [Documentation](/docs/development/documentation/)).
+
+   ```bash
+   make docs
+   ```
+
+</Steps>
+
+`make all` runs `web`, `docs` and `build` in that order. A bare `go build ./cmd/northplaned` also compiles, because the embed directories always exist in the tree (`internal/web/dist` as committed, `internal/docs/dist/.gitkeep`).
+
+## Repository layout
+
+<FileTree>
+
+- cmd/
+  - northplaned/ server binary: `serve`, `init`, `migrate`, `storage migrate`, `import nagios`, `backup`, `mcp`, `openapi`, `bootstrap-admin`
+  - np/ operator CLI (`NP_SERVER`, `NP_TOKEN`)
+  - np-agent/ host agent (push, pull and listener modes)
+  - np-gen/ scaffolding generator (`new-resource`, embedded `templates/`)
+- internal/ every Go package — see the table below
+  - api/ REST API, route registry, OpenAPI generator, vendored `swaggerui/`
+  - server/ process wiring, root mux, TLS policy, security headers, workers
+  - storage/ SQLite/PostgreSQL store, migrations, resources, events, outbox, audit
+  - web/ embedded SPA + server-rendered pages (`dist/` is committed)
+  - docs/ embedded documentation handler (`dist/` is staged by `make docs`)
+  - …
+- web/ React SPA — Vite, TypeScript, Tailwind v4, shadcn/ui
+  - src/ pages, components, api client, i18n, generated types
+  - e2e/ Playwright suite + global setup/teardown
+  - public/ favicon, service-worker kill switch
+  - package.json
+- docs/ this site (Astro Starlight)
+  - src/
+    - content/
+      - docs/ the pages, one directory per sidebar section
+    - assets/
+      - openapi.json spec copy the REST reference is rendered from
+  - astro.config.mjs
+  - compress.mjs gzip pre-compression for embedding
+- deploy/ production Compose stacks, Caddyfile, `provision-server.sh`
+- caddy/ Caddyfile for the root `docker-compose.yml`
+- scripts/
+  - dev.sh the `make dev` loop
+- .github/
+  - workflows/ `ci.yml`, `deploy.yml`, `release.yml`
+- Dockerfile multi-stage: ui → docs → Go build → distroless runtime
+- docker-compose.yml local trial stack (northplane + caddy)
+- install.sh release installer (`curl … | sh`)
+- Makefile
+- .golangci.yml
+- go.mod
+
+</FileTree>
+
+### Package map (`internal/`)
+
+| Package | Role |
+|---|---|
+| `agi` | FastAGI server for inbound alarm calls handed over by Asterisk/FreePBX (outbound voice lives in `notify`) |
+| `ai` | AI subsystem: provider clients (Anthropic, OpenAI-compatible), redaction, agent loop, propose/approve gates; degrades to `provider: none` |
+| `alerting` | events → alerts: CEL rules, pending periods, dedup, auto-close, heartbeat detection, correlation into incidents, suppression |
+| `api` | the REST API: route registry (`handle`), RBAC wrapper, RFC 9457 problems, OpenAPI generation, ingest and telephony webhooks |
+| `auth` | API tokens (argon2id), sessions, permission model, OIDC code+PKCE, AES-256-GCM SecretBox and the `$SECRET:name$` resolver |
+| `bundle` | declarative YAML bundles: parser, `KindOrder`, plan/apply vocabulary |
+| `catalog` | in-memory view of objects with effective specs, templates, check commands and time periods — no SQL on the hot path |
+| `checks` | the 17 builtin in-process checks, the flag parser and the threshold evaluator |
+| `config` | `config.yaml` loading, defaults, `NORTHPLANE_*` overrides, validation |
+| `demo` | the idempotent `--demo` seed |
+| `docs` | serves the embedded documentation at `/docs/` |
+| `escalation` | multi-step escalation chains on durable timers (`escalations` table) |
+| `espa` | ESPA 4.4.4 / ESPA-X TCP ingress listeners |
+| `eventbus` | typed in-memory queues between subsystems with the backpressure policy |
+| `executor` | worker pools: builtin checks in-process, `exec:` plugins as processes (argv only, timeouts, process-group kill) |
+| `federation` | edge half of main↔edge federation: status heartbeat and bundle pull |
+| `ldap` | LDAP/AD user sync and directory login verification |
+| `mailin` | IMAP poller ingress |
+| `mcp` | MCP server — stdio (`northplaned mcp`) and Streamable HTTP at `/mcp` |
+| `metrics` | dependency-free self-metrics registry with OpenMetrics exposition |
+| `model` | domain types (objects, specs, events, alerts, channels, roles …), UUIDv7 ids, `Duration`, state enums |
+| `mqttin` | MQTT subscriber ingress |
+| `nagios` | plugin protocol (exit codes, output, perfdata, ranges), macro engine, NRPE client, configuration importer |
+| `notify` | notification delivery: outbox worker, sender registry per channel type, templates, retries and dead letters |
+| `pipeline` | result path: state machine → events → TSDB, batching, reachability, retries |
+| `scheduler` | timing wheel with deterministic splay and a check-now lane |
+| `selector` | the label-selector grammar |
+| `server` | wires everything into one process: root mux, TLS policy, security headers, supervised workers, backup |
+| `sse` | Server-Sent Events hub behind `/api/v1/stream` |
+| `statemachine` | soft/hard transitions, recovery, flapping, staleness — a pure function |
+| `storage` | relational layer: SQLite (modernc) and PostgreSQL (pgx), migrations, resources, events, outbox, audit chain |
+| `traps` | SNMP trap receiver (v1/v2c/v3) |
+| `tsdb` | NP-TSDB: Gorilla-compressed 2-hour blocks, downsampling tiers, query engine |
+| `web` | embedded SPA, the server-rendered login/setup/register/status pages, the SPA gate |
+
+The code comments cite `SPEC §x.y`, `ADR-nn`, `F-nn.nn` and `P1`–`P5`. Those refer to the Northplane system specification and its architecture decision records, which were removed from the repository tree; treat them as design notes, not as documents you need to find. The [Backend](/docs/development/backend/) page explains the ones that matter in practice.
+
+## `make dev` — the hot-reload loop
+
+`make dev` runs `scripts/dev.sh`, which starts two processes and keeps both alive until you press Ctrl-C:
+
+| Process | URL | Reloads on |
+|---|---|---|
+| Vite dev server (SPA, HMR) | `http://localhost:5173` | any change under `web/src` (instant) |
+| `northplaned serve -config .dev/config.yaml -demo` | `http://127.0.0.1:8443` | any change to `cmd/**/*.go`, `internal/**/*.go` (tests excluded), `go.mod`, `go.sum` — rebuild + restart |
+
+What the script does, in order:
+
+1. Takes the single-instance lock `.dev/dev.pid`. A second `make dev` in the same checkout kills the previous session and takes over (two watcher loops would otherwise fight over the API port).
+2. One-time bootstrap: writes `.dev/secret.key` (32 random bytes, hex, mode 0600) and `.dev/config.yaml`:
+
+   ```yaml title=".dev/config.yaml"
+   # Northplane DEV config (generated by scripts/dev.sh — safe to edit)
+   listen: "127.0.0.1:8443"
+   baseUrl: "http://localhost:5173"
+   dataDir: .dev/data
+   logLevel: info
+   logFormat: text
+   secretKeyFile: .dev/secret.key
+   ```
+
+3. Creates a stub `internal/web/dist/index.html` if none exists (`go:embed` needs a directory; the real UI comes from Vite in dev).
+4. Runs `npm ci` in `web/` when `node_modules` is missing or older than `package-lock.json`.
+5. Starts Vite with `NP_API=http://127.0.0.1:8443` so its proxy forwards every backend route to the Go process.
+6. Enters the watch loop: every `NP_DEV_POLL` seconds it hashes the Go sources; on change it runs `go build -o .dev/northplaned.new ./cmd/northplaned`, swaps the binary, kills whatever listens on the API port, starts the server and waits for `/readyz` (100 × 0.1 s). A failed build keeps the previous server running; a server that dies on start is reported as `✗ backend failed to start`.
+7. Logs go to `.dev/api.log` and `.dev/web.log` and are tailed into your terminal with `[api]` / `[web]` prefixes.
+
+The banner you should see:
+
+```text
+[dev] UI  → http://localhost:5173  (hot reload)
+[dev] API → http://127.0.0.1:8443  (auto rebuild+restart)
+[dev] demo users: demo-operator / operator-demo-2026!  ·  demo-viewer / viewer-demo-2026!
+```
+
+The API listens on plaintext HTTP, which the server permits only because the address is loopback (see [TLS and proxying](/docs/administration/tls-and-proxy/)). Open the UI at `http://localhost:5173`; the Vite proxy forwards `/api`, `/auth`, `/login`, `/setup`, `/register`, `/status`, `/mcp`, `/metrics`, `/healthz` and `/readyz` with a 2.5 s timeout (so a request issued mid-restart fails fast and React Query retries), and `/api/v1/stream` plus `/api/v1/ai/chat` without a timeout (streams). `/docs/` is **not** proxied — author the docs with `make docs-dev` on port 4321 instead (see [Documentation](/docs/development/documentation/)).
+
+### Environment variables
+
+| Variable | Default | Effect |
+|---|---|---|
+| `NP_DEV_DIR` | `.dev` | state directory: config, key, SQLite, TSDB, logs, built binary, lock (git-ignored) |
+| `NP_DEV_LISTEN` | `127.0.0.1:8443` | Go backend listen address |
+| `NP_DEV_WEB_PORT` | `5173` | Vite port (`--strictPort`: fails instead of drifting to 5174) |
+| `NP_DEV_DEMO` | `1` | `1` starts the backend with `-demo` (idempotent showcase seed); `0` skips it |
+| `NP_DEV_POLL` | `1` | seconds between source-hash polls |
+| `NP_API` | `http://$NP_DEV_LISTEN` | exported to Vite as the proxy target (`web/vite.config.ts`) |
+| `NP_DEFAULT_ADMIN_EMAIL`, `NP_DEFAULT_ADMIN_PASSWORD`, `NP_DEFAULT_ADMIN_DISABLED` | unset | passed through to `northplaned serve` — see below |
+
+### Accounts in the dev instance
+
+- With `NP_DEV_DEMO=1` (default) the demo seed creates `demo-operator` / `operator-demo-2026!` (role `operator`) and `demo-viewer` / `viewer-demo-2026!` (role `viewer`) — the same credentials the e2e suite uses. The full seed is described in [Demo mode](/docs/getting-started/demo-mode/).
+- `serve` also seeds the break-glass local admin (`admin@localhost`) with a **generated** password on every start while no enabled local admin exists. Look for the line `seeded default admin with a GENERATED password — save it now, it is not recoverable` in the `[api]` output, or export `NP_DEFAULT_ADMIN_EMAIL` / `NP_DEFAULT_ADMIN_PASSWORD` before `make dev`. Because that admin exists, the first-run page `/setup` is closed; to exercise the `/setup` flow run `NP_DEFAULT_ADMIN_DISABLED=1 NP_DEV_DEMO=0 make dev` against a fresh `.dev`. Details: [Authentication](/docs/administration/authentication/).
+
+`make dev-reset` deletes `.dev` (database, TSDB, key, config) for a clean start.
+
+## Make targets
+
+| Target | What it does |
+|---|---|
+| `make all` | `web` + `docs` + `build` |
+| `make build` | `go build -ldflags "-X main.version=$(VERSION)"` for `bin/northplaned`, `bin/np`, `bin/np-agent`, `bin/np-gen`; `VERSION ?= 1.0.0-dev` (`make build VERSION=1.2.3`) |
+| `make web` | `cd web && npm ci --silent && npm run build`, then replaces `internal/web/dist` with `web/dist` |
+| `make docs` | `cd docs && npm ci --silent && npm run build:embed`, then stages `docs/dist` into `internal/docs/dist` (keeps `.gitkeep`) |
+| `make docs-dev` | `cd docs && npm run dev` — live docs at `http://localhost:4321/docs/` |
+| `make dev` | `scripts/dev.sh` (above) |
+| `make dev-reset` | `rm -rf .dev` |
+| `make test` | `go vet ./...` then `go test ./...` |
+| `make race` | `go test -race ./...` — what CI runs |
+| `make e2e` | `make web`, builds `bin/northplaned`, `npx playwright install chromium`, `npm run test:e2e` |
+| `make types` | `go run ./cmd/northplaned openapi` → `/tmp/np-openapi.json`, copies it to `docs/src/assets/openapi.json`, runs `npx --no-install openapi-typescript` into `web/src/types.gen.ts` and prepends the DO-NOT-EDIT header (needs `web/node_modules`) |
+| `make types-check` | `make types` then `git diff --exit-code -- web/src/types.gen.ts docs/src/assets/openapi.json` — the CI drift gate |
+| `make fmt` | `gofmt -w cmd internal` |
+| `make docker` | `docker build --build-arg VERSION=$(VERSION) -t northplane:$(VERSION) .` |
+| `make clean` | removes `bin`, `web/dist`, `internal/web/dist`, `docs/dist`, `internal/docs/dist`, then recreates the stub `internal/web/dist/index.html` and `internal/docs/dist/.gitkeep` so `go build` still compiles |
+
+## Worktree convention
+
+Work on a feature branch in its own git worktree, never directly in the main checkout. Worktrees isolate file edits, branch state and the per-checkout `.dev/` directory, so several sessions can run in parallel on the same repository.
+
+```bash
+git fetch origin
+git worktree add ../northplane-<feature> -b feature/<feature> origin/main
+cd ../northplane-<feature>
+```
+
+Things a worktree does **not** isolate:
+
+- **Ports.** `make dev` defaults to 8443/5173 in every checkout and its port handling kills whatever listens on the API port. Give a second loop its own ports: `NP_DEV_LISTEN=127.0.0.1:8444 NP_DEV_WEB_PORT=5174 make dev`. The e2e suite has `PW_PORT` for the same reason (see [Testing](/docs/development/testing/)).
+- **Shared services.** A local PostgreSQL used by the storage matrix is reset per test; point `NORTHPLANE_TEST_PG_DSN` at a throwaway database.
+- **Production.** A push to `main` runs CI and, when CI is green, the Deploy workflow rolls the production instance forward automatically. Merging to `main` is a deploy — see [CI/CD](/docs/deployment/ci-cd/).
+
+When the task is done (tests green, `make types-check` clean, lint clean): merge the branch into `main`, push, delete the branch, then `git worktree remove ../northplane-<feature>`.
+
+## Formatting and lint
+
+| Gate | Command | CI job |
+|---|---|---|
+| gofmt | `make fmt` to fix; CI fails when `gofmt -l cmd internal` prints anything | `lint` |
+| go vet | part of `make test` | `test` |
+| golangci-lint v2.12.2 | `golangci-lint run ./...` — config in `.golangci.yml` (standard set plus `misspell`, `unconvert`, `bodyclose`; see [Testing](/docs/development/testing/#golangci-lint)) | `lint` |
+| ESLint | `cd web && npm run lint` (flat config `web/eslint.config.js`) | `ui` |
+| TypeScript | `cd web && npm run build` runs `tsc -b` first (strict, `noUncheckedIndexedAccess`, unused locals/params are errors) | `ui` |
+| Typed codegen drift | `make types-check` after any change to a route or a JSON-tagged struct | `types` |
+
+Run golangci-lint locally before pushing: the CI gate is stricter than `go vet` alone, and the `lint` job installs the linter with `go install` so it is compiled by the same Go toolchain as the module (prebuilt linter binaries built with an older Go refuse a `go.mod` that targets a newer one).
+
+## Where next
+
+- [Testing](/docs/development/testing/) — Go, Vitest, Playwright, the PostgreSQL matrix, CI mapping.
+- [Backend](/docs/development/backend/) — architecture walkthrough, adding resources, checks and channel types.
+- [Frontend](/docs/development/frontend/) — the SPA stack, typed codegen, i18n, theming.
+- [Release process](/docs/development/release-process/) — versioning, tags, images, deploys.
+- [Documentation](/docs/development/documentation/) — how these pages are built and embedded.
