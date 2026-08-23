@@ -48,7 +48,7 @@ jobs:
     outputs:
       ver: ${{ steps.img.outputs.ver }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
@@ -84,7 +84,7 @@ jobs:
       contents: read
       packages: read # server-side docker login uses this run's GITHUB_TOKEN
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
@@ -175,7 +175,7 @@ jobs:
       contents: read
       packages: read # server-side docker login uses this run's GITHUB_TOKEN
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
