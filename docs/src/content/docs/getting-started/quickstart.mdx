@@ -1,0 +1,238 @@
+---
+title: Quickstart
+description: Run Northplane with Docker, Docker Compose or the single binary, create the admin account, monitor your first host and HTTPS service, and send a test notification — in about five minutes.
+sidebar:
+  order: 2
+---
+
+import { Tabs, TabItem, Steps } from '@astrojs/starlight/components';
+
+This page gets you from nothing to a running instance with one monitored host, one HTTPS service
+and a working notification channel. It deliberately takes shortcuts (plain HTTP on your own
+machine, a public ntfy topic); [Installation](/docs/getting-started/installation/) covers the
+production variants and [First steps](/docs/getting-started/first-steps/) continues with
+templates, the alarm chain, API tokens and the agent.
+
+You need one of: Docker, Docker Compose, or a `northplaned` binary for Linux/macOS (amd64/arm64).
+Binaries come from the GitHub release tarball `northplane_<tag>_<os>_<arch>.tar.gz`, the container
+image is `ghcr.io/myfoxit/northplane`. Both live in a **private** repository/package at the time of
+writing — you need access (a GitHub account with read permission and a PAT with `read:packages`
+for `docker login ghcr.io`), or you build from source with `make all` (see
+[Installation](/docs/getting-started/installation/#build-from-source)).
+
+## 1. Start the server
+
+<Tabs syncKey="variant">
+<TabItem label="Docker">
+
+The image runs `northplaned serve` as the distroless `nonroot` user (uid 65532) with
+`NORTHPLANE_LISTEN=:8443` and `NORTHPLANE_DATA_DIR=/var/lib/northplane`. Because `:8443` is a
+non-loopback listener, the server **refuses to start** without TLS unless you explicitly allow
+plaintext for a local trial:
+
+```bash
+docker login ghcr.io   # GitHub user + PAT with read:packages (private package)
+docker run -d --name northplane \
+  -p 8443:8443 \
+  -v northplane-data:/var/lib/northplane \
+  -e NORTHPLANE_TLS_INSECURE=true \
+  -e NP_DEFAULT_ADMIN_DISABLED=1 \
+  ghcr.io/myfoxit/northplane:latest
+docker logs -f northplane
+```
+
+Open **http://localhost:8443/setup**. The log shows
+`northplane: listening addr=:8443 scheme=http storage=sqlite` followed by
+`first run: open http://127.0.0.1:8443/setup to create your admin account`.
+
+- `NORTHPLANE_TLS_INSECURE=true` allows plain HTTP on the non-loopback listener. Without it the
+  container exits with `no TLS configured on a non-loopback listener — set tls.certFile/keyFile, or
+  trustProxy behind a TLS-terminating proxy, or tls.insecure for dev`. Never publish such a port
+  beyond your machine — use the Compose stack or real certificates instead.
+- `NP_DEFAULT_ADMIN_DISABLED=1` keeps the interactive `/setup` page open (see
+  [step 2](#2-create-the-admin-account) for why).
+- The named volume `northplane-data` holds the SQLite database, the event segments, the NP-TSDB
+  and the auto-generated `secret.key`. A bind mount must be writable by uid 65532.
+
+</TabItem>
+<TabItem label="Docker Compose">
+
+The repository root ships a `docker-compose.yml` with Northplane behind a bundled **Caddy** that
+terminates TLS, plus `caddy/Caddyfile`. Northplane itself runs with `NORTHPLANE_TRUST_PROXY=true`
+on the Compose network only; Caddy publishes 80/443.
+
+```bash
+git clone https://github.com/myfoxit/northplane.git && cd northplane
+docker login ghcr.io             # private package; or uncomment `build: .` in docker-compose.yml
+docker compose up -d
+docker compose logs -f northplane
+```
+
+Open **https://localhost**. With `DOMAIN` unset, Caddy issues an internal self-signed certificate
+(your browser warns once); with `DOMAIN=monitoring.example.net docker compose up -d` and public DNS
+pointing at the host, Caddy fetches a Let's Encrypt certificate automatically.
+
+The Compose file does not set `NP_DEFAULT_ADMIN_*`, so on first start the server seeds a
+break-glass admin `admin@localhost` with a **generated password** and `/setup` stays closed:
+
+```bash
+docker compose logs northplane 2>&1 | grep -i "seeded default admin"
+```
+
+If you prefer the interactive `/setup` page, add `NP_DEFAULT_ADMIN_DISABLED: "1"` (or a chosen
+`NP_DEFAULT_ADMIN_EMAIL` / `NP_DEFAULT_ADMIN_PASSWORD` pair) to the `environment:` block of the
+`northplane` service **before** the first `up`.
+
+</TabItem>
+<TabItem label="Single binary">
+
+Unpack the release tarball (it contains `northplaned`, `np`, `np-agent` and `LICENSE`) and start the
+server. No config file is needed for a trial: the defaults listen on the loopback interface in
+plain HTTP and put all data under your user's data directory.
+
+```bash
+tar -xzf northplane_<tag>_linux_amd64.tar.gz
+sudo install -m 0755 northplaned np np-agent /usr/local/bin/
+NP_DEFAULT_ADMIN_DISABLED=1 NORTHPLANE_LOG_FORMAT=text northplaned serve
+```
+
+```text
+northplane: listening addr=127.0.0.1:8443 scheme=http storage=sqlite objects=0 ai=false
+first run: open http://127.0.0.1:8443/setup to create your admin account
+```
+
+Open **http://127.0.0.1:8443/setup**.
+
+- Default listen address is `127.0.0.1:8443`. Plaintext is allowed there because it is loopback; to
+  serve the network you need `listen: ":8443"` **and** `tls.certFile`/`tls.keyFile` (or a
+  TLS-terminating proxy with `trustProxy: true`) — see
+  [TLS and proxy](/docs/administration/tls-and-proxy/).
+- Data directory: `/var/lib/northplane` as root, `~/.local/share/northplane` (or
+  `$XDG_DATA_HOME/northplane`) as a normal Linux user, `~/Library/Application Support/northplane` on
+  macOS. A `secret.key` for secrets-at-rest is generated there on first start.
+- Logs go to **stderr**, JSON by default; `NORTHPLANE_LOG_FORMAT=text` makes them readable.
+- The macOS/Linux tarballs are the only ones with `northplaned`; the Windows zip contains `np` and
+  `np-agent` only.
+
+</TabItem>
+</Tabs>
+
+## 2. Create the admin account
+
+There are two ways to get the first administrator, and which one you get depends on one
+environment variable:
+
+- **Interactive `/setup`** — the page is open only while the instance has **no local user and no
+  API token**. On every start, `northplaned serve` also runs the *default-admin seeding*: unless
+  `NP_DEFAULT_ADMIN_DISABLED` is set to any non-empty value (or `NP_DEFAULT_ADMIN_PASSWORD` is set
+  to an empty string), it creates a local admin `admin@localhost` when no enabled local admin
+  exists. That local user closes `/setup` before you ever see it — which is why the commands above
+  set `NP_DEFAULT_ADMIN_DISABLED=1`. Fill in name, e-mail, a password of at least 12 characters and
+  the confirmation; you are logged in as `admin` immediately.
+- **Seeded break-glass admin** — leave the seeding enabled and read the one-time log line
+  `seeded default admin with a GENERATED password — save it now, it is not recoverable` (fields
+  `email=admin@localhost`, `password=<32 hex chars>`), or choose your own credentials with
+  `NP_DEFAULT_ADMIN_EMAIL`, `NP_DEFAULT_ADMIN_PASSWORD` and optionally `NP_DEFAULT_ADMIN_NAME`. Then
+  log in at `/login`. The login page is German: **E-Mail**, **Passwort**, **Anmelden**.
+
+Headless alternative: `northplaned bootstrap-admin -config <path>` mints an API token with scope
+`*:*` (printed once) — creating any token also closes `/setup`.
+Details: [Authentication](/docs/administration/authentication/).
+
+## 3. Add a host and an HTTPS service
+
+<Steps>
+
+1. In the sidebar open **Objects (Objekte)** and click **New host (Host anlegen)**.
+   On the **Basics (Basis)** tab enter Name `example-web` and Address `example.org`.
+
+2. Switch to the **Check (Prüfung)** tab. A new object starts as `passive` (no active check), so
+   set the check command kind to `builtin` and type `icmp` in the builtin-check field. Leave the
+   interval and retry settings at their defaults (60 s, 15 s, 3 attempts, 30 s timeout) and
+   **Save (Speichern)**.
+
+3. Click **New service (Service anlegen)**: Name `https`, Host `example-web`. On the **Check** tab
+   choose `builtin` / `http` and add the arguments one per entry: `-u`, `https://example.org/`,
+   `-w`, `1`, `-c`, `3`. The built-in `http`/`https` check only uses TLS when `-S` is given or `-u`
+   is a full `https://` URL, so pass the full URL. Save.
+
+4. Both rows show **PENDING (AUSSTEHEND)** until the first result. The scheduler runs a new object
+   within one interval; hover a row and click **Check now (Jetzt prüfen)** to force it. The host
+   turns **UP** and the service **OK** with an output like
+   `HTTP OK - 200 OK https://example.org/ in 0.123s, 1234 bytes, cert expires in 80d`.
+
+5. Click the service row: the detail page shows state, last/next check, perfdata meters
+   (`time`, `size`, `cert_days`) and, after a few results, a chart from the NP-TSDB. The
+   **Configuration (Konfiguration)** tab shows the effective spec with every default resolved.
+
+</Steps>
+
+:::note[ICMP needs privileges on Linux]
+As an unprivileged Linux user `builtin:icmp` may report
+`UNKNOWN - icmp socket: … (unprivileged ICMP unavailable — run as root, grant cap_net_raw, or use
+builtin:tcp)`. Either grant the capability
+(`sudo setcap cap_net_raw+ep /usr/local/bin/northplaned`) or switch the host check to
+`builtin:tcp` with arguments `-p`, `443`. The container and a root-run binary are fine.
+:::
+
+The same two objects as a YAML bundle, for `np apply` or **Admin → Config bundles**:
+
+```yaml title="quickstart.yaml"
+kind: Host
+metadata:
+  name: example-web
+spec:
+  address: example.org
+  checkCommand: builtin:icmp
+---
+kind: Service
+metadata:
+  name: https
+  host: example-web
+spec:
+  checkCommand: builtin:http
+  args: ["-u", "https://example.org/", "-w", "1", "-c", "3"]
+```
+
+## 4. Send a test notification
+
+<Steps>
+
+1. Open **Admin → Channels (Kanäle)** and click **Create (Anlegen)**. Choose Type `ntfy`, Name
+   `ntfy`, keep **Enabled (Aktiv)** on, set Server URL `https://ntfy.sh` and a Topic nobody will
+   guess, e.g. `northplane-7f3a9c2d`. Save.
+
+2. In the channel row click **Send test (Test senden)**. The server posts a synthetic `info` alert
+   titled `Test notification from Northplane (<your name>)` to the topic and the row shows
+   `✓ sent`; a failure shows the transport error instead.
+
+3. Open `https://ntfy.sh/northplane-7f3a9c2d` in another tab (or the ntfy app) — the message is
+   there. ntfy.sh topics are public, so treat the topic name as a secret or run your own ntfy
+   server.
+
+</Steps>
+
+Any channel type can be tested the same way; for types that deliver to a *contact target* (e-mail,
+SMS, voice, push) the UI button sends without a target, so use the API with one:
+
+```bash
+curl -X POST http://127.0.0.1:8443/api/v1/channels/ntfy:test-notification \
+  -H "Authorization: Bearer $NP_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"target": "you@example.com"}'
+```
+
+(`$NP_TOKEN` is an API token from **Admin → API tokens** or `northplaned bootstrap-admin`; the
+endpoint needs `config:write`.) Channel reference:
+[Channels](/docs/alarming/channels/).
+
+## 5. Where to go next
+
+- [First steps](/docs/getting-started/first-steps/) — the UI tour, templates, a complete
+  channel → contact → escalation policy → rule chain, API tokens and `np`, installing `np-agent`.
+- [Demo mode](/docs/getting-started/demo-mode/) — `northplaned serve --demo` seeds a full showcase
+  (hosts, checks, alerts, on-call, dashboard, report, two demo users) in a separate data directory.
+- [Installation](/docs/getting-started/installation/) — `northplaned init` with a systemd unit,
+  TLS, PostgreSQL, Compose with Let's Encrypt, building from source.
+- [Deployment overview](/docs/deployment/overview/) — which variant fits which environment, and
+  the ports you may need to open.

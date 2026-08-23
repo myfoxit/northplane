@@ -1,0 +1,347 @@
+---
+title: Voice calls and IVR
+description: Phone alarms in both directions — inbound alarm lines with IVR menus over Twilio or fully on-prem over Asterisk FastAGI, outbound calls with DTMF acknowledgement over Twilio TTS or Asterisk AMI, and inbound SMS.
+sidebar:
+  order: 5
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Northplane is a phone-capable alarm server in both directions. People can **call in** to raise, list, acknowledge or resolve alarms through a configurable IVR menu, and Northplane **calls out** to whoever is on call, reads the alarm and takes an acknowledgement by keypad. Both directions work with a cloud carrier (Twilio) or entirely on premises with your own Asterisk/FreePBX and SIP trunks — no cloud in the call path. The same IVR menu resources drive both stacks.
+
+| | Twilio (cloud) | Asterisk / FreePBX (on-prem) |
+|---|---|---|
+| Inbound calls | event source `voice-inbound`; Twilio posts webhooks to `/api/v1/voice/inbound/…`, Northplane answers with TwiML | event source `asterisk-inbound`; the dialplan hands the call to Northplane's FastAGI listener (port 4573) |
+| Outbound calls | `voice` channel, `provider: twilio` — TTS + `<Gather>` | `voice` channel, `provider: asterisk` — AMI `Originate` into your dialplan |
+| Speech | Twilio TTS (`language`, optional `voice`) | your TTS app (`ttsApp`, e.g. Flite, eSpeak, a piper wrapper) or pre-recorded `np-*` prompt files |
+| Keypad ack on outbound calls | `4` = acknowledge, `6` = resolve via the signed gather callback | the dialplan posts to the same callback (`NP_ACK_URL`) |
+| Inbound SMS | event source `sms-inbound` (Twilio messaging webhook) | — |
+
+Channel configuration keys are listed on [Notification channels](/docs/alarming/channels/); the generic event-source fields (`authMode`, `secretRef`, `rateLimit`, `labels`) are on [Event sources](/docs/alarming/event-sources/); all acknowledgement paths side by side are on [Acknowledge and snooze](/docs/alarming/acknowledge-and-snooze/).
+
+## IVR menus
+
+An IVR menu is a resource of kind `ivr-menu` (bundle kind `IVRMenu`), edited under **Alerting → IVR menus (IVR-Menüs)** or at `/api/v1/ivr-menus` (`objects:read` / `config:write`). A `voice-inbound` or `asterisk-inbound` source references a menu by name in its `menu` config key; without one (or when the named menu does not exist — a warning is logged) the **built-in menu** is used: `1` = raise an alarm and record a message (severity critical), `2` = list open alarms, `3` = acknowledge.
+
+![IVR menus in the UI (Alerting → IVR menus)](../../../assets/screenshots/alerting-ivr.webp)
+
+
+| Field | Notes |
+|---|---|
+| `language` | TTS language tag, e.g. `de-DE`; wins over the source's `language`. Prompts are German for any `de*`, English otherwise (both stacks) |
+| `voice` | Twilio `<Say voice>` name, e.g. `Polly.Vicki`; wins over the source's `voice`; ignored by Asterisk |
+| `greeting` | spoken first; default `Welcome to the Northplane alarm line.` / `Willkommen bei der Northplane Alarmzentrale.` |
+| `pin` | DTMF gate; callers must enter exactly these digits before the menu |
+| `trustCallerId` | `true` lets callers whose number matches a contact's `phone` skip the PIN |
+| `options[]` | the menu entries, see below |
+
+Options:
+
+| Field | Notes |
+|---|---|
+| `digit` | `0`–`9`, `*` or `#` |
+| `action` | `trigger-alarm`, `list-alerts`, `ack-alert`, `resolve-alert` or `say` |
+| `label` | announcement text; announced as `"<label>: <digit>"`. Without a label the default phrase is used (`To raise an alarm, press 1.` …). A `say` option without a label is **not announced** on Twilio |
+| `severity` | `trigger-alarm`: default `critical` (or the source's `severity`) |
+| `title` | `trigger-alarm`: alert title; `{caller}` and `{called}` expand; default `Phone alarm from {caller}` |
+| `labels` | `trigger-alarm`: extra alert labels, e.g. `np.sound: np_klaxon` for the alarm app (see [Mobile push](/docs/alarming/mobile-push/)) — they win over the source's labels |
+| `escalationPolicy` | `trigger-alarm`: policy for this option; falls back to the source's `escalationPolicy` |
+| `record` | `trigger-alarm`: `true` records a voice message after the alarm is raised |
+| `text` | `say`: what to speak (Twilio and Asterisk TTS mode) — in Asterisk prompt-file mode it **names a sound file** to play |
+
+```yaml title="ivr-menu.yaml"
+kind: IVRMenu
+metadata: { name: alarm-menu }
+spec:
+  language: de-DE
+  voice: Polly.Vicki
+  greeting: "Leitstelle Nordwerk."
+  pin: "4711"
+  trustCallerId: true
+  options:
+    - { digit: "1", action: trigger-alarm, severity: critical, title: "Telefonalarm von {caller}",
+        escalationPolicy: call-alarm, record: true, labels: { np.sound: np_klaxon }, label: "Alarm" }
+    - { digit: "2", action: list-alerts }
+    - { digit: "3", action: ack-alert }
+    - { digit: "4", action: resolve-alert }
+    - { digit: "5", action: say, text: "Bereitschaft diese Woche: Team Blau." }
+```
+
+What the actions do (identical semantics on both stacks unless noted):
+
+- **trigger-alarm** raises a manual alert (`ruleId: manual`) with the option's severity/title/labels and starts the escalation policy. Manual alarms **bypass downtimes, silences and flapping suppression**. The caller is recorded as the actor — the contact's name if the caller id matches a contact's `phone` (digits compared), otherwise the number. Dedup key: `call/<CallSid>` (Twilio) or `agi/<uniqueid>` (Asterisk), so a provider retry of the same call does not open a second alert.
+- **list-alerts** reads the newest five open alerts (`1: critical. Title. 2: …`) and returns to the menu.
+- **ack-alert** / **resolve-alert**: no open alarms → "There are no open alarms." and hang up; exactly one → acted on immediately; several → "Choose the alarm with the digit keys. 1: … 2: …" and one digit selects. Acknowledging stops the escalation chain; resolving also resolves a rule-created incident when it was the last alert. Both are audited (`alert.ack` / `alert.resolve` with `via: voice-inbound` or `asterisk-agi`).
+- **say** speaks the text and returns to the menu.
+
+:::caution[A policy is needed for anyone to be paged]
+A phone-raised alarm only notifies people when an escalation policy is resolved — from the option or the source's `escalationPolicy`. Without one the alert is created and visible in the UI, but nobody is called. A policy name that does not exist is logged (`alert raise: escalation start`) and silently ignored.
+:::
+
+## Inbound alarm line
+
+<Tabs syncKey="stack">
+<TabItem label="Twilio (cloud)">
+
+One `voice-inbound` event source per phone number (or Twilio SIP domain). Create it under **Admin → Event sources (Event-Quellen)** with type `voice-inbound`, or in a bundle:
+
+```yaml title="source-voice-inbound.yaml"
+kind: EventSource
+metadata: { name: alarm-line }
+spec:
+  type: voice-inbound
+  enabled: true
+  authMode: token
+  secretRef: alarm-line-token          # a stored secret: the webhook token
+  config:
+    menu: alarm-menu
+    language: de-DE
+    allowFrom: "+49,+43"
+    escalationPolicy: call-alarm
+    severity: critical
+    twilioAuthToken: $SECRET:twilio-auth$
+```
+
+| Key | Default | Notes |
+|---|---|---|
+| `menu` | built-in | IVR menu name |
+| `language` | `en-US` | TTS language when the menu has none |
+| `voice` | — | Twilio `<Say voice>`, e.g. `Polly.Vicki`; the menu's `voice` wins |
+| `allowFrom` | all callers | comma-separated E.164 prefixes (`+49,+43`); only digits and `+` are compared; anything else → `403 np:ingress/caller` |
+| `escalationPolicy` | — | default policy for alarms raised from the menu |
+| `severity` | `critical` | default for `trigger-alarm` options without a severity |
+| `twilioAuthToken` | — | `$SECRET:name$` or literal; when set, `X-Twilio-Signature` is verified on every webhook |
+
+Then point the number's **Voice** webhook (HTTP POST) in the Twilio console at
+
+```text
+https://monitoring.example.net/api/v1/voice/inbound/<source-id>?token=<secret>
+```
+
+The source's `id` and the `?token=` form are shown in the Admin → Event sources table and dialog; the source **name** works in the path as well. `authMode: token` compares `?token=<secret>` (or `Authorization: Bearer`) with the stored secret named by `secretRef`; Twilio re-posts every follow-up `action` URL verbatim, and Northplane puts the token into those URLs, so the whole call is authenticated. `hmac`, `basic` and `none` are accepted too — see [Event sources](/docs/alarming/event-sources/).
+
+**Signature check.** With `twilioAuthToken` set, Northplane recomputes Twilio's signature (HMAC-SHA1 over the public URL plus the sorted form parameters) and rejects mismatches with `401 np:ingress/auth`. The public URL is built from the config key `baseUrl` (path and query appended) — set `baseUrl` to exactly the origin Twilio calls, otherwise every signature fails.
+
+**Call flow.** Each step is a TwiML `<Gather input="dtmf" timeout="10">` around the spoken texts:
+
+1. If the menu has a `pin` and the caller is not trusted: greeting + "Please enter your PIN." — `len(pin)` digits, **one try**; wrong → "Wrong PIN. Goodbye." and `<Hangup/>`.
+2. Main menu: greeting (not repeated after a PIN) + one announcement per option; one digit; unknown digit → "Invalid input." and the menu again; no input → "Goodbye."
+3. The chosen action runs as described under [IVR menus](#ivr-menus). After `trigger-alarm` with `record: true` the caller hears "Speak your message after the tone, finish with the pound key." and Twilio records up to 120 s (`<Record maxLength="120" finishOnKey="#" playBeep="true" transcribe="true">`); the recording callback adds the label `recordingUrl` (`<RecordingUrl>.mp3`, hosted by Twilio) to the alert, the transcription callback adds `transcript` (truncated to 500 characters). Without `record` the call ends after "The alarm has been raised. Notifications are on their way."
+
+Alert labels for Twilio-raised alarms: `caller`, `called`, `callSid`, then the source's `labels`, then the option's `labels` (later wins); the alert payload carries `via: voice`. The source's `rateLimit`/`burst` (default 50/s, 200) apply per webhook.
+
+</TabItem>
+<TabItem label="Asterisk / FreePBX (on-prem)">
+
+One `asterisk-inbound` event source per alarm line. Northplane runs a **FastAGI** listener; the PBX terminates the SIP trunks and the dialplan hands the answered call over with a single line. The whole conversation (PIN, menu, recording, ack/resolve) is driven by Northplane over AGI — no cloud, no webhooks.
+
+```yaml title="source-asterisk-inbound.yaml"
+kind: EventSource
+metadata: { name: pbx-line }
+spec:
+  type: asterisk-inbound
+  enabled: true
+  config:
+    listen: "tcp://:4573"
+    menu: alarm-menu
+    language: de-DE
+    ttsApp: Flite                        # empty = prompt-file mode
+    escalationPolicy: call-alarm
+    severity: critical
+    allowFrom: "+43,0"
+    recordDir: /var/spool/asterisk/recording
+```
+
+| Key | Default | Notes |
+|---|---|---|
+| `listen` | `tcp://:4573` | FastAGI bind address (`tcp://` prefix optional). One listener per distinct address across all tenants; several sources may share one address |
+| `menu` | built-in | IVR menu name |
+| `language` | `en` | phrase language in TTS mode (`de*` → German); the menu's `language` wins |
+| `ttsApp` | — | Asterisk application that speaks its argument (`EXEC <ttsApp> "<text>"`), e.g. `Flite`, `ESpeak`, or a Gosub/AGI wrapper around piper. Empty = **prompt-file mode** |
+| `escalationPolicy` | — | default policy |
+| `severity` | `critical` | default severity |
+| `allowFrom` | all | comma-separated caller-id prefixes (digits/`+` compared); denied callers see `VERBOSE "northplane: caller not allowed"` and are dropped |
+| `recordDir` | `/var/spool/asterisk/recording` | directory **on the PBX** for recordings |
+
+Dialplan (`extensions.conf` / FreePBX custom context), with the source id **or name** as the AGI URL path:
+
+```text title="extensions.conf"
+[alarm-line]
+exten => s,1,AGI(agi://northplane.example.internal:4573/pbx-line)
+ same => n,Hangup()
+```
+
+Point the trunk's inbound route (DID) at the `alarm-line` context. Routing rules: the AGI path must equal a source's id or name; an **empty** path is accepted only when the listener serves exactly one source; otherwise the call is dropped with `VERBOSE "northplane: unknown alarm line"`. Several lines = several sources, distinguished by the path (they can share the listener). The listener accepts at most 32 concurrent calls, ends a session after 10 minutes and is reconciled every 30 s after source changes. If Northplane runs in a container, publish port 4573/tcp (the standard Compose files do not) — see [Deployment overview](/docs/deployment/overview/).
+
+**Conversation.** `ANSWER`; caller id = `agi_callerid`, called number = `agi_dnid`. PIN gate (`GET DATA`, 8 s, **three tries**; trusted contact numbers skip it); greeting; up to **five** menu rounds: options are announced with barge-in (a digit pressed during a prompt is taken), then `WAIT FOR DIGIT` 7 s; no input → goodbye and hang up. `trigger-alarm` speaks "The alarm has been raised…", then with `record: true` records `RECORD FILE <recordDir>/np-<alertId> wav "#" 120000 BEEP` and adds the label `recordingFile=<recordDir>/np-<alertId>.wav` — the audio stays on the PBX. `list-alerts` speaks the index (`SAY NUMBER`) and severity; titles are spoken only in TTS mode. `ack-alert`/`resolve-alert` with several open alarms wait 8 s for the choice. Alert labels: `caller`, `via=asterisk`, then source labels, then option labels; payload `via: asterisk-agi`; dedup key `agi/<agi_uniqueid>`.
+
+**Speech output — two modes.**
+
+- `ttsApp` set: every prompt, option and alert title is spoken dynamically through that application. Any app that takes the text as its argument works (`Flite`, `ESpeak`, or a small `Gosub`/`AGI` wrapper that renders piper to a temp file and plays it).
+- `ttsApp` empty: Northplane plays pre-recorded prompt files from the Asterisk sounds directory (e.g. `/var/lib/asterisk/sounds/`) and says digits with `SAY NUMBER`; alert titles are skipped. Record or generate these 20 files once (any format Asterisk can play, e.g. 8 kHz mono `.wav` or `.sln16`):
+
+```text
+np-greeting   np-pin        np-pin-bad    np-invalid      np-bye
+np-alarm-raised  np-record-now  np-recorded  np-no-alerts
+np-ack-confirm   np-resolve-confirm  np-list-intro
+np-opt-trigger   np-opt-list    np-opt-ack   np-opt-resolve   np-choose
+np-sev-critical  np-sev-warning  np-sev-info
+```
+
+The `np-opt-*` files are the phrase up to the digit ("To raise an alarm, press") — Northplane appends the digit with `SAY NUMBER`. `np-pin` is played by `GET DATA` as the PIN prompt. A `say` option's `text` names a further sound file in this mode. Example with piper (then convert to 8 kHz mono for Asterisk):
+
+```bash
+echo "Willkommen bei der Northplane Alarmzentrale." \
+  | piper --model de_DE-thorsten-medium.onnx --output_file np-greeting-22k.wav
+sox np-greeting-22k.wav -r 8000 -c 1 /var/lib/asterisk/sounds/np-greeting.wav
+```
+
+</TabItem>
+</Tabs>
+
+## Outbound calls
+
+Outbound calls are notifications through a `voice` channel. The spoken text is the channel template (default `Northplane alert. Severity CRITICAL. <title>. Press 4 to acknowledge, 6 to resolve.`) or, when the alert carries the label **`np.tts`**, exactly that label's value — set it per rule with `setLabels`, per IVR option, or in the manual trigger. The called number is the contact's `phone`.
+
+<Tabs syncKey="stack">
+<TabItem label="Twilio (cloud)">
+
+```yaml title="channel-voice-twilio.yaml"
+kind: Channel
+metadata: { name: alarm-voice }
+spec:
+  type: voice
+  enabled: true
+  config:
+    provider: twilio
+    accountSid: ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    apiKeySid: SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    apiKeySecret: $SECRET:twilio-api-secret$
+    from: "+15551234567"
+    language: de-DE
+```
+
+Northplane places the call with inline TwiML:
+
+```xml
+<Response>
+  <Gather numDigits="1" timeout="10" action="https://…/api/v1/voice/gather/<token>" method="POST">
+    <Say language="de-DE" loop="2">TEXT</Say>
+  </Gather>
+  <Say language="de-DE">No input received. Goodbye.</Say>
+</Response>
+```
+
+The text is read **twice**; one keypress ends the prompt. Without a gather URL (test sends, or no `baseUrl`/ack secret) the call only speaks the text. `language` defaults to `en-US`; a `voice` key is not used for outbound calls. Credentials: `accountSid` plus either `authToken` or (preferred) `apiKeySid` + `apiKeySecret`; `from` is the caller id; `apiBase` overrides the API host. The provider id is the Twilio call `sid`.
+
+</TabItem>
+<TabItem label="Asterisk AMI (on-prem)">
+
+```yaml title="channel-voice-asterisk.yaml"
+kind: Channel
+metadata: { name: pbx-voice }
+spec:
+  type: voice
+  enabled: true
+  config:
+    provider: asterisk
+    host: pbx.example.internal
+    port: "5038"
+    username: northplane
+    secret: $SECRET:ami-secret$
+    channel: "PJSIP/{to}@trunk"
+    context: northplane-alert
+    exten: s
+    priority: "1"
+    callerId: "Northplane <8000>"
+    timeoutMs: "30000"
+```
+
+Northplane logs in to the Asterisk Manager Interface (`Events: off`) and sends `Originate` with `Async: true`: `Channel` = the template with `{to}` replaced by the contact's phone, `Context`/`Exten`/`Priority` (or `Application`/`Data` when `application` is set), `CallerID`, `Timeout`, and the channel variables
+
+| Variable | Value |
+|---|---|
+| `NP_TEXT` | the spoken text (CR/LF removed, at most 1024 characters) |
+| `NP_SEVERITY` | `CRITICAL`, `WARNING`, `INFO` or `OK` |
+| `NP_ACK_URL` | the signed gather callback (only for real alerts and with `baseUrl` set) |
+
+Your dialplan owns speech and keypad handling. A minimal context that speaks the text with Flite, takes one digit and reports `4`/`6` back through the callback (adapt the TTS application and paths to your PBX):
+
+```text title="extensions.conf"
+[northplane-alert]
+exten => s,1,Answer()
+ same => n,Wait(1)
+ same => n,Flite(${NP_TEXT})
+ same => n,Read(DIGIT,,1,,1,10)
+ same => n,GotoIf($["${NP_ACK_URL}" = ""]?bye)
+ same => n,GotoIf($["${DIGIT}" = "4"]?ack)
+ same => n,GotoIf($["${DIGIT}" = "6"]?resolve)
+ same => n(bye),Hangup()
+ same => n(ack),System(curl -s -X POST "${NP_ACK_URL}" -d Digits=4)
+ same => n,Hangup()
+ same => n(resolve),System(curl -s -X POST "${NP_ACK_URL}" -d Digits=6)
+ same => n,Hangup()
+```
+
+The AMI manager user (`manager.conf`) needs `write = originate`. TLS: `tls: "on"` connects with TLS 1.2+ (Asterisk `tlsenable=yes`, usually port 5039), `insecure: "true"` skips certificate verification. Timeouts: 10 s dial, 20 s overall; a rejected originate fails the delivery with `originate rejected: <message>` and is retried by the outbox.
+
+</TabItem>
+<TabItem label="generic-http">
+
+Any HTTP voice gateway: `url` with `{to}` and `{text}` placeholders (GET, query-escaped) or `jsonBody` (POST JSON with the placeholders replaced unescaped), optional `username`/`password` basic auth. No keypad acknowledgement is possible on this path. With an empty `provider` and no `accountSid`, a `voice` channel behaves as `generic-http`.
+
+</TabItem>
+</Tabs>
+
+## Acknowledging by keypad
+
+`POST /api/v1/voice/gather/{token}` is the callback both outbound stacks use. The token is the same signed, 24-hour token as the ack link (`<alertId>.<contactId>.<expiry>.<hmac>`), so no login is needed; it is only generated when `baseUrl` is configured. Form field `Digits`:
+
+| Digit | Effect | Condition |
+|---|---|---|
+| `4` | acknowledge the alert, stop the escalation chain | alert is `open` |
+| `6` | resolve the alert, stop the chain, resolve a rule-created incident if it was the last alert | alert is `open` or `acked` |
+| anything else | TwiML `<Say>Not acknowledged. Goodbye.</Say>` | |
+
+Invalid or expired token → "This acknowledgement link is invalid or expired. Goodbye." The actor is the contact name (or id) from the token; the audit entry is `alert.ack` / `alert.resolve` with `{"via":"voice-dtmf"}`. Responses are English TwiML regardless of the channel language. Twilio posts `Digits` itself; from an Asterisk dialplan `curl -X POST "$NP_ACK_URL" -d Digits=4` does the same.
+
+## Inbound SMS
+
+A `sms-inbound` event source turns a Twilio number's **Messaging** webhook into alarms and acknowledgements. URL: `https://<host>/api/v1/sms/inbound/<source-id>?token=<secret>` — auth, `allowFrom`, `twilioAuthToken`, rate limit and the `?token=` rule are exactly as for voice.
+
+```yaml title="source-sms-inbound.yaml"
+kind: EventSource
+metadata: { name: sms-line }
+spec:
+  type: sms-inbound
+  enabled: true
+  authMode: token
+  secretRef: sms-line-token
+  config: { action: alert, escalationPolicy: sms-alarm, ackKeyword: OK, language: de }
+```
+
+| Key | Default | Notes |
+|---|---|---|
+| `action` | `event` | `event` publishes a normalised `ingress` event through the alert rules (rules decide, full CEL matching); `alert` raises an alert directly |
+| `escalationPolicy` | — | policy for `action: alert` |
+| `severity` | `warning` | invalid values fall back to `warning` |
+| `ackKeyword` | `ACK` | case-insensitive **prefix** match on the message body |
+| `language` | `en` | `de*` → German replies |
+| `allowFrom`, `twilioAuthToken` | | as for voice |
+
+Behaviour per incoming message (form fields `From`, `To`, `Body`, `MessageSid`):
+
+- Body starts with the keyword: the sender must match a contact's `phone` (reply `Unknown number — not acknowledged.` otherwise). Northplane acknowledges the **newest open alert** of the tenant (not a specific one), stops its chain, audits `alert.ack` with `via: sms` and replies `Acknowledged: <title>` (German: `Quittiert: <title>`); with no open alarm: `No open alarms.`
+- Otherwise the body becomes the summary (empty → `SMS alarm from <from>`; truncated at 200 characters). `action: alert` → manual alert with labels `from`, `to` + source labels, dedup key `sms/<MessageSid>`, payload `via: sms`, chain started with `escalationPolicy`. `action: event` → `ingress` event with `labels {from, to}` + source labels and `payload {body, from, to}` — match it in a rule, e.g. `event.source == "<source-id>" && event.payload.body.contains("FIRE")` (see [Alert rules](/docs/alarming/alert-rules/)). Reply: `Alarm received.` / `Alarm angenommen.`; metric `np_ingress_events_total{type="sms"}`.
+
+:::note
+With the default `action: event` an SMS only becomes an alarm if a rule matches it. If you want every SMS to page, use `action: alert` with an `escalationPolicy` — and remember that `enabled: true` must be set on the source.
+:::
+
+## Checklist
+
+- `baseUrl` (`NORTHPLANE_BASE_URL`) is set to the public origin — needed for ack links, the gather callback, Twilio signature verification and the `action` URLs of inbound calls.
+- The event source is `enabled: true` (disabled sources answer `403 np:ingress/disabled`) and its `secretRef` names an existing secret (token auth rejects everything otherwise).
+- Callers who should acknowledge or skip the PIN exist as contacts with their number in `phone`.
+- Exactly one `voice` channel is enabled per tenant — only the alphabetically first enabled one is used ([selection rule](/docs/alarming/channels/#how-a-channel-is-selected)).
+- Verify deliveries and inbound actions in the **Events** page: `notification` events per call attempt, `alert_opened`/`ack` events per phone action; failed calls after all retries appear under **Admin → Dead letters** ([Reliability](/docs/alarming/reliability/)).

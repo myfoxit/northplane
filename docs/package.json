@@ -1,0 +1,21 @@
+{
+	"name": "docs",
+	"type": "module",
+	"version": "0.0.1",
+	"scripts": {
+		"dev": "astro dev",
+		"start": "astro dev",
+		"build": "node check-api-links.mjs && astro build",
+		"build:embed": "node check-api-links.mjs && astro build && node compress.mjs",
+		"preview": "astro preview",
+		"astro": "astro"
+	},
+	"dependencies": {
+		"@astrojs/starlight": "^0.41.7",
+		"astro": "^7.1.6",
+		"sharp": "^0.35.3",
+		"starlight-links-validator": "^0.25.3",
+		"starlight-llms-txt": "^0.11.0",
+		"starlight-openapi": "^0.26.1"
+	}
+}

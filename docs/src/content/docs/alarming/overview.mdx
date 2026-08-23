@@ -1,0 +1,272 @@
+---
+title: Alarming overview
+description: How Northplane turns inputs into alerts, escalations and notifications — the pipeline, where each part lives in the UI, a worked end-to-end example and five short recipes.
+sidebar:
+  order: 1
+---
+import { Steps, CardGrid, LinkCard } from '@astrojs/starlight/components';
+import AlarmingPipelineDiagram from '../../../components/AlarmingPipelineDiagram.astro';
+
+Northplane is a full alarm server: many inputs, one event model, CEL rules, deduplicated alerts, persisted escalation chains with on-call routing, and a durable outbox in front of every channel. Everything is configured at runtime — in the UI, through the REST API, or as YAML bundles — and nothing needs a restart.
+
+## The pipeline
+
+<AlarmingPipelineDiagram />
+
+```text
+ INPUTS          checks (state_change) · webhook · Alertmanager · e-mail (IMAP) · SNMP traps
+                 MQTT · ESPA / ESPA-X · SMS · heartbeats · incidents created via the API
+                                          │
+                                          ▼
+ EVENT SOURCES   authenticate · rate-limit · normalise  ──▶  `ingress` events      (Admin → Event sources)
+                                          │   event = { type, severity, labels, payload, source }
+                                          ▼
+ ALERT RULES     CEL `match` over `event`  ──▶  dedup key · pendingFor · title · setLabels   (Alerting → Alert rules)
+                                          │
+                                          ▼
+ ALERTS          open ──▶ acked ──▶ resolved | expired        suppression gate: downtime · silence · flapping · host down
+                                          │
+                                          ▼
+ ESCALATION      policy steps: after · notify (contact | group | on-call schedule) · channels · repeatEvery · actions
+                                          │
+                                          ▼
+ OUTBOX          durable queue · exponential retries · dead letters · replay
+                                          │
+                                          ▼
+ CHANNELS        email · SMS · voice (DTMF 4 = ack, 6 = resolve) · push (FCM/APNs) · ntfy · Slack · Teams
+                 webhook · MQTT · tickets (ServiceNow / Zendesk / Jira / generic)
+
+ ◀── acknowledge from anywhere: UI · `np ack` · API · ack link · SMS "ACK" · IVR · DTMF · alarm app  (stops the chain)
+ ──▶ side outputs: events log · SSE `/api/v1/stream` · outgoing webhook subscriptions
+ ──▶ bypass the rules: manual alarms (UI "Trigger alarm", `POST /api/v1/alerts`, phone/SMS `action: alert`, Asterisk AGI)
+```
+
+Stage by stage:
+
+| Stage | What happens | Home page |
+|---|---|---|
+| Inputs → events | Check results become `state_change` events; every external input becomes an `ingress` event carrying a normalized `summary`, `severity`, `labels`, optional `dedupKey`/`resolve` and the archived original payload. | [Event sources](/docs/alarming/event-sources/), [Events](/docs/concepts/events/) |
+| Alert rules | Each enabled rule evaluates a CEL expression against every event. A match opens (or refreshes) an alert keyed by a dedup key; an `ok`/`resolve` event clears it. | [Alert rules](/docs/alarming/alert-rules/) |
+| Alerts | `open → acked → resolved` (or `expired` through auto-close). Rule-created alerts pass a suppression gate (downtime, silence, flapping, parent host down) before any notification. | [Alerts and incidents](/docs/concepts/alerts-incidents/), [Acknowledge and snooze](/docs/alarming/acknowledge-and-snooze/) |
+| Escalation | The rule's escalation policy arms step 0; steps fire at `after` offsets, notify contacts / groups / whoever is on call, repeat, and can open tickets. Timers are persisted. | [Escalation policies](/docs/alarming/escalation-policies/), [Contacts and on-call](/docs/alarming/contacts-and-oncall/) |
+| Delivery | Every (contact, channel) pair is an outbox item: retried with exponential backoff, dead-lettered after 30 attempts, replayable. | [Reliability](/docs/alarming/reliability/), [Channels](/docs/alarming/channels/) |
+| Feedback | Any ack path stops the chain; snooze re-arms it later; outgoing webhooks and the SSE stream mirror every lifecycle event. | [Acknowledge and snooze](/docs/alarming/acknowledge-and-snooze/), [Outgoing webhooks](/docs/alarming/webhooks-out/) |
+
+Two things do **not** go through the rules: manual alarms (the UI's **Trigger alarm** button, `POST /api/v1/alerts`, phone menus, SMS sources with `action: alert`, Asterisk AGI) create the alert directly and start the chain immediately, bypassing suppression on purpose; and per-object contact routing (`contacts`/`contactGroups` on a host or service) notifies on hard state changes without any alert at all — see [Contacts and on-call](/docs/alarming/contacts-and-oncall/).
+
+## Where things live in the UI
+
+| You want to configure… | UI | API | Bundle kind |
+|---|---|---|---|
+| Inbound integrations (webhook, Alertmanager, IMAP, SNMP traps, MQTT, ESPA, phone, SMS, Asterisk) | **Admin → Event sources (Event-Quellen)** | `/api/v1/event-sources` | `EventSource` |
+| Rules that turn events into alerts | **Alerting → Alert rules (Alarm-Regeln)** with a built-in tester | `/api/v1/alert-rules` | `AlertRule` |
+| Alert groups (stored only, not evaluated) | **Alerting → Groups (Gruppen)** | `/api/v1/alert-groups` | `AlertGroup` |
+| Who is paged, when, and how often | **Alerting → Escalations (Eskalationen)** with a simulator | `/api/v1/escalation-policies` | `EscalationPolicy` |
+| Phone menus | **Alerting → IVR menus (IVR-Menüs)** | `/api/v1/ivr-menus` | `IVRMenu` |
+| People and their channel preferences | **Admin → Contacts (Kontakte)**, **Admin → Contact groups (Kontaktgruppen)** | `/api/v1/contacts`, `/api/v1/contact-groups` | `Contact`, `ContactGroup` |
+| On-call rotations, overrides | **On-Call (Bereitschaft)** | `/api/v1/schedules`, `/api/v1/oncall/now` | `Schedule` |
+| Delivery channels (e-mail, SMS, voice, push, chat, tickets) | **Admin → Channels (Kanäle)** with **Send test** | `/api/v1/channels` | `Channel` |
+| Secrets referenced as `$SECRET:name$` or `secretRef` | **Admin → Secrets** | `/api/v1/secrets/{name}` | — (not bundled) |
+| Dead-man inputs | **Admin → Heartbeats** | `/api/v1/heartbeats` | — (not bundled) |
+| Event forwarding to other systems | **Admin → Webhooks** | `/api/v1/webhooks` | `WebhookSubscription` |
+| Failed deliveries | **Admin → Dead letters (Dead-Letters)** | `/api/v1/notifications/dead-letters` | — |
+| Live alerts, manual alarms, ack/resolve | **Alerts (Alarme)** | `/api/v1/alerts` | — |
+| Incidents, AI summaries | **Incidents** | `/api/v1/incidents` | — |
+| Raw event log, NDJSON export | **Events** | `/api/v1/events`, `/api/v1/events:export` | — |
+| Downtimes, silences, time periods | **Maintenance (Wartung)** | `/api/v1/downtimes`, `/api/v1/silences`, `/api/v1/time-periods` | `TimePeriod` |
+
+Configuration resources use `objects:read` to view and `config:write` to change (contacts, groups and schedules use `oncall:read`/`oncall:write`); alerts need `alerts:read`, `alerts:ack` and `alerts:write`. See [Users, roles and permissions](/docs/administration/users-roles-permissions/).
+
+## Worked example: webhook in → rule → policy → SMS + voice
+
+The goal: a CI system posts build results to Northplane; a failed build pages Jane by SMS immediately and calls her after five minutes unless she acknowledged; a later "ok" post closes the alert.
+
+<Steps>
+
+1. **Store the secrets.** Secrets are write-only and cannot be bundled, so create them first — in **Admin → Secrets** or with the API (permission `admin:secrets`):
+
+   ```bash
+   NP=https://np.example.com; TOK=np_…
+   curl -s -X PUT "$NP/api/v1/secrets/ci-ingest-token" -H "Authorization: Bearer $TOK" \
+     -H 'Content-Type: application/json' -d '{"value":"<long random string>"}'
+   curl -s -X PUT "$NP/api/v1/secrets/twilio-api-secret" -H "Authorization: Bearer $TOK" \
+     -H 'Content-Type: application/json' -d '{"value":"<Twilio API key secret>"}'
+   ```
+
+2. **Describe everything else in one bundle.** Note the `enabled: true` on the channels and the event source — omitting it leaves them disabled — and the quoted config values (`config` is a string map).
+
+   ```yaml title="ci-alarm.yaml"
+   kind: Contact
+   metadata: { name: jane }
+   spec:
+     email: jane@example.com
+     phone: "+4915112345678"
+     timeZone: Europe/Berlin
+   ---
+   kind: Channel
+   metadata: { name: sms-twilio }
+   spec:
+     type: sms
+     enabled: true
+     config:
+       provider: twilio
+       accountSid: ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+       apiKeySid: SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+       apiKeySecret: $SECRET:twilio-api-secret$
+       from: "+15005550006"
+   ---
+   kind: Channel
+   metadata: { name: voice-twilio }
+   spec:
+     type: voice
+     enabled: true
+     config:
+       provider: twilio
+       accountSid: ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+       apiKeySid: SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+       apiKeySecret: $SECRET:twilio-api-secret$
+       from: "+15005550006"
+       language: en-US
+   ---
+   kind: EscalationPolicy
+   metadata: { name: ops-page }
+   spec:
+     steps:
+       - after: 0s
+         notify: { contact: jane }
+         channels: [sms]
+       - after: 5m
+         unlessAcked: true
+         notify: { contact: jane }
+         channels: [voice]
+         repeatEvery: 5m
+         maxRepeats: 2
+   ---
+   kind: EventSource
+   metadata: { name: ci }
+   spec:
+     type: webhook
+     enabled: true
+     authMode: token
+     secretRef: ci-ingest-token
+     mapping:
+       summary: payload.title
+       severity: "payload.state == 'failed' ? 'critical' : 'ok'"
+       dedupKey: string(payload.pipelineId)
+       resolve: "payload.state == 'ok'"
+       labels.repo: payload.repo
+     labels: { team: platform }
+   ---
+   kind: AlertRule
+   metadata: { name: ci-failure }
+   spec:
+     match: 'event.type == "ingress" && event.labels.team == "platform" && event.severity == "critical"'
+     severity: critical
+     title: "CI failed: {{ .event.summary }}"
+     escalationPolicy: ops-page
+     setLabels: { np.sound: np_klaxon }
+   ```
+
+3. **Apply it** with the CLI (or paste it into **Admin → Config bundles**):
+
+   ```bash
+   np apply -f ci-alarm.yaml
+   ```
+
+4. **Make sure links work.** SMS texts and voice calls carry an ack link / DTMF callback that is only rendered when `baseUrl` (`NORTHPLANE_BASE_URL`) is set to the public URL of the instance. Use **Send test** on both channels in **Admin → Channels** to confirm Twilio delivers.
+
+5. **Post a failure** from the CI job:
+
+   ```bash
+   curl -s -o /dev/null -w '%{http_code}\n' -X POST "$NP/api/v1/ingest/ci" \
+     -H 'Authorization: Bearer <long random string>' -H 'Content-Type: application/json' \
+     -d '{"title":"deploy #42 failed","state":"failed","pipelineId":42,"repo":"shop"}'
+   # 202
+   ```
+
+6. **Watch the chain.** Within a second the `ingress` event is matched, alert `CI failed: deploy #42 failed` opens with dedup key `ci-failure/42` and labels `team=platform, repo=shop, np.sound=np_klaxon`; step 0 sends Jane `[CRITICAL] CI failed: deploy #42 failed ack: https://np.example.com/api/v1/ack/…`. If nobody acknowledges within five minutes, step 1 calls her: *"Northplane alert. Severity CRITICAL. CI failed: deploy #42 failed. Press 4 to acknowledge, 6 to resolve."* — and repeats the call twice more at five-minute intervals. Posting the same `pipelineId` again folds into the open alert (no second chain); posting `"state":"ok"` resolves it and cancels all pending steps.
+
+   ```bash
+   np get alerts                                           # SEVERITY STATUS TITLE ID
+   curl -s "$NP/api/v1/events?types=alert_opened,escalation,notification,ack,alert_resolved&limit=20" \
+     -H "Authorization: Bearer $TOK"
+   ```
+
+</Steps>
+
+Every step, delivery attempt and acknowledgement is an event (`escalation`, `notification`, `ack`) and human actions land in the audit log — see [Reliability](/docs/alarming/reliability/).
+
+## Recipes
+
+### Phone alarm (call in, press 1)
+
+Create an event source of type `voice-inbound` (**Admin → Event sources**), auth mode `token` with a secret, optionally `allowFrom: "+49,+43"`, `escalationPolicy: ops-page` and `twilioAuthToken: $SECRET:twilio-auth$`. Point the Twilio number's voice webhook at `https://np.example.com/api/v1/voice/inbound/<source-id>?token=<secret>`. Callers hear the built-in menu — **1** raises an alarm and records a message, **2** lists open alarms, **3** acknowledges — or your own IVR menu from **Alerting → IVR menus**. The alarm is a manual alert (no rule needed), labelled `caller`, `called`, `callSid`, later `recordingUrl` and `transcript`. For a cloud-free setup use `asterisk-inbound` and one dialplan line. Details: [Voice and IVR](/docs/alarming/voice-and-ivr/).
+
+### SMS alarm
+
+An `sms-inbound` source with `action: alert` turns every inbound text into an alarm titled with the message body and routed to its `escalationPolicy`; a text starting with the `ackKeyword` (default `ACK`) from a known contact's phone acknowledges the newest open alarm. With `action: event` (the default) the text becomes an `ingress` event instead and your rules decide (`event.payload.body`, `event.labels.from`). Webhook URL: `/api/v1/sms/inbound/<source-id>?token=<secret>`. See [Voice and IVR](/docs/alarming/voice-and-ivr/) and [Event sources](/docs/alarming/event-sources/).
+
+### MQTT factory alarm
+
+```yaml
+kind: EventSource
+metadata: { name: factory-mqtt }
+spec:
+  type: mqtt
+  enabled: true
+  config: { url: "ssl://broker.plant:8883", topics: "factory/#", qos: "1", username: np, passwordSecretRef: mqtt-pass }
+---
+kind: AlertRule
+metadata: { name: hall3-fire }
+spec:
+  match: 'event.labels.topic == "factory/hall3/fire"'
+  severity: critical
+  title: "FIRE hall 3: {{ .event.summary }}"
+  escalationPolicy: fire-brigade
+  setLabels: { np.sound: np_sirene, np.overrideSilent: "true", np.tts: "Fire alarm in hall three. Evacuate." }
+```
+
+A plain-text payload becomes the event summary; JSON with `summary`/`severity` is taken as normal form; a CEL `mapping` handles anything else. `np.sound`/`np.overrideSilent` steer the alarm app, `np.tts` replaces the spoken text of voice calls — see [Mobile push](/docs/alarming/mobile-push/) and [Channels](/docs/alarming/channels/).
+
+### Prometheus Alertmanager
+
+Create a source of type `alertmanager` with `authMode: token`, a secret, and `labels: { source: prometheus }` (Alertmanager events do not carry a `source` label by themselves), then add the receiver:
+
+```yaml title="alertmanager.yml"
+receivers:
+  - name: northplane
+    webhook_configs:
+      - url: https://np.example.com/api/v1/ingest/prom/alertmanager
+        send_resolved: true
+        http_config:
+          authorization: { credentials: <secret> }
+```
+
+Each Alertmanager alert becomes one event with `dedupKey: am-<fingerprint>`, severity from its `severity` label (`critical`/`page` → critical, `info`/`none` → info, else warning), and `resolve: true` when the status is `resolved`. A rule such as `event.labels.source == "prometheus" && event.severity == "critical"` opens one Northplane alert per Alertmanager fingerprint and closes it on the resolved notification. See [Event sources](/docs/alarming/event-sources/).
+
+### App-triggered incident
+
+The northplane-alarm app (and any API client) creates incidents with `POST /api/v1/incidents`. That publishes an `incident_update` event *through the rules*, so one rule makes it ring:
+
+```yaml
+kind: AlertRule
+metadata: { name: app-alarm }
+spec:
+  match: 'event.type == "incident_update" && event.payload.action == "created"'
+  severity: critical
+  title: "{{ .event.payload.title }}"
+  escalationPolicy: ops-page
+```
+
+Only API-created incidents pass through the rules; incidents the engine or the correlator open do not (no loops). Template data is always `{{ .event.* }}` — `{{ .Payload.title }}` silently falls back to the default title. See [Alert rules](/docs/alarming/alert-rules/) and [Mobile push](/docs/alarming/mobile-push/).
+
+## Where to go next
+
+<CardGrid>
+  <LinkCard title="Event sources" description="Every input type, auth modes, CEL mapping, the normalized event." href="/docs/alarming/event-sources/" />
+  <LinkCard title="Alert rules" description="CEL reference, templates, dedup, pendingFor, heartbeat rules, testing." href="/docs/alarming/alert-rules/" />
+  <LinkCard title="Channels" description="All channel types and their configuration keys." href="/docs/alarming/channels/" />
+  <LinkCard title="Escalation policies" description="Steps, repeats, on-call routing, actions, the simulator." href="/docs/alarming/escalation-policies/" />
+  <LinkCard title="Acknowledge and snooze" description="Every ack path, resolve, snooze and what each records." href="/docs/alarming/acknowledge-and-snooze/" />
+  <LinkCard title="Reliability" description="Outbox retries, dead letters, persisted timers, what restarts lose." href="/docs/alarming/reliability/" />
+</CardGrid>

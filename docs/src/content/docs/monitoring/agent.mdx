@@ -1,0 +1,438 @@
+---
+title: np-agent
+description: The complete np-agent guide — install, agent.yaml reference, collectors and service names, passive push, central check pull, listener mode, service units for systemd/launchd/Windows, and troubleshooting.
+sidebar:
+  order: 4
+---
+import { Tabs, TabItem, Steps } from '@astrojs/starlight/components';
+
+`np-agent` is the host agent for Linux, macOS and Windows. It collects basic system metrics
+(load/CPU, memory, disks, processes, network), runs local Nagios plugins on a schedule and pushes
+everything as **passive results** over HTTPS — by default no inbound port on the monitored host.
+Optionally it pulls centrally defined checks from the server, and optionally it exposes an
+NCPA-style HTTPS listener that the server polls with the builtin `agent` check.
+
+| Mode | Default | Direction | Needs |
+|---|---|---|---|
+| Passive push | **on** | agent → server, `POST /api/v1/results` every `interval` | token with `objects:write` |
+| Central check pull | off (`pull: true`) | agent ← server, `GET /api/v1/agent/checks?host=…` every `pullInterval`; results go back as passive pushes | token with `objects:write` **and** `objects:read`, plus `pullAllow` |
+| Active listener | off (`listen: ":5693"`) | server → agent over HTTPS (`/v1/health`, `/v1/metrics`, `/v1/run/{service}`) | `listenToken`; a service with `checkCommand: builtin:agent` |
+
+The agent is a single static binary with no dependencies (it does not read the server's
+`config.yaml`). Command-line flags and exit codes are listed in the
+[np-agent CLI reference](/docs/reference/cli-np-agent/).
+
+## Install
+
+<Steps>
+
+1. **Get the binary.** Linux/macOS: the release tarball `northplane_<tag>_<os>_<arch>.tar.gz`
+   contains `northplaned`, `np`, `np-agent` and `LICENSE`; `install.sh` downloads the latest
+   release, verifies the checksum and installs into `/usr/local/bin` (or `~/.local/bin` when it
+   cannot write there). Windows: `northplane_<tag>_windows_amd64.zip` with `np.exe` and
+   `np-agent.exe`. Details: [Installation](/docs/getting-started/installation/).
+
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/myfoxit/northplane/main/install.sh | sh
+   np-agent -version
+   ```
+
+   :::caution
+   The one-liner shown in **Admin → Agents** needs the repository to be public. While the
+   repository is private it answers 404 for anonymous clients — download the release asset with
+   an authenticated client (`gh release download`) or copy the binary from an existing host.
+   :::
+
+2. **Create the host and its services on the server** — the agent does not create anything
+   (see [below](#create-the-objects-first)).
+
+3. **Mint a token** with scope `objects:write` (plus `objects:read` when you use `pull`):
+   **Admin → Agents** (Agents) → *Create token* does exactly that, shows the token once and
+   pastes it into the generated `agent.yaml`; or `POST /api/v1/api-tokens {"name":"agent-web-01","scopes":["objects:write"]}`
+   ([API tokens](/docs/administration/api-tokens/)).
+
+4. **Write `agent.yaml`** (reference below) to `/etc/northplane/agent.yaml`
+   (Windows: `C:\ProgramData\northplane\agent.yaml`) and **start the service**
+   ([service units](#run-np-agent-as-a-service)). The first push happens immediately, then every `interval`.
+
+</Steps>
+
+The Admin → Agents tab also offers a prefilled `agent.yaml` and the systemd/launchd/Windows
+snippets used below; they are plain text — the same files you would write by hand.
+
+## Create the objects first
+
+`POST /api/v1/results` accepts results **only for objects that already exist**; unknown
+hosts/services are listed under `rejected` and silently dropped by the agent. So before the
+first push create:
+
+- a **Host** whose `name` equals the agent's `hostname` (the OS hostname unless you set
+  `hostname:` in `agent.yaml`) — the agent's host result (`np-agent 1.2.0 alive on linux/amd64`)
+  keeps it UP;
+- one **Service per collector** you want, named **exactly** like the agent reports them:
+  `load`, `memory`, `disk /` (one per mount, with the space), `cpu` (Windows), `processes`,
+  `network`, plus one service per `checks[].service`.
+
+Use `checkCommand: passive` and a `stalenessAfter` so a silent agent turns the services UNKNOWN:
+
+```yaml title="agent-host.yaml"
+kind: Template
+metadata: {name: agent-passive}
+spec:
+  kind: service
+  checkCommand: passive
+  stalenessAfter: 5m
+  stalenessText: "no result from np-agent for 5m"
+---
+kind: Host
+metadata: {name: web-01, folder: /prod, labels: {env: prod, agent: "true"}}
+spec:
+  address: 10.0.0.5
+  checkCommand: passive
+  stalenessAfter: 5m
+---
+kind: Service
+metadata: {name: load, host: web-01}
+spec: {templates: [agent-passive]}
+---
+kind: Service
+metadata: {name: memory, host: web-01}
+spec: {templates: [agent-passive]}
+---
+kind: Service
+metadata: {name: "disk /", host: web-01}
+spec: {templates: [agent-passive]}
+---
+kind: Service
+metadata: {name: processes, host: web-01}
+spec: {templates: [agent-passive]}
+---
+kind: Service
+metadata: {name: network, host: web-01}
+spec: {templates: [agent-passive]}
+```
+
+`np apply -f agent-host.yaml`. You can also keep the host actively checked
+(`builtin:icmp`) — passive results are accepted for active objects as well — but then the agent's
+own "alive" result competes with the ping; choose one.
+
+:::caution[UI text vs. behaviour]
+The Agents tab says "the host appears automatically under Objects". The server does not auto-create
+objects; the host must exist before the first push.
+:::
+
+## agent.yaml reference
+
+YAML, decoded strictly: durations **must** be strings with a unit (`60s`, `5m`) — `interval: 60`
+is a parse error. Default path: `/etc/northplane/agent.yaml` when running as root or when that
+file exists, otherwise the per-user config directory (`~/.config/northplane/agent.yaml` on Linux,
+`~/Library/Application Support/northplane/agent.yaml` on macOS, `%AppData%\northplane\agent.yaml`
+on Windows); override with `-config <path>`.
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `server` | string | — (required) | base URL of the instance, e.g. `https://northplane.example.net` (trailing `/` trimmed) |
+| `token` | string | — (required unless env `NORTHPLANE_TOKEN`) | API token `np_…`; the environment variable overrides the file |
+| `hostname` | string | OS hostname | `host` name in every result and in the pull query; must match the Host object |
+| `insecure` | bool | `false` | skip TLS verification for push and pull (self-signed server certificate) |
+| `interval` | duration | `60s` | collection + push cadence; also the cadence for pulled checks without their own interval |
+| `checks` | list | — | local plugin checks (below) |
+| `checks[].service` | string | — | service name on the server |
+| `checks[].command` | string | — | plugin path or bare name |
+| `checks[].args` | list | — | argv (no shell) |
+| `checks[].timeout` | duration | `30s` | per-check timeout |
+| `pull` | bool | `false` | fetch `agent:exec:` checks from the server |
+| `pullInterval` | duration | `5m` | how often the check list is re-fetched |
+| `pullAllow` | list | empty = **deny all** | local allowlist of bare plugin names that pulled checks may run |
+| `disk` | list | `["/"]` | mount points reported as `disk <mount>`; an explicit empty list disables disk collection |
+| `net` | list | empty = all non-loopback, max 8 | interface names reported in `network` |
+| `listen` | string | empty = off | listener address, e.g. `":5693"` |
+| `listenToken` | string | — (required with `listen`) | bearer token the server must present |
+| `tlsCert`, `tlsKey` | string | empty = self-signed | PEM certificate/key for the listener |
+
+Minimal file (what the Admin tab generates):
+
+```yaml title="/etc/northplane/agent.yaml"
+server: https://northplane.example.net
+token: np_…
+hostname: web-01
+interval: 60s
+disk: ["/"]
+```
+
+Everything in one file:
+
+```yaml title="/etc/northplane/agent.yaml"
+server: https://northplane.example.net
+token: np_0123456789abcdef0123456789abcdef0123456789abcdef
+hostname: db-01
+insecure: false
+interval: 60s
+disk: ["/", "/var/lib/postgresql"]
+net: ["eth0"]
+checks:
+  - service: postgres
+    command: check_pgsql
+    args: ["-H", "127.0.0.1", "-l", "postgres"]
+    timeout: 20s
+pull: true
+pullInterval: 5m
+pullAllow: ["check_disk", "check_http", "check_pgsql"]
+listen: ":5693"
+listenToken: 8f1c0a6d3f8e4f9d9a7b2c1d0e5f6a7b
+tlsCert: /etc/northplane/agent.crt
+tlsKey: /etc/northplane/agent.key
+```
+
+Startup fails (exit 1) when the file is unreadable or invalid, when `server` or `token` is empty,
+when `listen` is set without `listenToken`, or when the listener cannot bind. There is **no**
+connectivity check at start: an unreachable server or a bad token only logs
+`submit failed, buffering … err="HTTP 401"` on every tick. The process handles SIGINT/SIGTERM
+(clean stop); there is no reload signal — restart after editing the file.
+
+## Collectors: service names, output, perfdata
+
+Every tick the agent submits one result per collector. Thresholds are fixed in the agent;
+"processes" and "network" are informational (grade them with alert rules if needed).
+
+| Service name | Platforms | State rule | Output (example) | Perfdata |
+|---|---|---|---|---|
+| *(host result, no service)* | all | always UP | `np-agent 1.2.0 alive on linux/amd64 \| uptime=120s;;;;` | `uptime` (s) |
+| `load` | Linux, macOS | WARNING > 2×CPUs, CRITICAL > 4×CPUs | `load average 0.42 (8 cpus) \| load1=0.42;16;32;0;` | `load1` |
+| `memory` | all | WARNING > 90 %, CRITICAL > 95 % used | `RAM 61.3% used, 6.2 GB available of 16.0 GB \| used=61.3%;90;95;0;100 available=6657199104B;;;0;` | `used` (%), `available` (B) |
+| `disk <mount>` | all | WARNING > 85 %, CRITICAL > 95 % used | `/ 41.2% used, 118.4 GB free \| used=41.2%;85;95;0;100 free=127129182208B;;;0;` | `used` (%), `free` (B) |
+| `cpu` | **Windows only**, from the 2nd tick | WARNING > 85 %, CRITICAL > 95 % | `CPU 12.5% busy (8 cpus) \| cpu=12.5%;85;95;0;100` | `cpu` (%) |
+| `processes` | all (Windows: running = 0) | always OK | `312 processes (2 running) \| total=312;;;0; running=2;;;0;` | `total`, `running` |
+| `network` | Linux, macOS, from the 2nd tick | always OK | `throughput eth0 rx 1523 B/s tx 884 B/s \| rx_eth0=1523B/s;;;0; tx_eth0=884B/s;;;0;` | `rx_<if>`, `tx_<if>` (B/s) |
+| `<checks[].service>` | all | plugin exit code | plugin stdout | whatever the plugin prints |
+
+Data sources: Linux reads `/proc/loadavg`, `/proc/meminfo` (`MemAvailable`), `statfs`, `/proc`
+and `/proc/net/dev`; macOS uses `sysctl`, `vm_stat`, `ps` and `netstat -ibn`; Windows uses
+kernel32 (`GlobalMemoryStatusEx`, `GetDiskFreeSpaceExW`, Toolhelp, `GetSystemTimes`) — no load
+average and no network counters there. Network rates are deltas between ticks; interfaces whose
+counters reset are skipped for one round; without `net:` the list is capped at the first 8 names.
+
+Because these are passive results, **each collector is a hard state immediately** — no
+soft/retry cycle. Raise thresholds by post-processing in alert rules (e.g. match
+`event.object == "disk /" && event.state == "WARNING"`) or by switching a service to
+[listener mode](#active-listener-mode), where `-w`/`-c` are yours.
+
+## Local plugin checks (checks:)
+
+```yaml
+checks:
+  - service: postgres
+    command: check_pgsql
+    args: ["-H", "127.0.0.1", "-l", "postgres"]
+    timeout: 20s
+```
+
+| Aspect | Behaviour |
+|---|---|
+| Command resolution | a bare name is searched in `/usr/local/bin:/usr/bin:/bin:/usr/lib/nagios/plugins:/usr/lib64/nagios/plugins:/usr/local/libexec/nagios:/opt/homebrew/bin:/opt/homebrew/sbin`, then in the process `PATH`; a path is used as is |
+| Environment | only `PATH=<that list>` and `LC_ALL=C` — nothing inherited (no `HOME`, no proxy variables) |
+| Execution | argv, no shell; timeout default 30 s → `UNKNOWN - plugin timed out after 30s` |
+| State | exit codes 0–3; anything else or an exec failure → UNKNOWN |
+| Output | stdout trimmed; if empty, stderr; if still empty `UNKNOWN - no output`. Multi-line output and perfdata pass through unchanged; the server splits the first line at `\|` |
+
+The same runner serves pulled checks and the listener's `/v1/run/{service}`.
+
+## Passive push protocol
+
+| Item | Value |
+|---|---|
+| Request | `POST {server}/api/v1/results` with `Authorization: Bearer <token>`, `Content-Type: application/json` |
+| Body | `{"results":[{"host":"web-01","service":"load","state":0,"output":"…"}, …]}` (`service` omitted for the host result) |
+| Success | any status below 300 (the server answers `202 {"accepted":n,"rejected":[…]}`); the agent does **not** inspect `rejected` |
+| Failure | transport error or status ≥ 300 → `submit failed, buffering`; results stay in memory |
+| Buffer | every tick appends new results; the **whole buffer** is re-sent each tick until one submit succeeds; capped at 10 000 results (oldest dropped); lost on restart |
+| Backoff | none — the regular `interval` tick is the retry |
+
+:::note[Long outages]
+The server caps JSON bodies at 1 MiB. A buffer that grows past that during a long outage would be
+rejected with 422 on every retry and never drain; restart the agent (the buffer is in memory) if
+you see `HTTP 422` after an outage. This is an edge case derived from the code, not an observed
+incident.
+:::
+
+## Central checks (pull) and agent:exec
+
+Instead of editing `checks:` on every host you can define plugin checks **on the server** and let
+the agent fetch them:
+
+```yaml
+kind: Service
+metadata: {name: disk-data, host: db-01}
+spec:
+  checkCommand: agent:exec:check_disk
+  args: ["-w", "20%", "-c", "10%", "-p", "/data"]
+  interval: 2m
+  timeout: 15s
+  stalenessAfter: 10m
+```
+
+- The reference `agent:exec:<plugin>` (or a named CheckCommand of `type: agent`) marks the
+  service as **agent class**: the server never executes it; it only schedules a freshness probe
+  when `stalenessAfter` is set.
+- `GET /api/v1/agent/checks?host=db-01` (permission `objects:read`,
+  [reference](/docs/reference/api/operations/get_agent_checks/)) returns every agent-class service
+  of that host: `{"host":"db-01","checks":[{"service":"disk-data","command":"check_disk","args":["-w","20%","-c","10%","-p","/data"],"intervalSeconds":120,"timeoutSeconds":15}]}`.
+  Macros (`$HOSTADDRESS$`, `$ARGn$`, custom vars) are expanded server-side, **except** `$SECRET:…$`,
+  which stays verbatim so secrets never leave the server.
+- The agent (with `pull: true`) re-fetches every `pullInterval`, runs each check at its own
+  `intervalSeconds` (or every agent tick when 0) and pushes the results passively. On fetch errors
+  it keeps the previous set. A pulled check with the same `service` name as a local `checks[]`
+  entry replaces the local one ("central wins").
+- **Allowlist (RCE guard)**: the command must be a bare name without `/`, `\` or `..` and must be
+  listed in the agent's `pullAllow`; otherwise the agent submits
+  `UNKNOWN - command refused by agent allowlist: <reason>` for that service and logs a warning.
+  An empty `pullAllow` refuses everything — set it deliberately.
+
+Pulled checks are not available through the listener's `/v1/run` (which only serves the local
+`checks:` list). `POST /api/v1/objects/{id}/check-now` on an agent-class service only queues a
+freshness probe — it does not contact the agent.
+
+## Active listener mode
+
+With `listen` and `listenToken` set, the agent serves HTTPS (TLS 1.2+; a self-signed ECDSA
+certificate valid for 10 years is generated in memory on every start unless `tlsCert`/`tlsKey`
+are given; CN/SAN = hostname). Requests need `Authorization: Bearer <listenToken>`.
+
+| Endpoint | Returns |
+|---|---|
+| `GET /v1/health` | `{"agent":"np-agent","version":"…","hostname":"…","uptimeSeconds":n}` |
+| `GET /v1/metrics` | `{"agent","version","hostname","uptimeSeconds","cpus","load1","cpuPct","memory":{usedPct,totalBytes,availableBytes},"disks":[{mount,usedPct,freeBytes}],"processes":{total,running},"network":[{name,rxBytesPerSec,txBytesPerSec}]}` — fields absent when the platform/tick has no value |
+| `GET /v1/run/{service}` | runs the local `checks[]` entry of that name → `{"service","state","output"}`; unknown → `404 unknown check (not in agent.yaml)` |
+
+The server side is the builtin `agent` check — summary mode with built-in thresholds, one metric
+graded with your own `-w`/`-c`, or a remote plugin by name:
+
+```yaml
+kind: Service
+metadata: {name: agent-summary, host: web-01}
+spec:
+  checkCommand: builtin:agent
+  args: ["--token", "$SECRET:agent-web01$", "--insecure"]
+---
+kind: Service
+metadata: {name: disk-root, host: web-01}
+spec:
+  checkCommand: builtin:agent
+  args: ["--token", "$SECRET:agent-web01$", "--insecure", "--metric", "disk:/", "-w", "80", "-c", "90"]
+---
+kind: Service
+metadata: {name: postgres, host: web-01}
+spec:
+  checkCommand: builtin:agent
+  args: ["--token", "$SECRET:agent-web01$", "--insecure", "--check", "postgres"]
+```
+
+Store the `listenToken` as a [secret](/docs/administration/secrets/) (`agent-web01` above) rather
+than in the object spec. Flags, output formats and thresholds are in the
+[builtin checks reference](/docs/monitoring/builtin-checks/#agent). Listener mode and passive push
+can run side by side; the listener has no rate limiting or IP allowlisting of its own — firewall
+port 5693 to the server's address. The agent still requires `server` and `token` even when you
+only use the listener.
+
+## Staleness: detecting a silent agent
+
+Passive and agent-class objects are never checked actively, so without a freshness rule a dead
+agent simply freezes the last state. Set `stalenessAfter` (and optionally `stalenessText`) on the
+host and on each passive service — directly or via a template as in the bundle above. When no
+result arrived within that window the object becomes UNKNOWN with the staleness text. The probe
+runs at the `stalenessAfter` cadence, so detection takes between 1× and 2× that value, and a
+stale object passes through the normal soft/hard attempts. Details:
+[Checks and states](/docs/concepts/checks-and-states/). In the UI the staleness fields are on the
+**Advanced** tab for services; for hosts set them via API or bundle.
+
+## Run np-agent as a service
+
+<Tabs>
+<TabItem label="Linux (systemd)">
+
+```ini title="/etc/systemd/system/np-agent.service"
+[Unit]
+Description=Northplane host agent
+After=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/np-agent -config /etc/northplane/agent.yaml
+Restart=always
+RestartSec=5
+DynamicUser=yes
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+systemctl daemon-reload
+systemctl enable --now np-agent
+journalctl -u np-agent -f
+```
+
+`DynamicUser=yes` runs the agent as a transient unprivileged user. `/etc/northplane/agent.yaml`
+must therefore be readable by that user (for example `chmod 0644` — it contains the token, so
+prefer a dedicated `User=` with `chmod 0640` and a matching group), and plugins that need root
+(raw sockets, privileged files) will not work under that unit without changes.
+
+</TabItem>
+<TabItem label="macOS (launchd)">
+
+```xml title="/Library/LaunchDaemons/com.northplane.agent.plist"
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.northplane.agent</string>
+  <key>ProgramArguments</key><array>
+    <string>/usr/local/bin/np-agent</string>
+    <string>-config</string><string>/etc/northplane/agent.yaml</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+</dict></plist>
+```
+
+```bash
+sudo launchctl load -w /Library/LaunchDaemons/com.northplane.agent.plist
+```
+
+</TabItem>
+<TabItem label="Windows (service)">
+
+PowerShell as administrator, after placing `np-agent.exe` from the release zip under
+`C:\Program Files\northplane\` and the config under `C:\ProgramData\northplane\agent.yaml`:
+
+```text
+sc.exe create np-agent binPath= "C:\Program Files\northplane\np-agent.exe -config C:\ProgramData\northplane\agent.yaml" start= auto
+sc.exe start np-agent
+```
+
+The agent has no Windows-service integration of its own; it runs as a plain console process
+under `sc.exe`. Windows reports `memory`, `disk`, `cpu`, `processes` (running always 0) and local
+checks — no `load`, no `network`.
+
+</TabItem>
+</Tabs>
+
+No unit files ship in the tarball; copy them from here or from **Admin → Agents**.
+
+## Troubleshooting
+
+| Symptom | Cause / fix |
+|---|---|
+| Host/services stay **Pending** in Objects | the names do not match: Host `name` ≠ agent `hostname`, or the service is not named `disk /` (with space), `load`, … — check `POST /api/v1/results` manually and read `rejected` |
+| Log `submit failed, buffering … err="HTTP 401"` / `"HTTP 403"` | wrong token / missing `objects:write` scope; for `pull` also `objects:read` |
+| `submit failed … x509` | self-signed server certificate → `insecure: true` or a proper certificate ([TLS and proxy](/docs/administration/tls-and-proxy/)) |
+| `config parse err=…` at start | a duration without unit (`interval: 60`) or a YAML typo |
+| Services flip to UNKNOWN "no result from np-agent" | staleness fired: the agent is down, buffering (server unreachable) or the `interval` is longer than `stalenessAfter` |
+| `UNKNOWN - command refused by agent allowlist: …` | add the plugin's bare name to `pullAllow` on that agent; pulled commands must not be paths |
+| `UNKNOWN - no output` for a local check | the plugin wrote nothing — run it by hand with `PATH` restricted as the agent does (`env -i PATH=/usr/lib/nagios/plugins:/usr/bin:/bin LC_ALL=C check_x …`) |
+| `builtin:agent` → `CRITICAL agent web-01: HTTP 401: unauthorized` | `--token` ≠ `listenToken` |
+| `builtin:agent` → `CRITICAL … certificate signed by unknown authority` | add `--insecure` or configure `tlsCert`/`tlsKey` |
+| `builtin:agent --metric load1` → UNKNOWN on Windows | Windows agents expose `cpu`, not `load1` |
+| `network` / `cpu` missing after start | both need a previous sample; they appear from the second tick |
+| Agent liveness / versions in the UI | there is no agent registry; watch the host's "alive" result (`uptime` perfdata, version in the output) and the token's *last used* time under **Admin → API tokens** |
+
+Logs go to stderr as `key=value` text (`journalctl -u np-agent`); there is no log-level setting.
+All messages are listed in the [np-agent CLI reference](/docs/reference/cli-np-agent/).

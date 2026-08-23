@@ -37,11 +37,35 @@ jobs:
           path: internal/web/dist
           retention-days: 1
 
+  # Documentation site (docs/, Astro Starlight): the build is the quality
+  # gate — starlight-links-validator fails it on any broken internal link or
+  # anchor, and a page that does not compile fails it too. The staged output
+  # is what the Dockerfile and release binaries embed at /docs/.
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+      - run: cd docs && npm ci
+      - name: build docs (fails on broken links)
+        run: cd docs && npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docs-dist
+          path: docs/dist
+          retention-days: 1
+
   # Typed-codegen drift gate (ADR-10): regenerate web/src/types.gen.ts from the
-  # Go API's OpenAPI spec and fail if it differs from the committed file. A red
-  # diff means the Go API changed but the generated TS types weren't refreshed
-  # (run `make types` and commit). Needs both Go (to dump the spec offline via
-  # `northplaned openapi`) and Node (for the openapi-typescript codegen).
+  # Go API's OpenAPI spec (and refresh the docs' copy of that spec, which the
+  # API reference pages are rendered from) and fail if either differs from the
+  # committed file. A red diff means the Go API changed but the generated
+  # artefacts weren't refreshed (run `make types` and commit). Needs both Go
+  # (to dump the spec offline via `northplaned openapi`) and Node (for the
+  # openapi-typescript codegen).
   types:
     runs-on: ubuntu-latest
     steps:

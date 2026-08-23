@@ -1,0 +1,65 @@
+---
+title: Northplane
+description: Single-binary monitoring and alarm server — checks, SNMP, agents, escalation, voice/SMS/push, AI agent and MCP. Documentation.
+template: splash
+hero:
+  tagline: Monitoring and alarming in one static binary — from the first ping to the phone call that wakes someone up.
+  image:
+    file: ../../assets/logo.svg
+  actions:
+    - text: Quickstart
+      link: /docs/getting-started/quickstart/
+      icon: right-arrow
+    - text: What is Northplane?
+      link: /docs/getting-started/introduction/
+      icon: open-book
+      variant: minimal
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+<CardGrid stagger>
+	<Card title="Install in five minutes" icon="rocket">
+		One binary, one container, or a Compose stack with automatic TLS. Open `/setup`, create the admin, add a host.
+		[Quickstart →](/docs/getting-started/quickstart/)
+	</Card>
+	<Card title="Monitor anything" icon="approve-check">
+		17 built-in checks, Nagios plugins, SNMP polling and traps, the `np-agent`, heartbeats, discovery, business services and SLAs, dashboards and reports.
+		[Monitoring →](/docs/monitoring/hosts-and-services/)
+	</Card>
+	<Card title="Alarm everyone" icon="warning">
+		Phone, SMS, MQTT, ESPA, e-mail and webhooks in — voice calls with IVR, SMS, push, ntfy, Slack, Teams and tickets out. On-call schedules, escalation chains, durable retries, full audit.
+		[Alarming →](/docs/alarming/overview/)
+	</Card>
+	<Card title="API-first, AI-ready" icon="puzzle">
+		Every capability is a REST endpoint with RBAC and tenants; the UI, the `np` CLI, the AI agent chat and the MCP server all use it.
+		[API reference →](/docs/reference/api-overview/)
+	</Card>
+</CardGrid>
+
+## Find your way
+
+<CardGrid>
+	<LinkCard title="I operate an instance" description="Configuration reference, authentication, storage, TLS, upgrades, security hardening." href="/docs/administration/configuration/" />
+	<LinkCard title="I run production" description="Deployment variants, the CI/CD pipeline, provisioning, operations runbook and the verified environment inventory." href="/docs/deployment/overview/" />
+	<LinkCard title="I integrate with it" description="REST conventions, ingest webhooks, SSE stream, the OpenAPI reference, the four CLIs and the MCP server." href="/docs/reference/api-overview/" />
+	<LinkCard title="I work on the code" description="Dev loop, tests, backend and frontend architecture, release process, and how these docs are built." href="/docs/development/setup/" />
+	<LinkCard title="I use the UI" description="Every page, dialog and Admin tab explained, with keyboard shortcuts and the tenant switcher." href="/docs/ui/navigation/" />
+	<LinkCard title="I want the concepts first" description="Architecture, object model, checks and states, events, alerts and incidents, tenancy, federation." href="/docs/concepts/architecture/" />
+</CardGrid>
+
+## At a glance
+
+| | |
+|---|---|
+| **Server** | `northplaned` — one static Go binary with the React UI, this manual, Swagger UI and the MCP server embedded |
+| **Storage** | SQLite (default, zero-ops) or PostgreSQL; NP-TSDB for metrics; durable outbox; tamper-evident audit chain |
+| **Inputs** | built-in checks, Nagios plugins, `np-agent`, SNMP v1/v2c/v3 polling and traps, heartbeats, webhooks, Alertmanager, IMAP, MQTT, ESPA 4.4.4 / ESPA-X, phone (Twilio or Asterisk), SMS |
+| **Outputs** | voice with IVR acknowledgement, SMS, e-mail, mobile push (FCM/APNs), Web Push, ntfy, Slack, Teams, webhooks, MQTT, ServiceNow / Jira / Zendesk tickets |
+| **Control plane** | REST API with RBAC, tenants, sites (federation), API tokens, OIDC / LDAP, YAML config bundles, `np` CLI |
+| **AI** | agent chat over 10 LLM provider types with policy gates and approvals; MCP server for Claude, Cursor, VS Code and friends |
+| **Runs as** | binary + systemd, Docker (distroless), Docker Compose with Caddy TLS, or behind your own reverse proxy |
+
+These pages are shipped inside every Northplane binary at `/docs/` and mirror the version they came with.
+The public showcase instance is [doktrace.com](https://doktrace.com) (its docs: [doktrace.com/docs](https://doktrace.com/docs/)).
+Machine-readable copies for AI assistants: [`llms.txt`](/docs/llms.txt), [`llms-full.txt`](/docs/llms-full.txt).

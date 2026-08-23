@@ -1,0 +1,262 @@
+---
+title: Hosts and services
+description: Create and manage hosts and services in the UI, via the API or with YAML bundles — folders, labels, templates, the object detail page, batch operations, filters and deletion.
+sidebar:
+  order: 1
+---
+import { Tabs, TabItem, Steps } from '@astrojs/starlight/components';
+
+Northplane monitors **objects**: a *host* (something with an address) and *services* that belong to
+a host. Both share one spec (check command, interval, thresholds, notifications…) and one state
+model. This page shows how to create and work with them; the field-by-field reference of the spec
+lives in [Object model](/docs/concepts/object-model/), the state semantics in
+[Checks and states](/docs/concepts/checks-and-states/).
+
+## What an object is
+
+| Property | Host | Service |
+|---|---|---|
+| `name` | unique per tenant; cannot be renamed (recreate instead) | unique per host |
+| `host` | — | the owning host (name or id on create; fixed afterwards) |
+| `folder` | path such as `/prod/web`, default `/` | same; used for filtering and role scopes |
+| `labels` | free key/value pairs, the primary grouping mechanism (selectors, downtimes, silences, dashboards, BPI) | same |
+| `spec` | `address`, `checkCommand`, `args`, `templates`, `parents`, intervals, notifications, `vars`, `runbook` … | same fields; the check target is the **host's** address |
+| Delete | cascades to all services of the host | only the service |
+
+IDs are UUIDv7 and appear in URLs (`/objects/<id>`) and in the CLI (`np describe <id>`). Every
+write bumps `version`; updates over the API need `If-Match: "<version>"`.
+
+The spec fields you will touch most often (defaults apply after template resolution):
+
+| Field | Default | Meaning |
+|---|---|---|
+| `address` | — | host address (IP or DNS name); services use the host's |
+| `checkCommand` | `passive` | `builtin:<name>`, `exec:<plugin>`, `agent:exec:<plugin>`, a named CheckCommand, or `passive` |
+| `args` | — | flags for builtin checks / `$ARGn$` values for plugins |
+| `templates` | — | inheritance chain, later wins (see [Templates](/docs/monitoring/templates/)) |
+| `interval` / `retryInterval` | `60s` / `15s` | check cadence / soft-state recheck |
+| `maxCheckAttempts` | `3` | soft → hard |
+| `timeout` | `30s` | per-check execution limit |
+| `parents` | — | host reachability graph |
+| `contacts`, `contactGroups`, `notifyOn` | — | direct notifications on hard changes |
+| `stalenessAfter`, `stalenessText` | — | freshness for passive/agent objects |
+
+Durations are Go durations (`30s`, `5m`, `24h`); a bare integer in JSON means seconds.
+
+## Creating hosts and services
+
+<Tabs>
+<TabItem label="UI">
+
+Open **Objects (Objekte)** and click **New host** (Host anlegen) or **New service** (Service anlegen).
+The dialog has four tabs; the same dialog opens for **Edit** on any row or detail page.
+
+| Tab | Fields |
+|---|---|
+| **Basics** (Basis) | Name (required; locked when editing), Folder, Host (services only; locked when editing), Address, Labels |
+| **Check** (Prüfung) | Check command: kind selector `builtin` / `Command (defined)` / `exec` / `agent:exec` / `passive` plus the name (with suggestions from the builtin list and your named commands); Arguments (one per entry); Templates (ordered, later wins); Interval, Retry interval, Max attempts, Timeout, Check period |
+| **Notifications** (Benachrichtigungen) | Contact groups, Contacts, Notify on (hosts: down/unreachable/recovery; services: warning/critical/unknown/recovery), Notification period |
+| **Advanced** (Erweitert) | Parents (hosts), tri-state Checks / Notifications / Flap detection (inherit/on/off), Threshold mode, Staleness deadline + text (services), Zone, Vars, Runbook (Markdown) |
+
+Save creates the object (`POST /api/v1/hosts` or `/services`); edit saves with the object's
+version — if someone else changed it in between you get "Conflict — please reload".
+The full walk-through of every dialog field is in [UI → Objects](/docs/ui/objects/).
+
+</TabItem>
+<TabItem label="API">
+
+```bash
+# host
+curl -sS -X POST "$NP_SERVER/api/v1/hosts" \
+  -H "Authorization: Bearer $NP_TOKEN" -H "Content-Type: application/json" \
+  -d '{"name":"web-01","folder":"/prod/web","labels":{"env":"prod","role":"web"},
+       "spec":{"address":"10.0.0.5","checkCommand":"builtin:icmp","templates":["linux-base"]}}'
+
+# service on that host (host by name or id)
+curl -sS -X POST "$NP_SERVER/api/v1/services" \
+  -H "Authorization: Bearer $NP_TOKEN" -H "Content-Type: application/json" \
+  -d '{"name":"https","host":"web-01","labels":{"tier":"frontend"},
+       "spec":{"checkCommand":"builtin:http","args":["-S","-u","/health","-e","200"],"interval":"30s"}}'
+```
+
+Both return `201 Created`, the object JSON and an `ETag`. Permission `objects:write`.
+References: [create host](/docs/reference/api/operations/post_hosts/),
+[create service](/docs/reference/api/operations/post_services/),
+[update](/docs/reference/api/operations/put_objects_id/) (`PUT /api/v1/objects/{id}` with
+`If-Match`; the body replaces `spec` wholesale, `labels` when present and `folder` when non-empty).
+Validation errors come back as `422` problems — unknown template, unknown named check command,
+invalid `notifyOn` token, unknown contact or contact group.
+
+</TabItem>
+<TabItem label="Bundle (np apply)">
+
+```yaml title="web.yaml"
+kind: Host
+metadata:
+  name: web-01
+  folder: /prod/web
+  labels: {env: prod, role: web}
+spec:
+  address: 10.0.0.5
+  checkCommand: builtin:icmp
+  templates: [linux-base]
+---
+kind: Service
+metadata:
+  name: https
+  host: web-01
+  labels: {tier: frontend}
+spec:
+  checkCommand: builtin:http
+  args: ["-S", "-u", "/health", "-e", "200"]
+  interval: 30s
+```
+
+```bash
+np apply -f web.yaml --dry-run     # shows: would apply create Host/web-01, create Service/web-01/https
+np apply -f web.yaml
+```
+
+Bundles are idempotent (objects are matched by kind, host and name) and are the recommended way
+to manage many objects, to version them in git, and to push configuration to federation edges.
+Format, plan/apply/prune and the Admin tab are described in
+[Config bundles](/docs/administration/config-bundles/).
+
+</TabItem>
+</Tabs>
+
+:::tip[Services inherit the host address]
+A service never needs its own `address`: the check target is the host's address (falling back to
+the host name). Override per check with `-H` or a full URL where the check supports it.
+:::
+
+### Batch add
+
+For many similar objects use **Batch add** (Massenanlage) on the Objects page: one object per line,
+
+```text
+name address [template,template] [key=value,key=value]
+web-02 10.0.0.6 [linux-base] [env=prod,role=web]
+db-01  10.0.0.9 [linux-base,postgres] [env=prod,role=db]
+```
+
+Lines starting with `#` are ignored. The dialog settings apply to every row: kind (host/service),
+folder, check command (default `builtin:icmp`), mode `partial` or `all-or-nothing`, and for
+services the host. A live preview validates each line before you submit.
+
+The dialog calls `POST /api/v1/objects:batch`
+([reference](/docs/reference/api/operations/post_objects_batch/)):
+
+```json
+{"mode":"partial","hosts":[{"name":"web-02","folder":"/prod/web","labels":{"env":"prod"},
+  "spec":{"address":"10.0.0.6","checkCommand":"builtin:icmp","templates":["linux-base"]}}],
+ "services":[]}
+```
+
+`mode` defaults to `all-or-nothing` (the first failure rolls back everything created so far and
+answers 422); `partial` keeps what succeeded. The response is
+`{"created":n,"failed":m,"results":[{"name","id","error"}]}`.
+
+## Folders and labels
+
+- **Folders** are plain paths (`/`, `/prod`, `/prod/web`). They group objects in the list, can be
+  used as a filter (`GET /api/v1/objects?folder=/prod`), restrict bundle exports
+  (`bundles:export?folder=/prod`) and appear in role scopes. They carry no configuration.
+- **Labels** drive everything selector-based: list filters, downtimes and silences, business
+  service leaves, dashboard widgets, metric queries, webhook subscriptions and bundle prune.
+  Alert rules see the object's labels on every `state_change` event (`event.labels.<key>`), so
+  labels are also your routing handle in alarming (`notify=mail`, `team=netops`).
+
+Selector grammar (comma = AND): `env=prod`, `role in (db,cache)`, `tier!=edge`, `!legacy`
+(key absent), `site` (key present). Values are unquoted and cannot contain commas or parentheses.
+The complete grammar is in [Object model](/docs/concepts/object-model/).
+
+## Templates and effective configuration
+
+Any number of templates can be listed in `spec.templates`; later entries override earlier ones,
+the object's own fields override all templates, `vars` are merged key by key. The server resolves
+the chain on every write (unknown template → 422) and on every schedule.
+
+`GET /api/v1/objects/{id}/effective-config` returns the resolved spec and the template chain
+([reference](/docs/reference/api/operations/get_objects_id_effective_config/)); the CLI shows it
+with `np describe <id>`, the UI on the object's **Configuration** tab. See
+[Templates](/docs/monitoring/templates/) for authoring templates and named check commands.
+
+## The object detail page
+
+Click any row in **Objects** (or a problem, alert or dashboard entry) to open `/objects/<id>`.
+
+| Element | What you see / can do |
+|---|---|
+| Header | breadcrumb (folder, host), name, state badge with attempt (`hard 3x`), label chips; for services a link chip to the host; buttons **Edit**, **Check now** (queues an immediate check, `POST …/check-now`, permission `checks:run`), **Downtime**, **Delete** |
+| **Overview** tab | current output and long output, last check, next check, last hard change, acknowledgement, downtime, flapping; **perfdata meters** (bars with warn/crit marks from the check's perfdata); "Interval & scheduling" from the effective config; **Metrics** charts (last 24 h, one chart per unit, thresholds as bands); hosts list their services, services list their siblings |
+| **History** tab | the object's recent events (state changes, flapping, acks, downtimes …) |
+| **Configuration** tab | the effective configuration as a table or raw JSON, and the template chain (`a → b`) |
+
+Data comes from `GET /api/v1/objects/{id}` (object + live `state`), `…/effective-config`,
+`GET /api/v1/events?objectId=…` and `POST /api/v1/metrics/query`. A deleted object shows a 404 page.
+Charts and series are explained in [Metrics and NP-TSDB](/docs/monitoring/metrics-and-tsdb/).
+
+## Finding objects: filters and shareable links
+
+The Objects list keeps its filters in the URL, so any view can be bookmarked or pasted into a chat:
+
+| URL parameter | UI control | Meaning |
+|---|---|---|
+| `selector` | tag-icon input "Filter (e.g. env=prod)" | label selector, evaluated server-side |
+| `q` | search-icon input "Full text…" | substring over name and check output |
+| `kind` | select Hosts + Services / Hosts / Services | object kind |
+| `state` | select (All, Problems, OK, Up, Warning, Critical, Unknown, Down, Unreachable, Pending) | current state, filtered client-side |
+
+State tokens are `problem`, `ok`, `up`, `warning`, `critical`, `unknown`, `down`, `unreachable`, `pending`; kind is `host` or `service`. Example: `/objects?selector=env%3Dprod%2Crole%3Ddb&state=problem&kind=service`. The list loads up to 2000
+objects and renders them in a virtualised table; rows link to the detail page and offer
+check-now, edit and delete on hover. The same parameters work on the API:
+`GET /api/v1/objects?selector=env=prod&q=disk&folder=/prod&withState=true&limit=200&cursor=…`
+([reference](/docs/reference/api/operations/get_objects/)); `/api/v1/hosts` and `/api/v1/services`
+are kind-specific variants, `/api/v1/problems` lists hard non-OK objects
+(`includeHandled=true` also shows acked/downtimed ones).
+
+:::note[Saved filters]
+There is no "saved filter" feature in the UI — links are the saved filters. A schemaless
+`SavedFilter` resource exists in the API (`/api/v1/saved-filters`) and in bundles, but nothing in
+the UI reads it yet.
+:::
+
+## Static groups
+
+`StaticGroup` is a bundle-only kind (`spec: {members: [host names]}`) produced by the
+[Nagios importer](/docs/monitoring/plugins-and-nagios/#importing-a-nagios-or-icinga-configuration)
+for `hostgroup` definitions. It has no REST endpoint and no UI; use labels and selectors for
+grouping in Northplane, and treat static groups as import leftovers to convert into labels
+(the importer prints label suggestions for that).
+
+## Other batch operations
+
+- **Bundles**: `np export > all.yaml` dumps every host, service and resource; edit and `np apply`.
+  `np apply --prune` deletes objects that are no longer in the bundle (optionally restricted by a
+  selector on the API). A `Host` document in a bundle may be accompanied by its `Service`
+  documents in the same file; apply order is handled for you.
+- **Downtimes and silences** by selector (`np downtime --selector 'env=prod,role=db' --hours 2 -m "patching"`) — see
+  [Maintenance](/docs/monitoring/maintenance/).
+- **Check now** per object (`np check-now <id>`), no bulk variant.
+- **AI agent / MCP**: the assistant can propose and apply bundle changes under the approval policy
+  ([AI agent chat](/docs/ai/agent-chat/)).
+
+## Deleting objects
+
+- UI: **Delete** on a row (two-click inline confirmation) or on the detail page. Deleting a host
+  warns that all of its services go with it.
+- API: `DELETE /api/v1/objects/{id}` ([reference](/docs/reference/api/operations/delete_objects_id/))
+  — cascades to services, labels and check state, deschedules the checks and forgets in-memory
+  state. Alerts and events that reference the object stay in history.
+- Bundles: `np apply --prune` removes everything that is not in the bundle — dry-run first
+  (`--dry-run` prints `would apply delete …`).
+
+Deletion is audited (`host.delete` / `service.delete`) and emits a `config` event.
+
+## Where to go next
+
+- [Builtin checks](/docs/monitoring/builtin-checks/) — flags and thresholds for `builtin:*`
+- [Plugins and Nagios compatibility](/docs/monitoring/plugins-and-nagios/) — `exec:` plugins, named commands, importer
+- [np-agent](/docs/monitoring/agent/) — passive services and agent checks
+- [Templates](/docs/monitoring/templates/), [Maintenance](/docs/monitoring/maintenance/), [Dashboards](/docs/monitoring/dashboards/)

@@ -1,0 +1,71 @@
+---
+import Diagram from './Diagram.astro';
+---
+
+<Diagram
+	title="Alarming pipeline"
+	description="Many inputs, one matching engine, many outputs — with acknowledgement feeding back into the escalation chain."
+	viewBox="0 0 900 430"
+>
+	<text x="20" y="26" class="t-head">Inputs</text>
+	<g class="t">
+		<rect x="20" y="40" width="160" height="28" class="box" /><text x="100" y="59" text-anchor="middle">Phone call (IVR)</text>
+		<rect x="20" y="76" width="160" height="28" class="box" /><text x="100" y="95" text-anchor="middle">SMS</text>
+		<rect x="20" y="112" width="160" height="28" class="box" /><text x="100" y="131" text-anchor="middle">Webhook · Alertmanager</text>
+		<rect x="20" y="148" width="160" height="28" class="box" /><text x="100" y="167" text-anchor="middle">E-mail (IMAP)</text>
+		<rect x="20" y="184" width="160" height="28" class="box" /><text x="100" y="203" text-anchor="middle">SNMP trap</text>
+		<rect x="20" y="220" width="160" height="28" class="box" /><text x="100" y="239" text-anchor="middle">MQTT</text>
+		<rect x="20" y="256" width="160" height="28" class="box" /><text x="100" y="275" text-anchor="middle">ESPA 4.4.4 · ESPA-X</text>
+		<rect x="20" y="292" width="160" height="28" class="box" /><text x="100" y="311" text-anchor="middle">Heartbeat missed</text>
+		<rect x="20" y="328" width="160" height="28" class="box" /><text x="100" y="347" text-anchor="middle">Check state change</text>
+		<rect x="20" y="364" width="160" height="28" class="box" /><text x="100" y="383" text-anchor="middle">UI · API · alarm app</text>
+	</g>
+	<path d="M180 216 H 236" class="edge" marker-end="url(#dg-alarming-pipeline-arrow)" />
+
+	<rect x="240" y="40" width="190" height="140" class="box" />
+	<text x="335" y="62" text-anchor="middle" class="t-accent">Event sources</text>
+	<text x="252" y="84" class="t">auth: token · HMAC · basic</text>
+	<text x="252" y="102" class="t">CEL field mapping</text>
+	<text x="252" y="120" class="t">rate limit 50/s, burst 200</text>
+	<text x="252" y="138" class="t">→ normalised event</text>
+	<text x="252" y="158" class="t-muted">severity · summary · labels · payload</text>
+	<path d="M335 180 V 206" class="edge" marker-end="url(#dg-alarming-pipeline-arrow)" />
+
+	<rect x="240" y="210" width="190" height="110" class="box" />
+	<text x="335" y="232" text-anchor="middle" class="t-accent">Alert rules (CEL)</text>
+	<text x="252" y="254" class="t">match · pendingFor · dedup</text>
+	<text x="252" y="272" class="t">title template · setLabels</text>
+	<text x="252" y="290" class="t">escalationPolicy</text>
+	<text x="252" y="308" class="t-muted">manual / phone alarms skip rules</text>
+	<path d="M430 265 H 466" class="edge" marker-end="url(#dg-alarming-pipeline-arrow)" />
+
+	<rect x="470" y="210" width="180" height="110" class="box-accent" />
+	<text x="560" y="232" text-anchor="middle" class="t-accent">Alert</text>
+	<text x="482" y="254" class="t">open → acked → resolved</text>
+	<text x="482" y="272" class="t">snooze = ack + wake-up</text>
+	<text x="482" y="290" class="t">incidents (correlator)</text>
+	<text x="482" y="308" class="t-muted">downtime · silence · flapping gate</text>
+	<path d="M650 265 H 672" class="edge" marker-end="url(#dg-alarming-pipeline-arrow)" />
+
+	<rect x="676" y="40" width="204" height="280" class="box" />
+	<text x="778" y="62" text-anchor="middle" class="t-accent">Escalation policy</text>
+	<text x="688" y="86" class="t">step 0 · after 0s</text>
+	<text x="688" y="103" class="t-sm">notify: schedule (on-call)</text>
+	<text x="688" y="118" class="t-sm">channels: push, voice</text>
+	<text x="688" y="133" class="t-sm">repeatEvery 5m · maxRepeats 3</text>
+	<text x="688" y="158" class="t">step 1 · after 15m</text>
+	<text x="688" y="175" class="t-sm">unlessAcked · escalateTo: backup</text>
+	<text x="688" y="190" class="t-sm">channels: voice, sms</text>
+	<text x="688" y="215" class="t">step 2 · after 30m</text>
+	<text x="688" y="232" class="t-sm">notify: contactGroup</text>
+	<text x="688" y="247" class="t-sm">action: ticket (autoClose)</text>
+	<text x="688" y="278" class="t-muted">timers persisted — restart-safe</text>
+	<text x="688" y="294" class="t-muted">any ack ends the chain</text>
+
+	<rect x="240" y="346" width="640" height="70" class="box" />
+	<text x="560" y="366" text-anchor="middle" class="t-accent">Channels via the durable outbox — retry 30 s·2ⁿ ±10 %, 30 attempts, then dead letters</text>
+	<text x="560" y="385" text-anchor="middle" class="t">voice · SMS · e-mail · push · ntfy · Slack · Teams · webhook · MQTT · tickets</text>
+	<text x="560" y="404" text-anchor="middle" class="t-muted">acknowledge from the web UI · app · ack link · SMS keyword · IVR digit · call DTMF 4/6 — the chain stops</text>
+	<path d="M778 320 V 346" class="edge-accent" marker-end="url(#dg-alarming-pipeline-arrow-accent)" />
+	<path d="M560 346 V 322" class="edge-accent" stroke-dasharray="5 4" marker-end="url(#dg-alarming-pipeline-arrow-accent)" />
+</Diagram>

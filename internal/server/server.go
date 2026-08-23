@@ -26,6 +26,7 @@ import (
 	"github.com/northplane/northplane/internal/auth"
 	"github.com/northplane/northplane/internal/catalog"
 	"github.com/northplane/northplane/internal/config"
+	"github.com/northplane/northplane/internal/docs"
 	"github.com/northplane/northplane/internal/escalation"
 	"github.com/northplane/northplane/internal/espa"
 	"github.com/northplane/northplane/internal/eventbus"
@@ -255,6 +256,11 @@ func (s *Server) rootHandler(apiHandler http.Handler, authn *auth.Authenticator)
 	if svc, ok := s.api.AI.(*ai.Service); ok {
 		mux.Handle("/mcp", mcpserver.HTTPHandler(svc, authn, s.version))
 	}
+	// Product documentation (Astro/Starlight build embedded from /docs),
+	// public by design: it holds no instance data and is what an operator
+	// reads before they can log in. Mounted ahead of the SPA catch-all so it
+	// is never gated or swallowed by the client-side router.
+	mux.Handle(docs.Prefix, docs.Handler())
 	// SPA + static assets. GateSPA redirects logged-out *document* navigations
 	// to /login server-side so the app shell never renders before the client's
 	// own 401 redirect (no full-app flash); assets and API auth are unchanged.
@@ -497,7 +503,9 @@ func securityHeaders(next http.Handler, trustProxy bool) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "same-origin")
-		if !strings.HasPrefix(r.URL.Path, "/api/") {
+		if strings.HasPrefix(r.URL.Path, docs.Prefix) {
+			// the documentation handler sets its own (see docs.CSP)
+		} else if !strings.HasPrefix(r.URL.Path, "/api/") {
 			// steptOrigin carries the embedded Stept assistant (chat widget +
 			// product tours): its loader script, the messenger iframe and the
 			// widget's own API/WebSocket calls all come from that one origin.

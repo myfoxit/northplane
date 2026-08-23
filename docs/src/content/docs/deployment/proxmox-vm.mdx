@@ -1,0 +1,230 @@
+---
+title: Proxmox VM behind a central Caddy
+description: The live doktrace.com topology (np-01) — a NAT'd Proxmox VM running the edge-proxied Compose stack behind a shared Caddy LXC, Cloudflare in front, CI over a DNAT'd SSH port — as verified on 2026-08-23.
+sidebar:
+  order: 3
+---
+
+import ProdTopologyDiagram from '../../../components/ProdTopologyDiagram.astro';
+
+`np-01`, the production instance at `https://doktrace.com`, is **not** a standalone box. It is a VM on a Proxmox hypervisor whose only public address belongs to the hypervisor; a shared Caddy container on the hypervisor terminates TLS for every SaaS VM and reverse-proxies the domain to the VM's `:8443`. The VM runs the **edge-proxied** Compose variant — `deploy/docker-compose.vm.yml`, no bundled Caddy.
+
+:::note[Verified 2026-08-23]
+Everything on this page was checked live on 2026-08-23 (SSH to the hypervisor and the VM, HTTP against the instance, `gh` against the repository). State drifts — see [Environments](/docs/deployment/environments/) for the inventory and the open items, and re-verify before you rely on a detail.
+:::
+
+## Topology
+
+<ProdTopologyDiagram />
+
+```text
+                         Internet
+                            |
+          Cloudflare (proxied A record: doktrace.com -> 51.83.96.40)
+                            |        (the origin also answers directly)
+                            v
++---------------------------------------------------------------------------+
+| 51.83.96.40  ns3147660 -- Proxmox VE 9.2.11, Debian 13                    |
+|                                                                           |
+|  vmbr0 (public)  iptables PREROUTING DNAT (-i vmbr0):                     |
+|     tcp/80   -> 10.10.10.10:80     tcp/443 -> 10.10.10.10:443   (Caddy)   |
+|     tcp/2201 -> 10.10.10.11:22                                  (CI ssh)  |
+|                                                                           |
+|  vmbr1 10.10.10.0/24 (MASQUERADE)                                         |
+|                                                                           |
+|   +----------------------+   reverse_proxy    +------------------------+  |
+|   | CT100  caddy         | -----------------> | VM101  saas1  (np-01)  |  |
+|   | 10.10.10.10          | 10.10.10.11:8443   | 10.10.10.11  Rocky 9.8 |  |
+|   | TLS edge, LE HTTP-01 |   health /healthz  | docker compose         |  |
+|   | /etc/caddy/sites/    |   every 30 s       |   /opt/northplane      |  |
+|   |   saas1.caddy        |                    |   northplaned :8443    |  |
+|   +----------------------+                    |   np-agent (np-prod)   |  |
+|                                               +------------------------+  |
+|                                                                           |
+|   CT110 targets   10.10.10.20   lab targets (nginx, snmpd, NRPE, BIND...) |
+|   VM102 saas2     10.10.10.12   "netlab": containerlab, 2x Cisco IOSv     |
+|   VM103 saas3     10.10.10.13   "alarmlab": Mosquitto, Mailpit, ntfy...   |
+|   VM104 saas4     10.10.10.14   np-staging: second northplane, federation |
+|                                 EDGE of prod (tenant MyFoxIT, vm104-edge) |
+|   VM9000 debian13-base / VM9001 rocky9-base   templates, stopped          |
++---------------------------------------------------------------------------+
+
+GitHub Actions (Deploy workflow) --ssh -p 2201 deploy@51.83.96.40--> VM101:22
+```
+
+## The hypervisor (51.83.96.40)
+
+| Fact | Verified value |
+|---|---|
+| Host | `ns3147660`, **Proxmox VE 9.2.11** (`pve-manager/9.2.11`, kernel `7.0.14-12-pve`), Debian 13 |
+| Bridges | `vmbr0` — public, `51.83.96.40`; `vmbr1` — internal `10.10.10.0/24` with MASQUERADE |
+| DNAT | iptables `PREROUTING` on `vmbr0`: `tcp/80 → 10.10.10.10:80`, `tcp/443 → 10.10.10.10:443`, `tcp/2201 → 10.10.10.11:22`; persisted as `post-up` rules in `/etc/network/interfaces` |
+| Web UI | port 8006, IP-allowlisted in `cluster.fw` (see [access patterns](/docs/deployment/proxmox-vm/#access-patterns)) |
+| Backups | **no** `vzdump` job configured |
+
+The DNAT rules, as they are written on the host (the 2201 rule is the one the CI deploy uses):
+
+```bash
+iptables -t nat -A PREROUTING -i vmbr0 -p tcp --dport 80   -j DNAT --to-destination 10.10.10.10:80
+iptables -t nat -A PREROUTING -i vmbr0 -p tcp --dport 443  -j DNAT --to-destination 10.10.10.10:443
+iptables -t nat -A PREROUTING -i vmbr0 -p tcp --dport 2201 -j DNAT --to-destination 10.10.10.11:22
+```
+
+### Guests
+
+| ID | Name | Address | Role |
+|---|---|---|---|
+| CT 100 | `caddy` | 10.10.10.10 | TLS edge for all SaaS VMs (LXC) |
+| CT 110 | `targets` | 10.10.10.20 | lab check targets |
+| VM 101 | `saas1` | 10.10.10.11 | **production app host `np-01`** — Rocky Linux 9.8, 4 vCPU / 8 GB |
+| VM 102 | `saas2` | 10.10.10.12 | network lab "netlab" (12 GB): containerlab with 2× Cisco IOSv + SR Linux |
+| VM 103 | `saas3` | 10.10.10.13 | "alarmlab": Mosquitto, Mailpit, GreenMail, ntfy, echo sink `:9000` |
+| VM 104 | `saas4` | 10.10.10.14 | `np-staging` — second Northplane, federation **edge** of prod (tenant MyFoxIT, site `vm104-edge`) |
+| VM 9000 / 9001 | `debian13-base` / `rocky9-base` | — | templates, stopped |
+
+The lab guests are described in the [operations appendix](/docs/deployment/operations/#appendix-the-proxmox-lab).
+
+## The Caddy edge (CT100)
+
+Caddy in CT100 owns ports 80/443 for the whole hypervisor. Its `/etc/caddy/Caddyfile` has a global block and imports one file per SaaS slot:
+
+- global `email info@myfoxit.com` (ACME account);
+- `servers { trusted_proxies static <Cloudflare IPv4/IPv6 ranges> }` — so the client IP Caddy sees behind Cloudflare is the real visitor;
+- a bare-IP `:80` catch-all that answers `respond /healthz "ok" 200` and otherwise `404 "no site configured for this hostname"`;
+- `import /etc/caddy/sites/*.caddy`.
+
+The only site file is the production slot (reconstructed from the verified configuration; the comment line is Caddy's own):
+
+```text title="/etc/caddy/sites/saas1.caddy (CT100)"
+# slot 1 -> 10.10.10.11:8443 [cert: HTTP-01 (no token set)]
+doktrace.com {
+	encode zstd gzip
+	reverse_proxy 10.10.10.11:8443 {
+		health_uri      /healthz
+		health_interval 30s
+		health_timeout  5s
+	}
+}
+```
+
+Sites are managed by a `saas-domain` helper script inside the LXC — `saas-domain 1 doktrace.com 8443` maps slot 1 (VM 10.10.10.11) to the domain; Caddy then obtains the Let's Encrypt certificate via HTTP-01 automatically. Because the Caddyfile sets the Cloudflare ranges as trusted proxies and Caddy sets `X-Forwarded-Proto`, the app runs with `NORTHPLANE_TRUST_PROXY=true`.
+
+:::tip[The 30 s active health check]
+Caddy marks the upstream unhealthy when `/healthz` fails; while `northplaned` restarts (a deploy, a VM or hypervisor reboot) the site briefly answers 502/503 and self-heals on the next successful probe. A hypervisor reboot costs the domain well under a minute.
+:::
+
+## The application VM (VM101 `saas1`)
+
+```yaml title="deploy/docker-compose.vm.yml (shipped to /opt/northplane/docker-compose.yml)"
+# Northplane — edge-proxied production variant (Proxmox VM behind central Caddy).
+#
+# TLS is terminated by the shared Caddy LXC on the private bridge
+# (10.10.10.10), which reverse-proxies the public domain to this VM's :8443.
+# So this stack does NOT run the bundled caddy service: northplaned publishes
+# :8443 on the private bridge only and is not reachable from the internet.
+#
+# MANAGED BY THE DEPLOY PIPELINE (.github/workflows/deploy.yml): every deploy
+# overwrites this file (as docker-compose.yml) and re-renders .env on the
+# server. Change configuration in GitHub repo Variables/Secrets, not here.
+
+name: northplane
+
+services:
+  northplane:
+    image: ${NORTHPLANE_IMAGE:-ghcr.io/myfoxit/northplane:latest}
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      NORTHPLANE_LISTEN: ":8443"
+      NORTHPLANE_TRUST_PROXY: "true" # Caddy LXC terminates TLS + sets X-Forwarded-*
+      NORTHPLANE_SECRET_KEY_FILE: "/etc/northplane/secret.key"
+    volumes:
+      - northplane-data:/var/lib/northplane
+      # Persistent AES-256 master key (secrets-at-rest). Provisioned once;
+      # survives image swaps and mode flips.
+      - ./secret.key:/etc/northplane/secret.key:ro
+    ports:
+      - "8443:8443"
+
+volumes:
+  northplane-data:
+```
+
+**Why no bundled Caddy:** TLS already terminates in CT100 for every VM on the box, and the VM has no public address — a second Caddy would have nothing to bind 80/443 to and no way to pass an ACME challenge. The stack therefore publishes `8443:8443` on the VM's bridge address (`0.0.0.0:8443` inside the VM, reachable from `10.10.10.0/24` only) and nothing else. The `.env`, the `secret.key` mount and the data volume are identical to the standalone recipe, so [Docker Compose](/docs/deployment/docker-compose/) applies for everything except TLS.
+
+### `/opt/northplane` on the VM
+
+| Path | Verified state |
+|---|---|
+| `/opt/northplane` | owned by `deploy`, mode 0750 |
+| `docker-compose.yml` | = `deploy/docker-compose.vm.yml` (1255 bytes), re-shipped by the deploy at 2026-08-23 08:50 UTC |
+| `.env` | mode 0600, rendered by the pipeline (keys below) |
+| `.env.previous` | the previous rendering (rollback target) |
+| `secret.key` | 65 bytes (64 hex + newline), uid/gid 65532, mode 0600 |
+| `.env.bak-*`, `docker-compose.yml.bak-*` | older manual backups |
+
+### Runtime environment on `saas1` (names; secret values redacted)
+
+| Variable | Value | Source |
+|---|---|---|
+| `NORTHPLANE_IMAGE` | `ghcr.io/myfoxit/northplane:main-daa6dc518a2b` | `.env` (pipeline) |
+| `NORTHPLANE_BASE_URL` | `https://doktrace.com` | `.env` ← repo variable `NORTHPLANE_BASE_URL` |
+| `NORTHPLANE_DEMO` | `false` | `.env` ← repo variable `NORTHPLANE_DEMO` (set to `false` on 2026-08-20) |
+| `NORTHPLANE_ALLOW_SIGNUP` | `true` | `.env` (hard-coded in the workflow) — `/register` is public, self-registered users get `viewer` |
+| `NORTHPLANE_DATA_DIR` | `/var/lib/northplane/real` | `.env` (derived from the demo switch) |
+| `NP_DEFAULT_ADMIN_EMAIL` | `admin@doktrace.com` | `.env` ← repo variable |
+| `NP_DEFAULT_ADMIN_PASSWORD` | `<secret>` | `.env` ← repo secret `NP_DEFAULT_ADMIN_PASSWORD` |
+| `NORTHPLANE_LISTEN` | `:8443` | compose file |
+| `NORTHPLANE_TRUST_PROXY` | `true` | compose file |
+| `NORTHPLANE_SECRET_KEY_FILE` | `/etc/northplane/secret.key` | compose file |
+
+:::caution[Not published on the production VM]
+The compose file publishes only `8443`. `9162/udp` (SNMP traps), `2023` (ESPA), `8123` (ESPA-X) and `4573` (FastAGI) are **not** mapped on `np-01` as of 2026-08-23 — those mappings exist only on an unmerged branch. An event source that listens on one of them inside the container cannot be reached from the lab network until the mapping is merged and deployed.
+:::
+
+## Cloudflare in front
+
+- `doktrace.com` is a Cloudflare-**proxied** A record pointing at `51.83.96.40`. Visitors reach Cloudflare; Cloudflare reaches the origin on 443 (DNAT → CT100).
+- The origin answers directly as well: `curl --resolve doktrace.com:443:51.83.96.40 https://doktrace.com/healthz` works — the WAF is not an enforcement boundary.
+- Cloudflare blocks Python user agents (HTTP 403, error 1010). Scripts should send a curl-like `User-Agent`; Go clients (`np`, `np-agent`, the federation edge) pass.
+- Cloudflare replaces 5xx error bodies with its own error page; to read the API's RFC 9457 problem document during an outage, query the origin with `--resolve`.
+- Caddy's `trusted_proxies` covers the Cloudflare ranges, so Caddy's own logs and rate decisions see the visitor IP. Northplane itself does not evaluate `X-Forwarded-For` — only `X-Forwarded-Proto` — so no Northplane setting depends on Cloudflare.
+
+## Access patterns
+
+| You want to… | Command |
+|---|---|
+| reach the hypervisor | `ssh root@51.83.96.40` (key) |
+| reach a VM | `ssh -J root@51.83.96.40 rocky@10.10.10.11` (user `rocky`, sudo; `.12`/`.13`/`.14` for the other VMs). The VMs trust a different key than the hypervisor |
+| enter the Caddy container | `ssh root@51.83.96.40 -t 'pct enter 100'` |
+| use the Proxmox web UI | `ssh -N -L 8006:127.0.0.1:8006 root@51.83.96.40` then `https://localhost:8006` (realm `pam`) — the firewall allowlists 8006 per source IP and silently drops everything else, so the tunnel is the durable way |
+| reach the VM the way CI does | `ssh -p 2201 deploy@51.83.96.40` (the CI deploy key; host key pinned in the `DEPLOY_KNOWN_HOSTS` variable) |
+| inspect the app from the VM | `cd /opt/northplane && docker compose ps` / `docker compose logs -f northplane` / `curl -s localhost:8443/readyz` |
+
+## Verified state on 2026-08-23
+
+| Item | Value |
+|---|---|
+| Container | `northplane-northplane-1`, image `ghcr.io/myfoxit/northplane:main-daa6dc518a2b` (= `main` HEAD `daa6dc5`), started `2026-08-23T08:50:57Z`, `0.0.0.0:8443->8443/tcp` |
+| Volume | `northplane_northplane-data` |
+| Deploy run | `Deploy` run 32629242562 (08:48 UTC): `publish` succeeded, `deploy` (np-01) succeeded, `deploy-hetzner` (np-02) failed — np-02 is unreachable, see [CI/CD](/docs/deployment/ci-cd/) |
+| `/healthz` on the VM | `ok` |
+| `/readyz` | `{"ready":true,"subsystems":[{"name":"storage","ok":true,"info":"sqlite"},{"name":"eventbus","ok":true},{"name":"scheduler","ok":true}]}` |
+| `/api/v1/system/info` (anonymous) | `{"aiEnabled":false,"goVersion":"go1.25.14","goroutines":44,"heapMB":134,"startedAt":"2026-08-23T08:50:57Z","storage":"sqlite","uptime":"22m57s","version":"main-daa6dc518a2b"}` |
+| Data mode | **real** since 2026-08-20 (`/var/lib/northplane/real`); the demo directory `/var/lib/northplane/demo` still exists alongside, so flipping `NORTHPLANE_DEMO` back restores the showcase |
+| Signup | `/register` public (`NORTHPLANE_ALLOW_SIGNUP=true`, viewer role) |
+| Break-glass admin | `admin@doktrace.com` (password in the repo secret `NP_DEFAULT_ADMIN_PASSWORD`) |
+| Caddy site | `doktrace.com → 10.10.10.11:8443`, Let's Encrypt via HTTP-01 |
+| Agent on the VM | systemd `np-agent` active; `/etc/northplane/agent.yaml`: `server: https://doktrace.com`, token `np-agent-np-prod` (`objects:write`), `hostname: np-prod`, `insecure: false`, `interval: 60s`, `disk: [/]` |
+| Other agents → prod | `pve-host` (the hypervisor), `netlab` (VM102), `alarmlab` (VM103); VM104's agent pushes to its **local** edge instance, not to prod |
+
+The agent fleet and its day-2 handling are on the [operations page](/docs/deployment/operations/#the-agent-fleet); the agent itself is documented under [Monitoring → Agent](/docs/monitoring/agent/).
+
+## Adding another VM to this topology
+
+1. Clone a template (VM9000/VM9001), give it the next `10.10.10.1X` address on `vmbr1`.
+2. Provision it with `deploy/provision-server.sh` through the jump host and add a DNAT rule for its SSH port on the hypervisor — [Provisioning](/docs/deployment/provisioning/).
+3. Map a domain to it in CT100: `saas-domain <slot> <domain> 8443`; point the DNS record at `51.83.96.40`.
+4. Ship `deploy/docker-compose.vm.yml` + `.env` + `secret.key` to `/opt/northplane` on the VM — by hand or by pointing a Deploy job at it (new `DEPLOY_*`-style variables and an SSH key).
+
+Related: [Docker Compose](/docs/deployment/docker-compose/) (the `.env` reference), [CI/CD](/docs/deployment/ci-cd/), [Environments](/docs/deployment/environments/), [TLS and reverse proxies](/docs/administration/tls-and-proxy/).
