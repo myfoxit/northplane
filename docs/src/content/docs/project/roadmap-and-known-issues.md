@@ -155,6 +155,29 @@ See [Tenancy and RBAC](/docs/concepts/tenancy-rbac/) and [Users, roles and permi
 | UX-2 | Low · Enhancement | Non-default public status pages (`/status/<slug>`) read a `statuspage/<slug>` KV document that no UI or API writes; only `/status/default` is usable. | |
 | UX-3 | Low · Enhancement | The counters (KPI) widget cannot be scoped to a selector — it needs an `/overview` selector parameter on the backend. Per-field origin in the effective-config table is not exposed by the API. | |
 
+### Findings from the product-tour recording (2026-08-23)
+
+Recorded while driving the English UI of the production instance as admin to author the in-app product tours; the Stept-side recorder findings are tracked with that vendor, the Northplane-side ones are listed here.
+
+| ID | Severity · Type | Description | Notes |
+|---|---|---|---|
+| INC-1 | Medium · Bug | The Incidents empty state says "open one manually", but the page has no create button; the API offers `POST /api/v1/incidents` and `:merge`, the UI neither create nor merge. | Add **New incident** (title, severity, impact, ticket URL) and a merge action; fix the empty-state text until then. |
+| NAV-2 | Medium · UX | Admin (21) and Alerting tabs live in `useState`, not in the URL — no deep links, the back button loses the tab, tours and docs cannot link to "Admin → Channels". | Put the tab into a `?tab=` search param. |
+| A11Y-2 | Medium · Bug | Dialog inputs without an associated label (dashboard/business-service/report/channel *Name*, downtime *Comment*, …) — the accessible name is empty ("field"). | Generate `id` + `htmlFor` in `kit.tsx` / the dialog forms. |
+| SEC-1 | Medium · Bug | Channel dialog: *Password* is `type=text` (clear text on screen); *TLS mode* and *Allow plaintext* are free-text fields. | `type=password` with a show toggle; TLS mode as a select (`starttls` / `implicit` / `none`), allow-plaintext as a switch. |
+| EVENT-2 | Medium · UX | Notification/escalation/ack/config event rows carry no summary (time + badges only), payloads are raw truncated JSON, the type filter lacks `flapping_*`, the object filter takes an id only. | One-line summary per type, JSON on expand, `flapping_start/end` in the filter, object autocomplete. |
+| I18N-2 | Low · Bug | Report rendering is German ("Typ · Zeitraum: 30 Tage · Erstellt") in the English UI. | |
+| I18N-3 | Low · Bug | Agents tab: the `agent.yaml` snippet carries German comments in the English UI. | |
+| DASH-7 | Low · UX | New dashboard: the default KPI widget is too low (tiles cut off, scrollbar); the *Time range* select looks disabled. | |
+| AUDIT-1 | Low · UX | Audit log column *Actor* shows only "user"/"token", not which one; sequence gaps (143 → 146) in the tenant-filtered view confuse auditors. | |
+| FORM-5 | Low · UX | IVR editor is taller than the viewport, *Save* below the fold, no sticky footer (known since July). | |
+| DETAIL-6 | Low · UX | Object detail *History*: "No entries." without a hint what would appear here. | |
+| DIALOG-1 | Low · Enhancement | Radix modals set `pointer-events: none` on the body — third-party overlays (product tours) cannot be operated while a dialog is open. | |
+| TOURS-1 | Low · UX | Tour content depends on data: the alert tour anchors *Acknowledge/Resolve* (only present with open alerts); the objects tour (`/objects*`) also matches detail pages. | |
+| ROLES-1 | Low · Check | The Roles tab lists only the active tenant's system roles; the Users tab names `tenant-admin`, which is missing from the role list of tenant *Default* — verify whether intended. | |
+
+Confirmed working during that session: widget data binding (object search, selector, metric, warn/crit, live preview — DASH-1 of July), token redaction in the effective config (DETAIL-1), breadcrumb + *Host:* chip + "Other services on this host" on service details (DETAIL-4), and no native `confirm()` dialogs anywhere.
+
 ### July 2026 audit — status
 
 All July items were worked through on 2026-07-15/16; the August audit confirmed the most important one.
