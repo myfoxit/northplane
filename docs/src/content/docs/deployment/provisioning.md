@@ -194,6 +194,55 @@ Verified 2026-08-23: the Hetzner box `91.98.92.10` is gone — port 22 times out
 
 Alternative: if a second instance is not wanted, delete the `deploy-hetzner` job from `deploy.yml` and remove the four `HETZNER_*` variables/secrets — Deploy runs turn green again and nothing else changes for `np-01`.
 
+## Host SSH hardening (anti-lockout)
+
+`deploy/harden-access.sh` locks a host's SSH down **by identity, never by source IP**. Pinning an
+admin address (`AllowUsers root@1.2.3.4`, a firewall rule for the office IP) is what locked the
+operator out of the previous box — a key is just as strong and travels with you when your IP
+changes. Run it as root on the Proxmox host (or any Debian-family host); it is idempotent:
+
+```bash
+# 1. get your key onto a fresh box (password auth is still on at this point)
+ssh-copy-id -i ~/.ssh/id_ed25519.pub root@<host>
+
+# 2. harden — refuses to run if no key is authorized yet
+ssh root@<host> 'bash -s' < deploy/harden-access.sh
+```
+
+Result: publickey-only on port 22, no password auth, root by key only, OpenSSH's built-in
+per-source penalties against brute force (no fail2ban needed on OpenSSH ≥ 9.8) — and **a second
+sshd on port 2222** with its own config file (`/etc/ssh/sshd_config.rescue`, unit
+`sshd-rescue.service`), so a broken drop-in or a botched edit can never close both doors. The
+script validates every config with `sshd -t` and *reloads* rather than restarts, so the session
+you are typing in survives a mistake.
+
+| Option | Effect |
+|---|---|
+| `--rescue-port N` | port of the rescue daemon (default `2222`) |
+| `--no-rescue` | skip the rescue daemon (not recommended) |
+| `--firewall` | opt-in: enable the Proxmox firewall with **port** rules (22, 2222, 8006, 3128, 5900-5999, 80, 443), never source-IP rules, and arm a 10-minute auto-rollback |
+| `--confirm` | cancel that auto-rollback once you verified from a second terminal that you are still in; do nothing and the firewall disables itself |
+
+:::tip[If you are locked out anyway]
+1. `ssh -p 2222 root@<host>` — the rescue daemon.
+2. `https://<host>:8006` → node → **Shell** (works with sshd dead).
+3. The provider's KVM/IPMI console — works with the network stack dead.
+4. The provider's rescue system — boot it, mount the disk, fix the config.
+:::
+
+Two manual steps the script deliberately leaves to you: put a **second, offline recovery key**
+(password manager / USB) into `/root/.ssh/authorized_keys` so a lost laptop is not a lost server,
+and enrol **Proxmox 2FA** *first* and require it *second* (Datacenter → Permissions → Two Factor →
+Add → TOTP, verify it works, then `pveum realm modify pam --tfa type=oath`).
+
+`deploy/harden-access.test.sh` exercises the whole script against a real OpenSSH in a throwaway
+container — key login works, password login is refused, and a broken drop-in in the main config
+cannot take the rescue daemon down:
+
+```bash
+docker run --rm -v "$PWD/deploy:/work:ro" debian:trixie bash /work/harden-access.test.sh
+```
+
 ## Verifying a provisioned host
 
 ```bash
