@@ -25,7 +25,7 @@ COPY docs/ ./
 RUN npm run build:embed
 
 # --- Stage 2: build the Go binary (UI + docs embedded via go:embed) --------
-FROM golang:1.25-alpine AS build
+FROM golang:1.27-alpine AS build
 WORKDIR /src
 RUN apk add --no-cache git
 COPY go.mod go.sum ./
