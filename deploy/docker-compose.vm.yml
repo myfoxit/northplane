@@ -26,7 +26,13 @@ services:
       # survives image swaps and mode flips.
       - ./secret.key:/etc/northplane/secret.key:ro
     ports:
-      - "8443:8443"
+      - "8443:8443"       # web UI + API (Caddy LXC is the only client)
+      # Alarm-input listeners. EventSources bind these inside the container,
+      # so without the mappings SNMP traps and ESPA pages never arrive.
+      - "9162:9162/udp"   # snmp-trap
+      - "2023:2023"       # ESPA 4.4.4
+      - "8123:8123"       # ESPA-X 2.0
+      - "4573:4573"       # Asterisk FastAGI (asterisk-inbound)
 
 volumes:
   northplane-data:
