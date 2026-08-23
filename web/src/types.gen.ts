@@ -2296,6 +2296,111 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tts-profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List tts-profiles */
+        get: operations["get_tts_profiles"];
+        put?: never;
+        /** Create tts-profile */
+        post: operations["post_tts_profiles"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tts-profiles/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get tts-profile */
+        get: operations["get_tts_profiles_name"];
+        /** Update tts-profile (If-Match) */
+        put: operations["put_tts_profiles_name"];
+        post?: never;
+        /** Delete tts-profile */
+        delete: operations["delete_tts_profiles_name"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tts/engines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List TTS engines and their config keys */
+        get: operations["get_tts_engines"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tts:normalize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dry run: detected language and normalised text for a profile */
+        post: operations["post_tts_normalize"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tts:preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Synthesize a preview clip (WAV, base64) */
+        post: operations["post_tts_preview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tts:voices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** List the voices of a profile's engine */
+        post: operations["post_tts_voices"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/users": {
         parameters: {
             query?: never;
@@ -2611,6 +2716,12 @@ export interface components {
             perfdata?: string;
             state: number;
             stateType: string;
+        };
+        ConfigKey: {
+            hint?: string;
+            key: string;
+            required?: boolean;
+            secret?: boolean;
         };
         ConnectionInput: {
             apiKey?: string;
@@ -2932,6 +3043,11 @@ export interface components {
             start: string;
             tenantId: string;
         };
+        Plan: {
+            lang: string;
+            segments: components["schemas"]["SpokenSegment"][];
+            text: string;
+        };
         PlanAction: {
             action: string;
             diff?: {
@@ -3060,6 +3176,11 @@ export interface components {
             };
             version?: string;
         };
+        SpokenSegment: {
+            lang: string;
+            text: string;
+            voice?: string;
+        };
         StateSummary: {
             acked: number;
             flapping: number;
@@ -3089,6 +3210,102 @@ export interface components {
             lastSyncAt?: string;
             syncInterval?: string;
             url?: string;
+        };
+        TTSAudio: {
+            format?: string;
+            gainDb?: number;
+            keepSilence?: boolean;
+            leadSilenceMs?: number;
+            noNormalize?: boolean;
+            preroll?: string;
+            sampleRate?: number;
+            trailSilenceMs?: number;
+        };
+        TTSDetect: {
+            languages?: string[];
+            minConfidence?: number;
+            mode?: string;
+        };
+        TTSEnginesResponse: {
+            configKeys: {
+                [key: string]: components["schemas"]["ConfigKey"][];
+            };
+            engines: string[];
+            prerolls: string[];
+        };
+        TTSLexiconEntry: {
+            from: string;
+            matchCase?: boolean;
+            substring?: boolean;
+            to: string;
+        };
+        TTSNormalize: {
+            acronyms?: string;
+            digitsFrom?: number;
+            disabled?: boolean;
+            identifiers?: string;
+            ipAddresses?: string;
+            lexicon?: components["schemas"]["TTSLexiconEntry"][];
+            noBuiltinLexicon?: boolean;
+            numbers?: string;
+            regex?: components["schemas"]["TTSRegexRule"][];
+            spellOut?: string[];
+            symbols?: string;
+            units?: string;
+            urls?: string;
+        };
+        TTSPreviewRequest: {
+            language?: string;
+            preroll?: boolean;
+            profile?: components["schemas"]["TTSProfile"];
+            profileName?: string;
+            text: string;
+            voice?: string;
+        };
+        TTSPreviewResponse: {
+            audio: string;
+            cached: boolean;
+            durationMs: number;
+            engine: string;
+            format: string;
+            lang: string;
+            segments: components["schemas"]["SpokenSegment"][];
+            text: string;
+        };
+        TTSProfile: {
+            audio: components["schemas"]["TTSAudio"];
+            cacheDisabled?: boolean;
+            config?: {
+                [key: string]: string;
+            };
+            /** Format: date-time */
+            createdAt: string;
+            description?: string;
+            detect: components["schemas"]["TTSDetect"];
+            engine: string;
+            fallback?: string;
+            id: string;
+            language?: string;
+            name: string;
+            normalize: components["schemas"]["TTSNormalize"];
+            rate?: number;
+            tenantId: string;
+            /** Format: date-time */
+            updatedAt: string;
+            version: number;
+            voice?: string;
+            voices?: {
+                [key: string]: string;
+            };
+        };
+        TTSRegexRule: {
+            pattern: string;
+            replace: string;
+        };
+        TTSVoicesRequest: {
+            language?: string;
+            profile?: components["schemas"]["TTSProfile"];
+            profileName?: string;
         };
         Template: {
             /** Format: date-time */
@@ -3159,6 +3376,12 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
             version: number;
+        };
+        Voice: {
+            gender?: string;
+            id: string;
+            lang?: string;
+            name: string;
         };
         WebhookSubscription: {
             disabled?: boolean;
@@ -10124,6 +10347,296 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    get_tts_profiles: {
+        parameters: {
+            query?: {
+                /** @description Opaque pagination cursor from a prior response's nextCursor */
+                cursor?: string;
+                /** @description Maximum items to return in this page */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["listResponse"];
+                };
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    post_tts_profiles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["TTSProfile"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TTSProfile"];
+                };
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    get_tts_profiles_name: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TTSProfile"];
+                };
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    put_tts_profiles_name: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["TTSProfile"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TTSProfile"];
+                };
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    delete_tts_profiles_name: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    get_tts_engines: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TTSEnginesResponse"];
+                };
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    post_tts_normalize: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["TTSPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Plan"];
+                };
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    post_tts_preview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["TTSPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TTSPreviewResponse"];
+                };
+            };
+            /** @description Problem Details (RFC 9457) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["problemDoc"];
+                };
+            };
+        };
+    };
+    post_tts_voices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["TTSVoicesRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Voice"][];
+                };
             };
             /** @description Problem Details (RFC 9457) */
             default: {

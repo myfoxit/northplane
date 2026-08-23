@@ -3,10 +3,7 @@ package notify
 import (
 	"bytes"
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
 	"crypto/tls"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,12 +11,11 @@ import (
 	"net/http"
 	"net/mail"
 	"net/smtp"
-	"net/url"
 	"os/exec"
-	"sort"
 	"strings"
 	"time"
 
+	"github.com/northplane/northplane/internal/awssig"
 	"github.com/northplane/northplane/internal/model"
 )
 
@@ -363,109 +359,13 @@ func (m *Manager) sendEmailSES(ctx context.Context, ch *model.NotificationChanne
 	return out.MessageID, nil
 }
 
-type awsCredentials struct {
-	AccessKey    string
-	SecretKey    string
-	SessionToken string
-	Region       string
-	Service      string
-}
+// awsCredentials is the SigV4 credential set (shared signer in
+// internal/awssig; kept as an alias so call sites and tests read naturally).
+type awsCredentials = awssig.Credentials
 
-// signAWSV4 adds an AWS Signature Version 4 Authorization header
-// (https://docs.aws.amazon.com/IAM/latest/UserGuide/create-signed-request.html).
-// Hand-rolled to keep the dependency tree free of the AWS SDK; SES is the
-// only AWS surface and needs exactly one signed POST.
+// signAWSV4 adds an AWS Signature Version 4 Authorization header.
 func signAWSV4(req *http.Request, payload []byte, cred awsCredentials, now time.Time) {
-	amzDate := now.Format("20060102T150405Z")
-	dateStamp := now.Format("20060102")
-	payloadHash := hexSHA256(payload)
-
-	req.Header.Set("X-Amz-Date", amzDate)
-	if cred.SessionToken != "" {
-		req.Header.Set("X-Amz-Security-Token", cred.SessionToken)
-	}
-
-	headers := map[string]string{
-		"host":       req.Host,
-		"x-amz-date": amzDate,
-	}
-	if req.Host == "" {
-		headers["host"] = req.URL.Host
-	}
-	if ct := req.Header.Get("Content-Type"); ct != "" {
-		headers["content-type"] = ct
-	}
-	if cred.SessionToken != "" {
-		headers["x-amz-security-token"] = cred.SessionToken
-	}
-	names := make([]string, 0, len(headers))
-	for k := range headers {
-		names = append(names, k)
-	}
-	sort.Strings(names)
-	var canonHeaders strings.Builder
-	for _, k := range names {
-		canonHeaders.WriteString(k + ":" + strings.TrimSpace(headers[k]) + "\n")
-	}
-	signedHeaders := strings.Join(names, ";")
-
-	canonURI := req.URL.EscapedPath()
-	if canonURI == "" {
-		canonURI = "/"
-	}
-	canonQuery := canonicalQuery(req.URL.Query())
-	canonRequest := strings.Join([]string{
-		req.Method, canonURI, canonQuery, canonHeaders.String(), signedHeaders, payloadHash,
-	}, "\n")
-
-	scope := strings.Join([]string{dateStamp, cred.Region, cred.Service, "aws4_request"}, "/")
-	stringToSign := strings.Join([]string{
-		"AWS4-HMAC-SHA256", amzDate, scope, hexSHA256([]byte(canonRequest)),
-	}, "\n")
-
-	kDate := hmacSHA256([]byte("AWS4"+cred.SecretKey), dateStamp)
-	kRegion := hmacSHA256(kDate, cred.Region)
-	kService := hmacSHA256(kRegion, cred.Service)
-	kSigning := hmacSHA256(kService, "aws4_request")
-	signature := hex.EncodeToString(hmacSHA256(kSigning, stringToSign))
-
-	req.Header.Set("Authorization", fmt.Sprintf(
-		"AWS4-HMAC-SHA256 Credential=%s/%s, SignedHeaders=%s, Signature=%s",
-		cred.AccessKey, scope, signedHeaders, signature))
-}
-
-// canonicalQuery renders the query string per SigV4: keys sorted, values
-// URI-encoded with %20 for space.
-func canonicalQuery(q url.Values) string {
-	keys := make([]string, 0, len(q))
-	for k := range q {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	var parts []string
-	for _, k := range keys {
-		vs := append([]string(nil), q[k]...)
-		sort.Strings(vs)
-		for _, v := range vs {
-			parts = append(parts, awsURIEncode(k)+"="+awsURIEncode(v))
-		}
-	}
-	return strings.Join(parts, "&")
-}
-
-func awsURIEncode(s string) string {
-	return strings.ReplaceAll(url.QueryEscape(s), "+", "%20")
-}
-
-func hexSHA256(b []byte) string {
-	h := sha256.Sum256(b)
-	return hex.EncodeToString(h[:])
-}
-
-func hmacSHA256(key []byte, data string) []byte {
-	h := hmac.New(sha256.New, key)
-	h.Write([]byte(data))
-	return h.Sum(nil)
+	awssig.Sign(req, payload, cred, now)
 }
 
 func mimeHeader(s string) string {

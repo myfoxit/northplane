@@ -44,6 +44,7 @@ import (
 	"github.com/northplane/northplane/internal/storage"
 	"github.com/northplane/northplane/internal/traps"
 	"github.com/northplane/northplane/internal/tsdb"
+	"github.com/northplane/northplane/internal/tts"
 	"github.com/northplane/northplane/internal/web"
 )
 
@@ -69,6 +70,7 @@ type Server struct {
 	mqtt    *mqttin.Manager
 	espa    *espa.Manager
 	agi     *agi.Manager
+	tts     *tts.Service
 	ldap    *ldapsync.Syncer
 	edge    *federation.Edge
 	hub     *sse.Hub
@@ -113,6 +115,22 @@ func New(ctx context.Context, cfg config.Config, store *storage.Store, ts *tsdb.
 	s.notify.AckSecret = ackSecret(ctx, store)
 	s.initVAPID(ctx)
 
+	// Text-to-speech for voice alarms: engines/voices are tenant
+	// resources (tts-profile); the synthesized clips live in a bounded
+	// disk cache under dataDir and are served through signed URLs to
+	// Twilio / Asterisk. A cache that cannot be created disables caching
+	// (synthesis still works, clips are just re-rendered per call).
+	ttsCache, err := tts.NewCache(cfg.TTSCacheDir(), cfg.TTS.CacheMaxMB, cfg.TTS.CacheTTL)
+	if err != nil {
+		log.Warn("server: tts cache disabled", "dir", cfg.TTSCacheDir(), "err", err)
+		ttsCache = nil
+	}
+	s.tts = tts.New(store, ttsCache, secrets, log)
+	s.tts.BaseURL = cfg.BaseURL
+	s.tts.SignKey = s.notify.AckSecret
+	s.tts.Commands = cfg.TTS.Commands
+	s.notify.TTS = s.tts
+
 	// Ingress-Adapter beyond HTTP (SPEC §7.5): SNMP traps + IMAP poller.
 	// Both reconcile against event-source definitions at runtime.
 	secretFn := func(_ context.Context, tenantID, name string) (string, error) {
@@ -152,7 +170,7 @@ func New(ctx context.Context, cfg config.Config, store *storage.Store, ts *tsdb.
 	s.api = &api.API{
 		Cfg: cfg, Store: store, Catalog: s.cat, Bus: s.bus, TSDB: ts,
 		Sched: s.sched, Pipe: s.pipe, Alert: s.alert, Escal: s.escal,
-		Notify: s.notify, Auth: authn, OIDC: oidc, LDAP: s.ldap, Box: box,
+		Notify: s.notify, TTS: s.tts, Auth: authn, OIDC: oidc, LDAP: s.ldap, Box: box,
 		Hub: s.hub, Metrics: s.metrics, Log: log, StartedAt: time.Now(), Version: version,
 	}
 	if cfg.Federation.EdgeEnabled() {
@@ -371,6 +389,7 @@ func (s *Server) Run(ctx context.Context) error {
 	spawn("mqttin", s.mqtt.Run)
 	spawn("espa", s.espa.Run)
 	spawn("agi", s.agi.Run)
+	spawn("tts-cache", s.ttsCacheSweep)
 	spawn("api-janitor", s.api.Janitor)
 	spawn("webhook-dispatcher", s.api.WebhookDispatcher)
 	spawn("report-scheduler", s.api.ReportScheduler)
@@ -566,6 +585,26 @@ func (s *Server) deadManLoop(ctx context.Context) {
 			if resp, err := client.Do(req); err == nil {
 				resp.Body.Close()
 			}
+		}
+	}
+}
+
+// ttsCacheSweep evicts expired / least recently used synthesized clips
+// hourly (Put also sweeps when the size cap is crossed).
+func (s *Server) ttsCacheSweep(ctx context.Context) {
+	c := s.tts.Cache()
+	if c == nil {
+		<-ctx.Done()
+		return
+	}
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			c.Sweep()
 		}
 	}
 }

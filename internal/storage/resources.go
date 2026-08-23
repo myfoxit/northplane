@@ -42,6 +42,7 @@ const (
 	KindPreference       = "preference"   // per-actor UI settings (name = actor ID)
 	KindSite             = "site"         // connected edge instances (SPEC §7.7)
 	KindIVRMenu          = "ivr-menu"     // DTMF phone menus for alarm lines
+	KindTTSProfile       = "tts-profile"  // text-to-speech engines/voices/pronunciation
 	// KindBranding is the instance-wide console look (one document, name
 	// BrandingName, always under model.DefaultTenant — never tenant-scoped).
 	KindBranding = "branding"

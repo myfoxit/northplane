@@ -5,11 +5,15 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/northplane/northplane/internal/api"
 	"github.com/northplane/northplane/internal/model"
+	"github.com/northplane/northplane/internal/tts"
 )
 
 // session speaks the AGI wire protocol: Asterisk sends an environment
@@ -238,17 +242,90 @@ type conversation struct {
 	s    *session
 	src  *model.EventSource
 	acts actions
-	log  interface{ Info(string, ...any) }
+	log  interface {
+		Info(string, ...any)
+		Warn(string, ...any)
+	}
 
 	menu    *model.IVRMenu
 	ph      phrases
+	lang    string
 	ttsApp  string
 	pending byte // digit pressed during a prompt (barge-in)
+
+	// Northplane-side speech: with a profile every prompt is synthesized
+	// and streamed (ttsDir file or signed URL); ttsApp / prompt files are
+	// the fallback.
+	tts     *tts.Service
+	profile *model.TTSProfile
+	ctx     context.Context
+}
+
+// dynamic reports whether free text can be spoken (Northplane TTS or
+// an Asterisk TTS app) as opposed to prompt-file-only mode.
+func (c *conversation) dynamic() bool { return c.profile != nil || c.ttsApp != "" }
+
+// synth renders text through the profile and returns the STREAM FILE
+// reference: the clip path without extension (ttsDir) or its signed
+// URL. "" = unavailable (caller falls back). Fixed phrases are pinned to
+// the menu/source language; free text (alert titles, say options) goes
+// through the profile's own language detection.
+func (c *conversation) synth(text string, pinLang bool) string {
+	if c.profile == nil || c.tts == nil || text == "" {
+		return ""
+	}
+	ctx := c.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	opts := tts.SpeakOptions{}
+	if pinLang {
+		opts.Lang = c.lang
+	}
+	res, err := c.tts.Speak(ctx, c.src.TenantID, c.profile, text, opts)
+	if err != nil {
+		c.log.Warn("agi: tts failed, using fallback speech", "err", err)
+		return ""
+	}
+	if dir := c.src.Config["ttsDir"]; dir != "" {
+		if path, err := writeClip(dir, res.ID, res.Data); err == nil {
+			return strings.TrimSuffix(filepath.Join(firstNonEmpty(c.src.Config["ttsDirPBX"], dir), filepath.Base(path)), ".wav")
+		} else {
+			c.log.Warn("agi: ttsDir write failed", "dir", dir, "err", err)
+		}
+	}
+	if u := c.tts.AudioURL(res, 24*time.Hour); u != "" {
+		return u
+	}
+	c.log.Warn("agi: tts clip has no playable reference (set ttsDir or baseUrl)")
+	return ""
+}
+
+// writeClip stores <id>.wav in dir once and returns its path.
+func writeClip(dir, id string, data []byte) (string, error) {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, id+".wav")
+	if _, err := os.Stat(path); err == nil {
+		return path, nil
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o640); err != nil { //nolint:gosec // the PBX must read the clip
+		return "", err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return "", err
+	}
+	return path, nil
 }
 
 func (c *conversation) run(ctx context.Context) {
+	c.ctx = ctx
 	c.menu = c.acts.Menu(ctx, c.src.TenantID, c.src.Config["menu"])
-	c.ph = phrasesFor(firstNonEmpty(c.menu.Language, c.src.Config["language"]))
+	c.lang = firstNonEmpty(c.menu.Language, c.src.Config["language"])
+	c.ph = phrasesFor(c.lang)
 	c.ttsApp = c.src.Config["ttsApp"]
 
 	if err := c.s.answer(); err != nil {
@@ -288,10 +365,13 @@ func (c *conversation) run(ctx context.Context) {
 // pinGate collects the PIN, three tries.
 func (c *conversation) pinGate() bool {
 	for try := 0; try < 3; try++ {
-		if c.ttsApp != "" {
+		prompt := pPin
+		if ref := c.synth(c.ph.pin, true); ref != "" {
+			prompt = ref // synthesized prompt plays inside GET DATA
+		} else if c.ttsApp != "" {
 			c.speak(c.ph.pin, "")
 		}
-		digits, err := c.s.getData(pPin, 8000, len(c.menu.PIN))
+		digits, err := c.s.getData(prompt, 8000, len(c.menu.PIN))
 		if err != nil {
 			return false
 		}
@@ -338,11 +418,11 @@ func (c *conversation) menuPrompt() byte {
 // (digit interpolated); prompt mode plays the phrase file then says the
 // digit as a number.
 func (c *conversation) speakOption(phraseFmt, promptFile string, opt *model.IVROption) {
-	if opt.Label != "" && c.ttsApp != "" {
+	if opt.Label != "" && c.dynamic() {
 		c.speak(fmt.Sprintf("%s: %s.", opt.Label, opt.Digit), "")
 		return
 	}
-	if c.ttsApp != "" {
+	if c.dynamic() {
 		c.speak(fmt.Sprintf(phraseFmt, opt.Digit), "")
 		return
 	}
@@ -355,8 +435,25 @@ func (c *conversation) speakOption(phraseFmt, promptFile string, opt *model.IVRO
 	}
 }
 
-// speak voices text via the TTS app, or plays the prompt file.
+// speak voices a fixed phrase: a Northplane-synthesized clip (barge-in
+// aware), else the Asterisk TTS app, else the prompt file.
 func (c *conversation) speak(text, promptFile string) {
+	c.speakAs(text, promptFile, true)
+}
+
+// speakFree voices free text (alert titles, say options) — the TTS
+// profile detects its language.
+func (c *conversation) speakFree(text string) {
+	c.speakAs(text, "", false)
+}
+
+func (c *conversation) speakAs(text, promptFile string, pinLang bool) {
+	if ref := c.synth(text, pinLang); ref != "" {
+		if d, err := c.s.streamFile(ref, escapeDigits); err == nil && d != 0 {
+			c.pending = d
+		}
+		return
+	}
 	if c.ttsApp != "" && text != "" {
 		_ = c.s.execApp(c.ttsApp, text)
 		return
@@ -420,8 +517,8 @@ func (c *conversation) dispatch(ctx context.Context, opt *model.IVROption, calle
 		return c.ackResolve(ctx, opt.Action, contact, caller)
 
 	case model.IVRSay:
-		if c.ttsApp != "" {
-			c.speak(opt.Text, "")
+		if c.dynamic() {
+			c.speakFree(opt.Text)
 		} else if opt.Text != "" {
 			// prompt mode: Text names a sound file
 			_, _ = c.s.streamFile(opt.Text, escapeDigits)
@@ -443,8 +540,8 @@ func (c *conversation) speakAlertList(open []*model.Alert) {
 		default:
 			c.speak(c.ph.sevInfo, pSevInfo)
 		}
-		if c.ttsApp != "" {
-			c.speak(al.Title, "")
+		if c.dynamic() {
+			c.speakFree(al.Title)
 		}
 	}
 }

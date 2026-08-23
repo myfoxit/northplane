@@ -8,8 +8,9 @@ import { RulesTab } from '../components/alerting/Rules'
 import { GroupsTab } from '../components/alerting/Groups'
 import { EscalationsTab } from '../components/alerting/Escalations'
 import { IVRMenusTab } from '../components/alerting/IVRMenus'
+import { TTSProfilesTab } from '../components/alerting/TTSProfiles'
 
-const tabs = ['rules', 'groups', 'escalations', 'ivr'] as const
+const tabs = ['rules', 'groups', 'escalations', 'ivr', 'tts'] as const
 type Tab = typeof tabs[number]
 
 const labels: Record<Tab, string> = {
@@ -17,6 +18,7 @@ const labels: Record<Tab, string> = {
   groups: t('groups'),
   escalations: t('escalations'),
   ivr: t('ivrMenus'),
+  tts: t('ttsProfiles'),
 }
 
 export function AlertingConfigPage() {
@@ -42,6 +44,7 @@ export function AlertingConfigPage() {
       {tab === 'groups' && <GroupsTab createRef={createRef} />}
       {tab === 'escalations' && <EscalationsTab createRef={createRef} />}
       {tab === 'ivr' && <IVRMenusTab createRef={createRef} />}
+      {tab === 'tts' && <TTSProfilesTab createRef={createRef} />}
     </div>
   )
 }

@@ -563,6 +563,26 @@
         ],
         "type": "object"
       },
+      "ConfigKey": {
+        "properties": {
+          "hint": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "secret": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "type": "object"
+      },
       "ConnectionInput": {
         "properties": {
           "apiKey": {
@@ -1579,6 +1599,28 @@
         ],
         "type": "object"
       },
+      "Plan": {
+        "properties": {
+          "lang": {
+            "type": "string"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/SpokenSegment"
+            },
+            "type": "array"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "lang",
+          "segments",
+          "text"
+        ],
+        "type": "object"
+      },
       "PlanAction": {
         "properties": {
           "action": {
@@ -2011,6 +2053,24 @@
         },
         "type": "object"
       },
+      "SpokenSegment": {
+        "properties": {
+          "lang": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "voice": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "lang",
+          "text"
+        ],
+        "type": "object"
+      },
       "StateSummary": {
         "properties": {
           "acked": {
@@ -2118,6 +2178,333 @@
         "required": [
           "configured"
         ],
+        "type": "object"
+      },
+      "TTSAudio": {
+        "properties": {
+          "format": {
+            "type": "string"
+          },
+          "gainDb": {
+            "type": "number"
+          },
+          "keepSilence": {
+            "type": "boolean"
+          },
+          "leadSilenceMs": {
+            "type": "integer"
+          },
+          "noNormalize": {
+            "type": "boolean"
+          },
+          "preroll": {
+            "type": "string"
+          },
+          "sampleRate": {
+            "type": "integer"
+          },
+          "trailSilenceMs": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "TTSDetect": {
+        "properties": {
+          "languages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "minConfidence": {
+            "type": "number"
+          },
+          "mode": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "TTSEnginesResponse": {
+        "properties": {
+          "configKeys": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/ConfigKey"
+              },
+              "type": "array"
+            },
+            "type": "object"
+          },
+          "engines": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "prerolls": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "configKeys",
+          "engines",
+          "prerolls"
+        ],
+        "type": "object"
+      },
+      "TTSLexiconEntry": {
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "matchCase": {
+            "type": "boolean"
+          },
+          "substring": {
+            "type": "boolean"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "type": "object"
+      },
+      "TTSNormalize": {
+        "properties": {
+          "acronyms": {
+            "type": "string"
+          },
+          "digitsFrom": {
+            "type": "integer"
+          },
+          "disabled": {
+            "type": "boolean"
+          },
+          "identifiers": {
+            "type": "string"
+          },
+          "ipAddresses": {
+            "type": "string"
+          },
+          "lexicon": {
+            "items": {
+              "$ref": "#/components/schemas/TTSLexiconEntry"
+            },
+            "type": "array"
+          },
+          "noBuiltinLexicon": {
+            "type": "boolean"
+          },
+          "numbers": {
+            "type": "string"
+          },
+          "regex": {
+            "items": {
+              "$ref": "#/components/schemas/TTSRegexRule"
+            },
+            "type": "array"
+          },
+          "spellOut": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "symbols": {
+            "type": "string"
+          },
+          "units": {
+            "type": "string"
+          },
+          "urls": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "TTSPreviewRequest": {
+        "properties": {
+          "language": {
+            "type": "string"
+          },
+          "preroll": {
+            "type": "boolean"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/TTSProfile"
+          },
+          "profileName": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "voice": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "type": "object"
+      },
+      "TTSPreviewResponse": {
+        "properties": {
+          "audio": {
+            "type": "string"
+          },
+          "cached": {
+            "type": "boolean"
+          },
+          "durationMs": {
+            "type": "integer"
+          },
+          "engine": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "lang": {
+            "type": "string"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/SpokenSegment"
+            },
+            "type": "array"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "audio",
+          "cached",
+          "durationMs",
+          "engine",
+          "format",
+          "lang",
+          "segments",
+          "text"
+        ],
+        "type": "object"
+      },
+      "TTSProfile": {
+        "properties": {
+          "audio": {
+            "$ref": "#/components/schemas/TTSAudio"
+          },
+          "cacheDisabled": {
+            "type": "boolean"
+          },
+          "config": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "detect": {
+            "$ref": "#/components/schemas/TTSDetect"
+          },
+          "engine": {
+            "type": "string"
+          },
+          "fallback": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "language": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "normalize": {
+            "$ref": "#/components/schemas/TTSNormalize"
+          },
+          "rate": {
+            "type": "number"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "voice": {
+            "type": "string"
+          },
+          "voices": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "audio",
+          "createdAt",
+          "detect",
+          "engine",
+          "id",
+          "name",
+          "normalize",
+          "tenantId",
+          "updatedAt",
+          "version"
+        ],
+        "type": "object"
+      },
+      "TTSRegexRule": {
+        "properties": {
+          "pattern": {
+            "type": "string"
+          },
+          "replace": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "pattern",
+          "replace"
+        ],
+        "type": "object"
+      },
+      "TTSVoicesRequest": {
+        "properties": {
+          "language": {
+            "type": "string"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/TTSProfile"
+          },
+          "profileName": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "Template": {
@@ -2347,6 +2734,27 @@
           "name",
           "updatedAt",
           "version"
+        ],
+        "type": "object"
+      },
+      "Voice": {
+        "properties": {
+          "gender": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lang": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
         ],
         "type": "object"
       },
@@ -13190,6 +13598,424 @@
         "summary": "Update time-period (If-Match)",
         "tags": [
           "time-periods"
+        ],
+        "x-required-permission": "config:write"
+      }
+    },
+    "/api/v1/tts-profiles": {
+      "get": {
+        "operationId": "get_tts_profiles",
+        "parameters": [
+          {
+            "description": "Opaque pagination cursor from a prior response's nextCursor",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum items to return in this page",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/listResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problemDoc"
+                }
+              }
+            },
+            "description": "Problem Details (RFC 9457)"
+          }
+        },
+        "security": [
+          {
+            "bearerToken": []
+          }
+        ],
+        "summary": "List tts-profiles",
+        "tags": [
+          "tts-profiles"
+        ],
+        "x-required-permission": "objects:read"
+      },
+      "post": {
+        "operationId": "post_tts_profiles",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TTSProfile"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TTSProfile"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problemDoc"
+                }
+              }
+            },
+            "description": "Problem Details (RFC 9457)"
+          }
+        },
+        "security": [
+          {
+            "bearerToken": []
+          }
+        ],
+        "summary": "Create tts-profile",
+        "tags": [
+          "tts-profiles"
+        ],
+        "x-required-permission": "config:write"
+      }
+    },
+    "/api/v1/tts-profiles/{name}": {
+      "delete": {
+        "operationId": "delete_tts_profiles_name",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problemDoc"
+                }
+              }
+            },
+            "description": "Problem Details (RFC 9457)"
+          }
+        },
+        "security": [
+          {
+            "bearerToken": []
+          }
+        ],
+        "summary": "Delete tts-profile",
+        "tags": [
+          "tts-profiles"
+        ],
+        "x-required-permission": "config:write"
+      },
+      "get": {
+        "operationId": "get_tts_profiles_name",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TTSProfile"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problemDoc"
+                }
+              }
+            },
+            "description": "Problem Details (RFC 9457)"
+          }
+        },
+        "security": [
+          {
+            "bearerToken": []
+          }
+        ],
+        "summary": "Get tts-profile",
+        "tags": [
+          "tts-profiles"
+        ],
+        "x-required-permission": "objects:read"
+      },
+      "put": {
+        "operationId": "put_tts_profiles_name",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TTSProfile"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TTSProfile"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problemDoc"
+                }
+              }
+            },
+            "description": "Problem Details (RFC 9457)"
+          }
+        },
+        "security": [
+          {
+            "bearerToken": []
+          }
+        ],
+        "summary": "Update tts-profile (If-Match)",
+        "tags": [
+          "tts-profiles"
+        ],
+        "x-required-permission": "config:write"
+      }
+    },
+    "/api/v1/tts/engines": {
+      "get": {
+        "operationId": "get_tts_engines",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TTSEnginesResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problemDoc"
+                }
+              }
+            },
+            "description": "Problem Details (RFC 9457)"
+          }
+        },
+        "security": [
+          {
+            "bearerToken": []
+          }
+        ],
+        "summary": "List TTS engines and their config keys",
+        "tags": [
+          "tts"
+        ],
+        "x-required-permission": "objects:read"
+      }
+    },
+    "/api/v1/tts:normalize": {
+      "post": {
+        "operationId": "post_tts_normalize",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TTSPreviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Plan"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problemDoc"
+                }
+              }
+            },
+            "description": "Problem Details (RFC 9457)"
+          }
+        },
+        "security": [
+          {
+            "bearerToken": []
+          }
+        ],
+        "summary": "Dry run: detected language and normalised text for a profile",
+        "tags": [
+          "tts:normalize"
+        ],
+        "x-required-permission": "objects:read"
+      }
+    },
+    "/api/v1/tts:preview": {
+      "post": {
+        "operationId": "post_tts_preview",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TTSPreviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TTSPreviewResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problemDoc"
+                }
+              }
+            },
+            "description": "Problem Details (RFC 9457)"
+          }
+        },
+        "security": [
+          {
+            "bearerToken": []
+          }
+        ],
+        "summary": "Synthesize a preview clip (WAV, base64)",
+        "tags": [
+          "tts:preview"
+        ],
+        "x-required-permission": "config:write"
+      }
+    },
+    "/api/v1/tts:voices": {
+      "post": {
+        "operationId": "post_tts_voices",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TTSVoicesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Voice"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problemDoc"
+                }
+              }
+            },
+            "description": "Problem Details (RFC 9457)"
+          }
+        },
+        "security": [
+          {
+            "bearerToken": []
+          }
+        ],
+        "summary": "List the voices of a profile's engine",
+        "tags": [
+          "tts:voices"
         ],
         "x-required-permission": "config:write"
       }

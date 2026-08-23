@@ -32,6 +32,7 @@ import (
 	"github.com/northplane/northplane/internal/pipeline"
 	"github.com/northplane/northplane/internal/scheduler"
 	"github.com/northplane/northplane/internal/storage"
+	"github.com/northplane/northplane/internal/tts"
 )
 
 // testAPI is the wired-up system under test plus a couple of pre-minted
@@ -69,6 +70,14 @@ func bootAPI(t *testing.T) *testAPI {
 	alert := alerting.NewEngine(store, cat, bus, escal, log)
 	mgr := notify.New(store, bus, log)
 	authn := &auth.Authenticator{Store: store}
+	ttsCache, err := tts.NewCache(t.TempDir(), 8, time.Hour)
+	if err != nil {
+		t.Fatalf("tts cache: %v", err)
+	}
+	speech := tts.New(store, ttsCache, nil, log)
+	speech.BaseURL = "https://np.test"
+	speech.SignKey = []byte("test-sign-key")
+	mgr.TTS = speech
 
 	a := &API{
 		Store:   store,
@@ -79,6 +88,7 @@ func bootAPI(t *testing.T) *testAPI {
 		Alert:   alert,
 		Escal:   escal,
 		Notify:  mgr,
+		TTS:     speech,
 		Auth:    authn,
 		Metrics: metrics.NewRegistry(),
 		Log:     log,
@@ -92,6 +102,8 @@ func bootAPI(t *testing.T) *testAPI {
 	a.registerEvents()
 	a.registerIngress()
 	a.registerTelephony()
+	a.registerTTS()
+	a.registerBundles()
 	a.registerSystem()
 	a.registerSites()
 	a.registerAgentConfig()

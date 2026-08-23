@@ -141,11 +141,11 @@ function SourceDialog({ name, copy, existing, onClose }: {
 // Known config keys per source type; the rest fall into the KVEditor.
 const SNMP_KEYS = ['listen', 'community', 'severity', 'v3User', 'v3AuthProto', 'v3AuthSecretRef', 'v3PrivProto', 'v3PrivSecretRef']
 const MAIL_KEYS = ['host', 'port', 'tls', 'username', 'passwordSecretRef', 'folder', 'pollInterval', 'markSeen', 'severity']
-const VOICE_KEYS = ['menu', 'language', 'voice', 'allowFrom', 'escalationPolicy', 'severity', 'twilioAuthToken']
+const VOICE_KEYS = ['menu', 'language', 'voice', 'ttsProfile', 'allowFrom', 'escalationPolicy', 'severity', 'twilioAuthToken']
 const SMS_KEYS = ['action', 'escalationPolicy', 'severity', 'allowFrom', 'ackKeyword', 'language', 'twilioAuthToken']
 const MQTT_KEYS = ['url', 'topics', 'qos', 'clientId', 'username', 'password', 'passwordSecretRef', 'tlsInsecure', 'severity']
 const ESPA_KEYS = ['listen', 'severity']
-const AGI_KEYS = ['listen', 'menu', 'language', 'ttsApp', 'escalationPolicy', 'severity', 'allowFrom', 'recordDir']
+const AGI_KEYS = ['listen', 'menu', 'language', 'ttsApp', 'ttsProfile', 'ttsDir', 'ttsDirPBX', 'escalationPolicy', 'severity', 'allowFrom', 'recordDir']
 
 function knownKeysFor(type: string): string[] {
   switch (type) {
@@ -386,6 +386,9 @@ function SourceForm({ doc, etag, isNew, copyOf, onClose }: {
                 <Field label={t('voiceField')} hint={t('voiceHint')}>
                   <Input value={cfg('voice')} onChange={(e) => setCfg('voice', e.target.value)} />
                 </Field>
+                <Field label={t('ttsProfile')} hint={t('ttsProfileHint')}>
+                  <Input value={cfg('ttsProfile')} onChange={(e) => setCfg('ttsProfile', e.target.value)} placeholder="default" />
+                </Field>
                 <Field label={t('allowFrom')} hint={t('allowFromHint')}>
                   <Input value={cfg('allowFrom')} onChange={(e) => setCfg('allowFrom', e.target.value)} placeholder="+49,+43" />
                 </Field>
@@ -513,6 +516,15 @@ function SourceForm({ doc, etag, isNew, copyOf, onClose }: {
                 </Field>
                 <Field label={t('agiTtsApp')} hint={t('agiTtsAppHint')}>
                   <Input value={cfg('ttsApp')} onChange={(e) => setCfg('ttsApp', e.target.value)} placeholder="Flite" />
+                </Field>
+                <Field label={t('ttsProfile')} hint={t('ttsProfileHint')}>
+                  <Input value={cfg('ttsProfile')} onChange={(e) => setCfg('ttsProfile', e.target.value)} placeholder="default" />
+                </Field>
+                <Field label={t('ttsDirField')} hint={t('ttsDirHint')}>
+                  <Input value={cfg('ttsDir')} onChange={(e) => setCfg('ttsDir', e.target.value)} placeholder="/var/lib/asterisk/sounds/northplane" />
+                </Field>
+                <Field label={t('ttsDirPBXField')}>
+                  <Input value={cfg('ttsDirPBX')} onChange={(e) => setCfg('ttsDirPBX', e.target.value)} />
                 </Field>
                 <Field label={t('escalationPolicyField')}>
                   <Input value={cfg('escalationPolicy')} onChange={(e) => setCfg('escalationPolicy', e.target.value)} />

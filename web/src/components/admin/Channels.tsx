@@ -69,18 +69,11 @@ const CONFIG_FIELDS: Record<string, FieldSpec[]> = {
     { key: 'apnsTopic', label: 'APNs-Topic', hint: t('apnsTopicHint') },
     { key: 'apnsSandbox', label: 'APNs-Sandbox (true/false)' },
   ],
-  // voice: Twilio Voice (TTS + DTMF über /api/v1/voice/gather: 4 = ack,
-  // 6 = resolve) oder generic-http Gateways (SPEC §9.6).
-  voice: [
-    { key: 'provider', label: 'Provider', hint: 'twilio | generic-http' },
-    { key: 'accountSid', label: 'Account SID (twilio)', secret: true },
-    { key: 'authToken', label: t('authTokenTwilio'), secret: true },
-    { key: 'apiKeySid', label: 'API-Key-SID (twilio)', hint: t('apiKeyAltHint') },
-    { key: 'apiKeySecret', label: 'API-Key-Secret (twilio)', secret: true },
-    { key: 'from', label: t('callerNumber') },
-    { key: 'language', label: t('ttsLanguage'), hint: t('ttsLanguageHint') },
-    { key: 'url', label: 'URL (generic-http)', secret: true },
-  ],
+  // voice is provider-driven (asterisk | twilio | generic-http) — the
+  // concrete keys come from voiceFields() based on config.provider. Speech
+  // for every provider: the ttsProfile key (Northplane TTS) or the
+  // provider's own TTS (Twilio <Say>, the Asterisk dialplan).
+  voice: [],
   // mqtt publisher: alarm notifications onto a broker topic.
   mqtt: [
     { key: 'url', label: t('brokerUrl'), hint: t('mqttUrlHint') },
@@ -129,6 +122,56 @@ const CONFIG_FIELDS: Record<string, FieldSpec[]> = {
   ],
 }
 
+// voiceFields builds the voice key set for the selected provider
+// (backend: internal/notify/voice.go, voice_asterisk.go). asterisk = AMI
+// Originate into the PBX dialplan (on-prem), twilio = cloud call with
+// DTMF ack, generic-http = any HTTP voice gateway.
+const VOICE_PROVIDERS = ['asterisk', 'twilio', 'generic-http'] as const
+function voiceFields(provider: string): FieldSpec[] {
+  const tts: FieldSpec[] = [
+    { key: 'ttsProfile', label: t('ttsProfile'), hint: t('ttsProfileHint') },
+  ]
+  switch (provider) {
+    case 'asterisk':
+      return [
+        { key: 'provider', label: 'Provider', hint: 'asterisk | twilio | generic-http' },
+        { key: 'host', label: 'AMI-Host' },
+        { key: 'port', label: 'AMI-Port', hint: '5038' },
+        { key: 'username', label: t('username') },
+        { key: 'secret', label: 'AMI-Secret', secret: true },
+        { key: 'channel', label: 'Channel', hint: 'PJSIP/{to}@trunk' },
+        { key: 'context', label: 'Context', hint: 'northplane-alert' },
+        { key: 'exten', label: 'Exten', hint: 's' },
+        { key: 'callerId', label: 'Caller-ID', hint: 'Northplane <8000>' },
+        { key: 'timeoutMs', label: 'Timeout (ms)', hint: '30000' },
+        { key: 'tls', label: 'TLS (on/off)' },
+        ...tts,
+        { key: 'ttsDir', label: t('ttsDirField'), hint: t('ttsDirHint') },
+        { key: 'ttsDirPBX', label: t('ttsDirPBXField') },
+      ]
+    case 'generic-http':
+      return [
+        { key: 'provider', label: 'Provider', hint: 'asterisk | twilio | generic-http' },
+        { key: 'url', label: 'URL', hint: '{to} {text} {audioUrl}', secret: true },
+        { key: 'jsonBody', label: 'JSON-Body (POST)', hint: t('ttsAudioUrlHint') },
+        { key: 'username', label: t('basicAuthUser') },
+        { key: 'password', label: t('basicAuthPassword'), secret: true },
+        ...tts,
+      ]
+    default:
+      return [
+        { key: 'provider', label: 'Provider', hint: 'asterisk | twilio | generic-http' },
+        { key: 'accountSid', label: 'Account SID (twilio)', secret: true },
+        { key: 'authToken', label: t('authTokenTwilio'), secret: true },
+        { key: 'apiKeySid', label: 'API-Key-SID (twilio)', hint: t('apiKeyAltHint') },
+        { key: 'apiKeySecret', label: 'API-Key-Secret (twilio)', secret: true },
+        { key: 'from', label: t('callerNumber') },
+        { key: 'language', label: t('ttsLanguage'), hint: t('ttsLanguageHint') },
+        ...tts,
+      ]
+  }
+}
+
 // emailFields builds the e-mail key set for the selected provider
 // (backend: internal/notify/email.go). smtp covers jeden Relay (Postfix,
 // SES-SMTP, Mailgun …); sendmail nutzt den lokalen MTA; resend/ses sind
@@ -168,6 +211,7 @@ function emailFields(provider: string): FieldSpec[] {
 // fieldsFor resolves the visible key set; e-mail hängt vom Provider ab.
 function fieldsFor(type: ChannelType, config: Record<string, string>): FieldSpec[] {
   if (type === 'email') return emailFields(config['provider'] ?? '')
+  if (type === 'voice') return voiceFields(config['provider'] ?? '')
   return CONFIG_FIELDS[type] ?? []
 }
 
@@ -349,6 +393,13 @@ function ChannelForm({ doc, etag, isNew, copyOf, onClose }: {
                       <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {EMAIL_PROVIDERS.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  ) : type === 'voice' && f.key === 'provider' ? (
+                    <Select value={config['provider'] || 'twilio'} onValueChange={(v) => setField('provider', v)}>
+                      <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {VOICE_PROVIDERS.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   ) : (

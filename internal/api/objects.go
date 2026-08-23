@@ -620,6 +620,8 @@ func (a *API) validateResourceDoc(kind string, doc map[string]any) error {
 			}
 		}
 		return nil
+	case storage.KindTTSProfile:
+		return validateTTSProfileDoc(raw)
 	case storage.KindSite:
 		var site model.Site
 		if err := json.Unmarshal(raw, &site); err != nil {

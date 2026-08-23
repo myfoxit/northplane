@@ -1,0 +1,332 @@
+---
+title: Text-to-speech (TTS)
+description: How voice alarms are spoken — TTS profiles with pluggable engines (local piper/espeak, Edge, OpenAI, ElevenLabs, Azure, Google, Polly, HTTP), automatic language detection with per-sentence voice switching, pronunciation lexicon, regex rewrites, number/acronym/unit handling, audio finishing and caching.
+sidebar:
+  order: 6
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Out of the box a voice alarm is spoken by the telephony provider: Twilio's `<Say>`, or whatever TTS application or prompt files your Asterisk dialplan uses. A **TTS profile** moves speech into Northplane: the alarm text is normalised the way an operator would read it aloud ("CPU load high on np-01" → *C P U load high on N P zero one*), its language is detected, it is synthesised with the engine and voice of your choice, finished for the phone line and handed to the provider as an audio clip — `<Play>` for Twilio, a channel variable for the Asterisk dialplan, `STREAM FILE` for FastAGI menus, `{audioUrl}` for HTTP gateways. If every engine in the chain fails, the provider's own speech is used, so an alarm call is never silent.
+
+Profiles are resources of kind `tts-profile` (bundle kind `TTSProfile`), edited under **Alerting → Text-to-speech (Sprachausgabe)** or at `/api/v1/tts-profiles` (`objects:read` / `config:write`). A profile is selected by
+
+1. the alert label `np.ttsProfile` (set by a rule's `setLabels`, an IVR option or the manual trigger), else
+2. the `ttsProfile` config key of the voice channel / `voice-inbound` / `asterisk-inbound` source, else
+3. the profile named **`default`**, if one exists.
+
+Without any of these the provider speaks as before — existing installations keep their behaviour until a `default` profile is created.
+
+## Engines
+
+| Engine | Where speech happens | Auth | Notes |
+|---|---|---|---|
+| `command` | a local executable — piper, espeak-ng, flite, mimic3, pico2wave, macOS `say`, any wrapper script | none | **fully on-prem**; no network. Requires the binary on the Northplane host — not inside the distroless container image, so run the binary natively or put an HTTP front-end (Piper server) in front and use `http` |
+| `edge` | Microsoft Edge "read aloud" neural voices | none | free, the same catalogue as Azure — but **unofficial**; Microsoft can change the handshake. Fine for labs and small sites; give production lines a `fallback` |
+| `openai` | OpenAI `audio/speech` — or any compatible server (Kokoro-FastAPI, LocalAI, openedai-speech, Speaches) | API key | `gpt-4o-mini-tts` accepts an `instructions` style prompt ("urgent, clear, like a dispatcher"); compatible local servers make this a second on-prem path |
+| `elevenlabs` | ElevenLabs | API key | `eleven_flash_v2_5` for lowest latency, `eleven_multilingual_v2` for quality |
+| `azure` | Azure AI Speech | key + region | enterprise version of the Edge voices, with SLA; `style` (e.g. `serious`) for voices that support it |
+| `google` | Google Cloud Text-to-Speech | API key | Neural2 / WaveNet voices |
+| `polly` | Amazon Polly | access key (SigV4) | neural voices; `engine: neural|standard|long-form|generative` |
+| `http` | any HTTP endpoint that takes text and returns audio | headers | Piper server, MaryTTS, Coqui, a company TTS gateway |
+
+Every engine's audio (WAV, MP3, raw PCM, G.711) is decoded in Northplane with pure Go — no ffmpeg or sox on the host — so output formats are free to choose; the defaults are sensible.
+
+### Engine configuration keys
+
+All keys live in `config` of the profile; secret-bearing values take `$SECRET:name$` references like channel configs. `GET /api/v1/tts/engines` returns this table for the UI.
+
+<Tabs>
+<TabItem label="command">
+
+| Key | Notes |
+|---|---|
+| `command` | required; executable plus arguments, split by Northplane (quotes allowed), **never** run through a shell. Placeholders per argument: `{text}` `{lang}` `{voice}` `{rate}` `{out}`. The text is additionally written to **stdin**; audio is read from the `{out}` temp file when that placeholder is used, otherwise from **stdout** |
+| `format` | hint for headerless output: `wav` (default, sniffed), `pcm16:22050`, `mp3`, `ulaw:8000` |
+| `outExt` | extension of the `{out}` temp file (default `wav`) |
+| `env` | `KEY=VALUE;KEY2=VALUE2` |
+| `workDir`, `timeoutSeconds` (default 30) | |
+
+```text
+piper --model /opt/piper/{voice}.onnx --output_file {out}      # voices map: de → de_DE-thorsten-medium, en → en_US-amy-medium
+espeak-ng -v {lang} -s 160 --stdout
+flite -voice slt -o {out}
+say -v Anna -o {out} --data-format=LEI16@22050
+```
+
+:::caution[Allowlist]
+Profiles only need `config:write`, so the executable must be on the server allowlist `tts.commands` (config file) / `NORTHPLANE_TTS_COMMANDS` (comma-separated). Default: `piper, piper-tts, espeak, espeak-ng, flite, mimic3, mimic, pico2wave, say, text2wave, festival, tts, coqui-tts, balcon, larynx, sherpa-onnx-offline-tts, np-tts, northplane-tts`. A bare entry permits only that bare name, resolved through `PATH` (never `/some/dir/piper`); an entry with a directory permits exactly that path; `["*"]` allows anything. A wrapper script must be listed by name or full path. `env` may not set loader/interpreter variables (`LD_*`, `DYLD_*`, `PATH`, `PYTHONPATH`, …).
+:::
+
+</TabItem>
+<TabItem label="edge">
+
+| Key | Notes |
+|---|---|
+| `voice` | e.g. `de-DE-KatjaNeural`; empty = a default voice per language (Katja, Aria, Sonia, Denise, …) |
+| `pitch` / `volume` | SSML prosody, e.g. `-5Hz` / `+10%` |
+| `proxy` | `http(s)://` proxy for the websocket |
+
+No credentials. The service delivers 24 kHz MP3 which is decoded and resampled. Use `POST /api/v1/tts:voices` (or **Load voices** in the editor) for the catalogue.
+
+</TabItem>
+<TabItem label="openai">
+
+| Key | Notes |
+|---|---|
+| `apiKey` | required for api.openai.com (`$SECRET:…$`); optional for local compatible servers |
+| `baseUrl` | default `https://api.openai.com/v1` — e.g. `http://kokoro:8880/v1` |
+| `model` | default `gpt-4o-mini-tts` (`tts-1`, `tts-1-hd`, `kokoro`, …) |
+| `voice` | `alloy` (default), `ash`, `ballad`, `coral`, `echo`, `fable`, `onyx`, `nova`, `sage`, `shimmer`, `verse` |
+| `instructions` | speaking style for `gpt-4o-mini-tts` |
+| `responseFormat` | default `wav` (`pcm`, `mp3` accepted) |
+
+OpenAI voices are multilingual: the profile's `voice` is used for every detected language unless `voices` maps one.
+
+</TabItem>
+<TabItem label="elevenlabs">
+
+| Key | Notes |
+|---|---|
+| `apiKey` | required |
+| `voice` | voice id (default Rachel) — multilingual, `voices` may still map per language |
+| `model` | default `eleven_multilingual_v2`; `eleven_flash_v2_5` / `eleven_turbo_v2_5` accept the detected language as `language_code` |
+| `outputFormat` | default `mp3_22050_32`; `pcm_16000`, `pcm_24000`, `ulaw_8000` skip decoding |
+| `stability`, `similarityBoost`, `style` | 0–1 voice settings |
+| `baseUrl` | default `https://api.elevenlabs.io` |
+
+</TabItem>
+<TabItem label="azure / google / polly">
+
+**azure** — `key` (required), `region` (e.g. `westeurope`) or a full `endpoint`, `voice` (`de-DE-KatjaNeural`; default per language), `style`, `pitch`, `outputFormat` (default `riff-16khz-16bit-mono-pcm`).
+
+**google** — `apiKey` (required, API-key auth), `voice` (`de-DE-Neural2-F`), `pitch` (semitones), `baseUrl`. The request asks for `LINEAR16` at 16 kHz.
+
+**polly** — `accessKeyId`, `secretAccessKey` (`$SECRET:…$`), optional `sessionToken`, `region` (`eu-central-1`), `voice` (default per language: Vicki, Joanna, Amy, …), `engine` (`neural` default), `endpoint`. Requests are SigV4-signed; Polly returns raw PCM at 16 kHz.
+
+</TabItem>
+<TabItem label="http">
+
+| Key | Notes |
+|---|---|
+| `url` | required; placeholders `{text}` `{lang}` `{voice}` `{rate}` are URL-encoded |
+| `method` | `GET` (default without body) / `POST` |
+| `body` | POST body template; `{text}` is JSON-escaped when `contentType` is `application/json` |
+| `contentType` | default `application/json` |
+| `headers` | `Name: value; Name2: value2` (`$SECRET` references allowed) |
+| `responseField` | dot path of a base64 audio field in a JSON response; empty = the body **is** the audio |
+| `format` | hint for headerless audio: `pcm16:22050`, `ulaw:8000`, `mp3`, `wav` |
+
+```yaml title="Piper HTTP server"
+config:
+  url: "http://piper:5000/?text={text}"
+```
+```yaml title="MaryTTS"
+config:
+  url: "http://marytts:59125/process?INPUT_TEXT={text}&INPUT_TYPE=TEXT&OUTPUT_TYPE=AUDIO&AUDIO=WAVE_FILE&LOCALE={lang}&VOICE={voice}"
+```
+
+</TabItem>
+</Tabs>
+
+## Profile fields
+
+| Field | Default | Notes |
+|---|---|---|
+| `engine`, `config` | — | see above |
+| `fallback` | — | another profile tried when this engine fails (chain, loop-safe, max 4); after the chain the provider's own speech is used |
+| `language` | `en-US` | default BCP-47 tag: used when detection is off/undecided and for the fixed IVR phrases |
+| `voice` | engine default | default voice id/name |
+| `voices` | — | map language → voice: `{de: de-DE-KatjaNeural, en: en-US-AriaNeural}`; keys are full tags or 2-letter prefixes. A detected English sentence in a German message is then read by the English voice. For engines with language-specific voices (edge/azure/google/polly/command/http) a language without an entry falls back to the **engine's** default voice for that language, not to `voice` |
+| `rate` | engine default | speaking-rate multiplier 0.5–2 |
+| `detect.mode` | `message` | `off` (always `language`), `message` (detect once per message), `segments` (per sentence — see below) |
+| `detect.languages` | `language` + the `voices` keys | candidate languages; detection only ever chooses among these. With a single candidate detection is effectively off |
+| `detect.minConfidence` | `0.35` | below it the default language is kept |
+| `normalize.*` | see below | pronunciation and normalisation |
+| `audio.*` | see below | audio finishing |
+| `cacheDisabled` | `false` | per-profile switch for the clip cache |
+
+```yaml title="tts-profile.yaml"
+kind: TTSProfile
+metadata: { name: default }
+spec:
+  engine: edge
+  language: de-DE
+  voices: { de: de-DE-KatjaNeural, en: en-US-AriaNeural }
+  detect: { mode: segments, languages: [de-DE, en-US] }
+  fallback: piper-local
+  normalize:
+    lexicon:
+      - { from: np-01, to: "Server eins" }
+      - { from: k8s, to: Kubernetes }
+    regex:
+      - { pattern: 'srv(\d+)', replace: 'Server $1' }
+    spellOut: [acme]
+    numbers: auto
+  audio: { preroll: chime, sampleRate: 8000 }
+---
+kind: TTSProfile
+metadata: { name: piper-local }
+spec:
+  engine: command
+  language: de-DE
+  voices: { de: de_DE-thorsten-medium, en: en_US-amy-medium }
+  config: { command: "piper --model /opt/piper/{voice}.onnx --output_file {out}" }
+```
+
+## Language detection
+
+Alarm texts are short, so two signals are combined: a stop-word / monitoring-vocabulary scorer (decisive for "Festplatte voll" vs. "Disk full") and trigram language profiles restricted to the candidate languages. **Keep the candidate list short** — choosing between German and English is reliable, choosing among eighty languages on a ten-word title is not.
+
+`detect.mode: segments` splits the message into sentences, detects each, lets short sentences ("Schweregrad kritisch.") inherit their neighbour's language, merges runs of one language and synthesises every run with that language's voice; the clips are stitched with a short pause. The default outbound template *"Northplane alert. Severity CRITICAL. `<title>`. Press 4 to acknowledge"* with an English title in a German installation is therefore read in German with the title in English.
+
+Detected languages are completed to a region using the candidates (`de` → `de-AT` when the profile lists `de-AT`), else to common defaults (`en-US`, `de-DE`, `fr-FR`, …). The alert label **`np.ttsLang`** forces a language and skips detection; **`np.ttsVoice`** forces the voice.
+
+## Normalisation
+
+Plain text in, plain text out — no SSML — so every engine, including a local flite, benefits equally. Steps in order (each switchable in `normalize`):
+
+1. markup/emoji cleanup (HTML tags, markdown, control characters; line breaks become sentence breaks)
+2. **`lexicon`** — your literal replacements, whole-word and case-insensitive unless `matchCase` / `substring`: `np-01` → *Server eins*, `SQL` → *sequel*
+3. **`regex`** — RE2 rewrites with `$1` groups: `srv(\d+)` → `Server $1`
+4. the built-in IT-operations lexicon (disable with `noBuiltinLexicon`): `k8s` → Kubernetes, `OOMKilled` → out of memory killed, `CRIT` → critical / kritisch, `z.B.` → zum Beispiel, `HTTP` → *H T T P*, `ok` → okay, `gw` → gateway, `nr.` → number / Nummer, …
+5. **`spellOut`** — tokens always spelled letter by letter
+6. URLs (`urls`: `host` → *grafana dot example dot net* | `drop` | `keep`), e-mail addresses (*ops at example dot com*)
+7. token pass:
+   - IP addresses and dotted versions (`ipAddresses: dot|native`): `10.0.0.12` → *10 dot 0 dot 0 dot 12* / *Punkt*, `v1.2.3` → *v 1 dot 2 dot 3*, CIDR `/24` → *slash 24*
+   - identifiers (`identifiers: split|keep`): `web01` → *web 0 1*, `db-master-02` → *D B master 0 2*, `vm104` → *V M 1 0 4*; leading zeros and ≥ 3 digits are spelled
+   - acronyms (`acronyms: auto|off`): ALL-CAPS tokens of 2–6 letters are spelled when they have no vowel (`SSH`, `DHCP`, `SNMP`) or are known IT acronyms (`CPU` → *C P U*, `API`, `URL`, `VMs` → *V M s*); other upper-case words (`DISK`, `ERROR`, `FEHLER`, `RAID`, `JSON`) are left to the engine, which reads shouted words as words; lower-case tokens without a vowel (`dhcp`, `pbx`, `xml`) are spelled too
+   - units (`units: expand|native`), glued or separate: `250ms` → *250 milliseconds* / *Millisekunden*, `2 GB` → *2 gigabytes* / *Gigabyte*, `21.5°C` → *21.5 degrees Celsius* / *21,5 Grad Celsius*, `errors/min` → *errors per minute*
+   - numbers (`numbers`): `auto` (default) reads integers with ≥ `digitsFrom` digits (default 5) and leading-zero numbers digit by digit (`#47110` → *number 4 7 1 1 0*) and leaves the rest to the engine (`4711` → *four thousand seven hundred eleven*); `digits` spells every integer; `words` writes integers out (English and German, other languages fall back to `auto`); `native` leaves everything to the engine. Decimals get the language's separator (`12.5` → *12,5* in German), ranges `5-10` → *5 to 10* / *5 bis 10*, `+49 171 1234567` → *plus 49 171 1 2 3 4 5 6 7*, times and ISO dates stay as they are
+   - symbols (`symbols: expand|native`): `%` → percent/Prozent, `&` → and/und, `=` → equals/gleich, `->` → to/nach, `<` `>`, `#`, `@`, `~`, `€` `$` `£`, `°`, `_` → space, `/var/log` → *slash var slash log*, `(…)` / `|` / `;` → pauses
+8. whitespace/punctuation tidy, final full stop
+
+Symbol and unit words exist for English, German, French, Spanish, Italian, Dutch, Portuguese and Polish (other languages use English). `normalize.disabled: true` skips everything except the markup cleanup. `POST /api/v1/tts:normalize` (`objects:read`) shows the result without spending engine credits — the editor's **Normalise only** button.
+
+Examples (default settings, English profile):
+
+| Input | Spoken |
+|---|---|
+| `Northplane alert. Severity CRITICAL. CPU load high on np-01. Press 4 to acknowledge, 6 to resolve.` | Northplane alert. Severity CRITICAL. C P U load high on N P 0 1. Press 4 to acknowledge, 6 to resolve. |
+| `Disk /var/log 95% full on web01 (10.0.0.12)` | Disk slash var slash log 95 percent full on web 0 1, 10 dot 0 dot 0 dot 12. |
+| `Latency 250ms > 200ms threshold; errors=12` | Latency 250 milliseconds greater than 200 milliseconds threshold, errors equals 12. |
+| `k8s pod OOMKilled in prod` | Kubernetes pod out of memory killed in production. |
+| `Temperatur 21.5°C im Serverraum` (de) | Temperatur 21,5 Grad Celsius im Serverraum. |
+
+## Audio finishing
+
+| `audio.` | Default | Notes |
+|---|---|---|
+| `sampleRate` | `8000` | 8000 (telephony), 16000, 22050, 24000 — engines are resampled with a windowed-sinc low-pass (no aliasing) |
+| `format` | `wav` | `wav` (16-bit PCM) or `ulaw` (G.711 µ-law WAV, 8 kHz only) |
+| `noNormalize` | `false` | by default every clip is peak-normalised to −3 dBFS so all voices are equally loud on the line |
+| `gainDb` | `0` | extra gain after normalisation |
+| `keepSilence` | `false` | by default leading/trailing silence below −45 dBFS is trimmed |
+| `leadSilenceMs` / `trailSilenceMs` | `300` / `200` | padding so the first word is not swallowed while the far end answers |
+| `preroll` | `none` | attention signal before **outbound** announcements (not IVR prompts): `chime` (two-tone), `alert` (three rising beeps), `gong` |
+
+Multi-language segments are joined with a 200 ms pause. The clip is served as `audio/wav` on a signed, expiring URL (`/api/v1/tts/audio/<id>.<exp>.<sig>.wav`, 24 h — the outbox may retry a call for a day; no login, the signature is the credential).
+
+## Cache
+
+Synthesised clips are cached on disk (`<dataDir>/tts-cache`, config `tts.cacheDir`, `tts.cacheMaxMb` default 256, `tts.cacheTtl` default 168h) keyed by engine + config + voice + rate + normalised text + audio settings. IVR prompts, menu options and repeated announcements are rendered once; least-recently-used clips are evicted over the size cap, unused ones after the TTL. `cacheDisabled` per profile, or `NoCache` in previews of unsaved edits, bypass it.
+
+## How the providers play the clip
+
+<Tabs syncKey="stack">
+<TabItem label="Twilio (outbound + inbound)">
+
+Outbound: the TwiML becomes `<Gather …><Play loop="2">https://…/api/v1/tts/audio/….wav</Play></Gather><Say>…</Say>`; the closing *"No input received"* phrase follows the detected language (German, French, Spanish, Italian, Dutch, else English). Inbound IVR menus (`voice-inbound` sources): every prompt, option, alert title and `say` text is `<Play>`ed when the source (or `default`) profile applies; `<Say>` stays the fallback per prompt. Twilio must be able to fetch `baseUrl` — without `baseUrl` there is no clip URL and `<Say>` is used.
+
+</TabItem>
+<TabItem label="Asterisk AMI (outbound)">
+
+The originated call carries, in addition to `NP_TEXT` / `NP_SEVERITY` / `NP_ACK_URL`:
+
+| Variable | Value |
+|---|---|
+| `NP_AUDIO_URL` | signed clip URL (with `baseUrl`); Asterisk ≥ 15 with `res_http_media_cache` plays it directly |
+| `NP_AUDIO_FILE` | clip path **without extension** when the channel key `ttsDir` names a directory shared with the PBX (e.g. a bind mount of `/var/lib/asterisk/sounds/northplane`); `ttsDirPBX` is the same directory as the PBX sees it. The clip (`<id>.wav`, 8 kHz 16-bit) is written once |
+| `NP_LANG` | detected language |
+| `NP_TEXT_SPOKEN` | the normalised text — for dialplans that keep their own TTS but want the pronunciation rules |
+
+```text title="extensions.conf"
+[northplane-alert]
+exten => s,1,Answer()
+ same => n,Wait(1)
+ same => n,GotoIf($["${NP_AUDIO_FILE}" != ""]?file)
+ same => n,GotoIf($["${NP_AUDIO_URL}" != ""]?url)
+ same => n,Flite(${NP_TEXT})            ; no profile: speak locally
+ same => n,Goto(read)
+ same => n(file),Playback(${NP_AUDIO_FILE})
+ same => n,Playback(${NP_AUDIO_FILE})
+ same => n,Goto(read)
+ same => n(url),Playback(${NP_AUDIO_URL})
+ same => n,Playback(${NP_AUDIO_URL})
+ same => n(read),Read(DIGIT,,1,,1,10)
+ same => n,GotoIf($["${NP_ACK_URL}" = ""]?bye)
+ same => n,GotoIf($["${DIGIT}" = "4"]?ack)
+ same => n,GotoIf($["${DIGIT}" = "6"]?resolve)
+ same => n(bye),Hangup()
+ same => n(ack),System(curl -s -X POST "${NP_ACK_URL}" -d Digits=4)
+ same => n,Hangup()
+ same => n(resolve),System(curl -s -X POST "${NP_ACK_URL}" -d Digits=6)
+ same => n,Hangup()
+```
+
+</TabItem>
+<TabItem label="Asterisk FastAGI (inbound)">
+
+`asterisk-inbound` sources take `ttsProfile`, `ttsDir` and `ttsDirPBX` too. With a profile every prompt is synthesised and played with `STREAM FILE` (barge-in preserved) — from `ttsDir` as `<dir>/<id>` or, without a directory, as the signed URL (again `res_http_media_cache`); the PIN prompt plays inside `GET DATA`. Without a usable clip the conversation falls back to `ttsApp` or the `np-*` prompt files exactly as before. Inside a container, mount the PBX sounds directory into Northplane and set `ttsDirPBX` if the paths differ.
+
+</TabItem>
+<TabItem label="generic-http">
+
+`{audioUrl}` is available in `url` and `jsonBody` next to `{to}` and `{text}`; with a profile `{text}` carries the normalised text (gateways that speak themselves still profit from the pronunciation rules).
+
+</TabItem>
+</Tabs>
+
+## Alert labels
+
+| Label | Effect |
+|---|---|
+| `np.tts` | replaces the spoken text entirely (unchanged behaviour) |
+| `np.ttsProfile` | selects the profile for this alert |
+| `np.ttsLang` | forces the language (no detection) |
+| `np.ttsVoice` | forces the voice id |
+
+Set them with a rule's `setLabels`, an IVR option's `labels` or the manual trigger — e.g. an English-speaking on-call team: `setLabels: { np.ttsLang: en-US }`.
+
+## API
+
+| Route | Permission | Purpose |
+|---|---|---|
+| `GET/POST/PUT/DELETE /api/v1/tts-profiles[/{name}]` | `objects:read` / `config:write` | resource CRUD (ETag / If-Match) |
+| `GET /api/v1/tts/engines` | `objects:read` | engines, their config keys (with secret/required flags) and pre-roll names |
+| `POST /api/v1/tts:normalize` | `objects:read` | `{text, profileName?, profile?, language?}` → detected language and normalised segments, no engine call |
+| `POST /api/v1/tts:preview` | `config:write` | `{text, profileName?, profile?, language?, voice?, preroll?}` → `{audio (base64 WAV), lang, text, segments, engine, cached, durationMs}`; an inline `profile` previews unsaved edits and bypasses the cache |
+| `POST /api/v1/tts:voices` | `config:write` | `{profileName?, profile?, language?}` → the engine's voice catalogue (`[]` for engines without one) |
+| `GET /api/v1/tts/audio/{token}` | public (signed) | the clip |
+
+Validation (`422 np:validation/tts-profile`): unknown engine, uncompilable regex, enumerations, sample rate, a `fallback` pointing at itself, an unbalanced `command` quote.
+
+## Server configuration
+
+```yaml title="northplane.yaml"
+tts:
+  commands: [piper, espeak-ng, flite, say]   # "command" engine allowlist; ["*"] = any
+  cacheDir: ""                               # default <dataDir>/tts-cache
+  cacheMaxMb: 256
+  cacheTtl: 168h
+```
+
+Environment: `NORTHPLANE_TTS_COMMANDS` (comma-separated), `NORTHPLANE_TTS_CACHE_DIR`. Cloud engines go through the same SSRF-guarded HTTP client as webhooks (link-local / metadata addresses are refused).
+
+## Checklist
+
+- `baseUrl` is set — Twilio `<Play>` and `NP_AUDIO_URL` need a public clip URL; Asterisk installations without HTTP access to Northplane use `ttsDir` instead.
+- Keep `detect.languages` to the languages you really receive, and give each a voice in `voices`.
+- Use **Normalise only** before **Listen**: most pronunciation issues are fixed with a lexicon entry, not a different voice.
+- Production lines: a `fallback` profile (e.g. `edge` → local `command`), and a channel test (**Admin → Channels → Test**) after every change — the test call is synthesised through the profile like a real one.
+- `np-agent`, hostnames and ticket numbers read oddly? Check `identifiers`, `digitsFrom` and the built-in lexicon; `spellOut` forces letters.

@@ -293,6 +293,102 @@ export interface IVRMenu {
   version?: number
 }
 
+// Wire shape of internal/model.TTSProfile (named CRUD /api/v1/tts-profiles):
+// text-to-speech engine, voices, language detection, pronunciation rules
+// and audio finishing for voice alarms.
+export type TTSEngine = 'command' | 'edge' | 'openai' | 'elevenlabs' | 'azure' | 'google' | 'polly' | 'http'
+export type TTSDetectMode = 'off' | 'message' | 'segments'
+
+export interface TTSLexiconEntry {
+  from: string
+  to: string
+  matchCase?: boolean
+  substring?: boolean
+}
+
+export interface TTSRegexRule {
+  pattern: string
+  replace: string
+}
+
+export interface TTSProfile {
+  id?: string
+  name: string
+  description?: string
+  engine: TTSEngine
+  config?: Record<string, string>
+  fallback?: string
+  language?: string
+  voice?: string
+  voices?: Record<string, string>
+  rate?: number
+  detect: {
+    mode?: TTSDetectMode
+    languages?: string[]
+    minConfidence?: number
+  }
+  normalize: {
+    disabled?: boolean
+    lexicon?: TTSLexiconEntry[]
+    regex?: TTSRegexRule[]
+    noBuiltinLexicon?: boolean
+    spellOut?: string[]
+    acronyms?: 'auto' | 'off'
+    numbers?: 'auto' | 'digits' | 'words' | 'native'
+    digitsFrom?: number
+    ipAddresses?: 'dot' | 'native'
+    identifiers?: 'split' | 'keep'
+    units?: 'expand' | 'native'
+    symbols?: 'expand' | 'native'
+    urls?: 'host' | 'drop' | 'keep'
+  }
+  audio: {
+    sampleRate?: number
+    noNormalize?: boolean
+    gainDb?: number
+    keepSilence?: boolean
+    leadSilenceMs?: number
+    trailSilenceMs?: number
+    preroll?: string
+    format?: 'wav' | 'ulaw'
+  }
+  cacheDisabled?: boolean
+  version?: number
+}
+
+// POST /api/v1/tts:preview response.
+export interface TTSPreview {
+  audio: string // base64 WAV
+  format: string
+  lang: string
+  text: string
+  segments: { text: string; lang: string; voice?: string }[]
+  engine: string
+  cached: boolean
+  durationMs: number
+}
+
+// POST /api/v1/tts:normalize response.
+export interface TTSPlan {
+  lang: string
+  text: string
+  segments: { text: string; lang: string; voice?: string }[]
+}
+
+// GET /api/v1/tts/engines response.
+export interface TTSEngines {
+  engines: TTSEngine[]
+  configKeys: Record<string, { key: string; hint?: string; secret?: boolean; required?: boolean }[]>
+  prerolls: string[]
+}
+
+export interface TTSVoice {
+  id: string
+  name: string
+  lang?: string
+  gender?: string
+}
+
 export interface Rotation {
   name?: string
   participants: string[]

@@ -16,6 +16,7 @@ import (
 
 	"github.com/northplane/northplane/internal/model"
 	"github.com/northplane/northplane/internal/storage"
+	"github.com/northplane/northplane/internal/tts"
 )
 
 // Inbound telephony (alarming pipelines): calls and SMS to a Twilio
@@ -31,6 +32,9 @@ import (
 //	                 (1 = raise alarm + record message, 2 = list, 3 = ack)
 //	language         TTS language when the menu has none (default en-US)
 //	voice            provider TTS voice (optional, e.g. "Polly.Vicki")
+//	ttsProfile       TTS profile: prompts are synthesized by Northplane and
+//	                 <Play>ed (default: the profile named "default", if any;
+//	                 otherwise Twilio <Say>)
 //	allowFrom        comma-separated E.164 prefixes; empty = all callers
 //	escalationPolicy default policy for alarms the menu raises
 //	severity         default severity (default critical)
@@ -70,6 +74,7 @@ type telCall struct {
 	menu   *model.IVRMenu
 	lang   string
 	voice  string
+	tts    *model.TTSProfile // nil = Twilio <Say>
 }
 
 func (c *telCall) from() string    { return c.form.Get("From") }
@@ -123,7 +128,36 @@ func (a *API) telAuth(w http.ResponseWriter, r *http.Request, kind string) *telC
 	c.menu = a.loadIVRMenu(r, tenantID, src.Config["menu"])
 	c.lang = firstNonEmpty(c.menu.Language, src.Config["language"], "en-US")
 	c.voice = firstNonEmpty(c.menu.Voice, src.Config["voice"])
+	if a.TTS != nil && a.Cfg.BaseURL != "" { // <Play> needs a public URL
+		c.tts = a.TTS.Pick(r.Context(), tenantID, src.Config["ttsProfile"], nil)
+	}
 	return c
+}
+
+// ttsPlay returns a speak hook for TwiML: prompts synthesized through the
+// call's TTS profile are <Play>ed; "" falls back to <Say>.
+func (a *API) ttsPlay(r *http.Request, c *telCall) func(string) string {
+	if c.tts == nil {
+		return nil
+	}
+	return func(text string) string {
+		res, err := a.TTS.Speak(r.Context(), c.tenant, c.tts, text, tts.SpeakOptions{Lang: c.ttsLang()})
+		if err != nil {
+			a.Log.Warn("telephony: tts failed, using <Say>", "profile", c.tts.Name, "err", err)
+			return ""
+		}
+		return a.TTS.AudioURL(res, ttsAudioURLTTL)
+	}
+}
+
+// ttsLang pins IVR prompts to the menu/source language when one is
+// configured (the fixed phrases are German or English by that setting),
+// leaving detection to the profile only when nothing is configured.
+func (c *telCall) ttsLang() string {
+	if c.menu.Language != "" {
+		return c.menu.Language
+	}
+	return c.src.Config["language"]
 }
 
 // telSecret resolves a possibly $SECRET-referenced config value.
@@ -285,11 +319,20 @@ type twiml struct {
 	b     strings.Builder
 	lang  string
 	voice string
+	// play, when set, returns a clip URL for a text (Northplane TTS);
+	// "" means fall back to <Say>.
+	play func(text string) string
 }
 
 func newTwiML(lang, voice string) *twiml {
 	t := &twiml{lang: lang, voice: voice}
 	t.b.WriteString(`<?xml version="1.0" encoding="UTF-8"?><Response>`)
+	return t
+}
+
+// withPlay attaches the synthesized-speech hook.
+func (t *twiml) withPlay(play func(string) string) *twiml {
+	t.play = play
 	return t
 }
 
@@ -308,6 +351,12 @@ func (t *twiml) sayAttrs() string {
 }
 
 func (t *twiml) Say(text string) *twiml {
+	if t.play != nil && strings.TrimSpace(text) != "" {
+		if u := t.play(text); u != "" {
+			t.b.WriteString(`<Play>` + t.esc(u) + `</Play>`)
+			return t
+		}
+	}
 	t.b.WriteString(`<Say` + t.sayAttrs() + `>` + t.esc(text) + `</Say>`)
 	return t
 }
@@ -373,7 +422,7 @@ func (a *API) handleVoiceInbound(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := promptsFor(c.lang)
-	t := newTwiML(c.lang, c.voice)
+	t := newTwiML(c.lang, c.voice).withPlay(a.ttsPlay(r, c))
 	greeting := firstNonEmpty(c.menu.Greeting, p.greeting)
 
 	if c.menu.PIN != "" && (!c.menu.TrustCallerID || a.contactByPhone(r, c.tenant, c.from()) == nil) {
@@ -422,7 +471,7 @@ func (a *API) handleVoiceMenu(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := promptsFor(c.lang)
-	t := newTwiML(c.lang, c.voice)
+	t := newTwiML(c.lang, c.voice).withPlay(a.ttsPlay(r, c))
 	q := r.URL.Query()
 
 	switch q.Get("state") {
