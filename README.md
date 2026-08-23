@@ -99,7 +99,7 @@ Configuration is deliberately small (`config.yaml` or `NORTHPLANE_*` env vars: l
 
 ## Plays well with
 
-Nagios / Icinga plugins and configs · Prometheus Alertmanager · Twilio · Asterisk / FreePBX · MQTT brokers · ESPA pagers and nurse-call systems · IMAP mailboxes · SNMP v1/v2c/v3 devices · ntfy · Slack · Microsoft Teams · ServiceNow · Jira · Zendesk · FCM / APNs (the [Northplane alarm app](https://github.com/myfoxit/northplane-alarm)) · OIDC providers · LDAP / Active Directory · Claude, Cursor, VS Code, Windsurf, Codex and Gemini via MCP.
+Nagios / Icinga plugins and configs · Prometheus Alertmanager · Twilio · Asterisk / FreePBX · MQTT brokers · ESPA pagers and nurse-call systems · IMAP mailboxes · SNMP v1/v2c/v3 devices · ntfy · Slack · Microsoft Teams · ServiceNow · Jira · Zendesk · FCM / APNs (the Northplane alarm app) · OIDC providers · LDAP / Active Directory · Claude, Cursor, VS Code, Windsurf, Codex and Gemini via MCP.
 
 ## Documentation
 
