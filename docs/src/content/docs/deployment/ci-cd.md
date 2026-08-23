@@ -21,7 +21,7 @@ There is no staging gate between `main` and `doktrace.com`. Merge only what you 
 
 1. **Push/merge to `main`.** CI starts; all jobs run in parallel where possible (`test`, `e2e`, `postgres` and `cross-build` wait for `ui`).
 2. **CI finishes green.** The `workflow_run` trigger starts **Deploy** (`publish` runs only when `github.event.workflow_run.conclusion == 'success'`; a manual dispatch always proceeds). Concurrency group `deploy-production`, `cancel-in-progress: false` — one rollout at a time, never cancelled mid-flight.
-3. **`publish`** checks out the CI run's `head_sha`, builds the Dockerfile with buildx (`VERSION=main-<sha12>`, GHA layer cache) and pushes `ghcr.io/myfoxit/northplane:main-<sha12>` and `:latest`.
+3. **`publish`** checks out the CI run's `head_sha`, builds the Dockerfile with buildx for `linux/amd64` and `linux/arm64` (`VERSION=main-<sha12>`, GHA layer cache; the Dockerfile cross-compiles from the build platform, so no QEMU) and pushes `ghcr.io/myfoxit/northplane:main-<sha12>` and `:latest`.
 4. **`deploy`** (np-01) and **`deploy-hetzner`** (np-02) run in parallel after `publish`: SSH set-up → render `.env` → ship the compose stack → `docker compose pull`/`up -d` → verify → roll back on failure → summary line.
 5. The verified run on 2026-08-23 (run `32629242562`, merge `daa6dc5`, 08:48 UTC) ended with `publish` and `deploy` succeeded, `deploy-hetzner` failed; the container on `np-01` started at 08:50:57 UTC — under three minutes after the Deploy run began.
 
@@ -138,7 +138,7 @@ The `deploy` and `deploy-hetzner` jobs are independent (`needs: publish` each). 
 
 | Tag | Produced by | Meaning |
 |---|---|---|
-| `ghcr.io/myfoxit/northplane:main-<sha12>` | Deploy `publish` | immutable per green build of `main`; `VERSION` baked in; what production pins in `.env` |
+| `ghcr.io/myfoxit/northplane:main-<sha12>` | Deploy `publish` | immutable per green build of `main`; `linux/amd64` + `linux/arm64`; `VERSION` baked in; what production pins in `.env` |
 | `ghcr.io/myfoxit/northplane:latest` | Deploy `publish` **and** Release `docker` | moving; whichever ran last. Fine for trials, never for production pins |
 | `ghcr.io/myfoxit/northplane:<major>.<minor>.<patch>` and `<major>.<minor>` | Release `docker` (tag `v*`) | semver, `linux/amd64` + `linux/arm64`, `VERSION=<tag>` |
 
