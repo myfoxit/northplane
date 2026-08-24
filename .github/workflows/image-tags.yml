@@ -1,0 +1,64 @@
+name: Image tags
+
+# Manual: build the container image for any git ref and push it under the
+# given tags — used to (re)publish semver tags when the tag-triggered Release
+# workflow could not (e.g. its image job timed out), or to backfill tags.
+# Multi-arch (amd64 + arm64); the Dockerfile cross-compiles, so no QEMU.
+#
+#   gh workflow run image-tags.yml -f ref=v1.0.0 -f version=1.0.0 -f tags=1.0.0,1.0 -f dockerfile_from_main=true
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to build (tag, branch or SHA)"
+        required: true
+      version:
+        description: "Version string baked into the binaries (ldflags), e.g. 1.0.0"
+        required: true
+      tags:
+        description: "Comma-separated image tags to push, e.g. 1.0.0,1.0"
+        required: true
+      dockerfile_from_main:
+        description: "Use main's Dockerfile instead of the ref's (for refs that predate the cross-compiling Dockerfile)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+      - name: Overlay Dockerfile from main
+        if: ${{ inputs.dockerfile_from_main }}
+        run: git checkout origin/main -- Dockerfile && git diff --stat HEAD -- Dockerfile
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve tags
+        id: tags
+        run: |
+          out=""
+          IFS=',' read -ra TAGS <<< "${{ inputs.tags }}"
+          for t in "${TAGS[@]}"; do t="$(echo "$t" | xargs)"; [ -n "$t" ] && out="${out}ghcr.io/${{ github.repository }}:${t}"$'\n'; done
+          printf 'list<<EOF\n%sEOF\n' "$out" >> "$GITHUB_OUTPUT"
+          echo "$out"
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: VERSION=${{ inputs.version }}
+          tags: ${{ steps.tags.outputs.list }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
