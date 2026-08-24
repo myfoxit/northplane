@@ -21,7 +21,7 @@ import { hasPermission } from '../permissions'
 import type { Tenant, Whoami } from '../types'
 import { t } from '../i18n'
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger,
 } from './ui/select'
 
 // Radix Select forbids an empty-string item value, so "operator's own tenant"
@@ -31,7 +31,13 @@ const HOME = '__home__'
 // Stable avatar identity: initials + a hue hashed from the tenant name, so a
 // customer keeps its tile color across sessions and lists.
 function initialsOf(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean)
+  // Words by whitespace first; a single CamelCase word splits on its humps
+  // ("MyFoxIT" → My/Fox/IT → MF); otherwise the first two characters.
+  let parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length < 2) {
+    const humps = name.match(/[A-ZÄÖÜ][a-zäöüß]+|[A-ZÄÖÜ]+(?![a-zäöüß])|\d+/g)
+    if (humps && humps.length >= 2) parts = humps
+  }
   const chars = parts.length >= 2 ? `${parts[0]?.[0] ?? ''}${parts[1]?.[0] ?? ''}` : name.slice(0, 2)
   return chars.toUpperCase() || '·'
 }
@@ -94,6 +100,9 @@ export function TenantSwitcher() {
   // the operator can see their scope at a glance (NP-16).
   const homeName = me?.tenantId ? (tenants?.find((c) => c.id === me.tenantId)?.name ?? null) : null
   const triggerName = activeName ?? homeName ?? t('yourTenant')
+  // The operator's own tenant is the HOME row — listing it again under the
+  // customers would offer scoping the console onto itself.
+  const customers = (tenants ?? []).filter((c) => c.id !== me?.tenantId)
 
   return (
     <div className="px-3 pb-2 border-b border-sidebar-border">
@@ -108,28 +117,30 @@ export function TenantSwitcher() {
           <span className="flex items-center gap-2 min-w-0 text-left">
             <AvatarTile name={triggerName} size={26} />
             <span className="min-w-0 flex flex-col leading-tight">
-              <span className="truncate text-[12.5px] font-semibold text-sidebar-accent-foreground"><SelectValue placeholder={t('customer')} /></span>
+              <span className="truncate text-[12.5px] font-semibold text-sidebar-accent-foreground">{triggerName}</span>
               <span className={`text-[10.5px] ${active ? 'text-sidebar-primary' : 'text-sidebar-foreground/60'}`}>
                 {active ? t('customer') : t('yourTenant')}
               </span>
             </span>
           </span>
         </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={HOME}>
-            <span className="flex items-center gap-2">
-              <AvatarTile name={homeName ?? t('yourTenant')} size={20} />
-              {homeName ? `${t('yourTenant')} · ${homeName}` : t('yourTenant')}
-            </span>
-          </SelectItem>
-          {(tenants ?? []).map((c) => (
-            <SelectItem key={c.id} value={c.id}>
-              <span className="flex items-center gap-2">
-                <AvatarTile name={c.name} size={20} />
-                {c.name}
-              </span>
+        <SelectContent position="popper" align="start" sideOffset={6} className="w-(--radix-select-trigger-width)">
+          <SelectGroup>
+            <SelectLabel className="text-[10px] font-semibold uppercase tracking-[0.08em]">{t('yourTenant')}</SelectLabel>
+            <SelectItem value={HOME} leading={<AvatarTile name={homeName ?? t('yourTenant')} size={20} />}>
+              {homeName ?? t('yourTenant')}
             </SelectItem>
-          ))}
+          </SelectGroup>
+          {customers.length > 0 && (
+            <SelectGroup>
+              <SelectLabel className="text-[10px] font-semibold uppercase tracking-[0.08em]">{t('customers')}</SelectLabel>
+              {customers.map((c) => (
+                <SelectItem key={c.id} value={c.id} leading={<AvatarTile name={c.name} size={20} />}>
+                  {c.name}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          )}
         </SelectContent>
       </Select>
       {active && (

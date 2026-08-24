@@ -101,8 +101,14 @@ function SelectLabel({
 function SelectItem({
   className,
   children,
+  leading,
   ...props
-}: React.ComponentProps<typeof SelectPrimitive.Item>) {
+}: React.ComponentProps<typeof SelectPrimitive.Item> & {
+  // Rendered BEFORE the ItemText as a sibling: content here (avatar tiles,
+  // icons) stays in the dropdown row and is NOT mirrored into the trigger —
+  // Radix's SelectValue re-renders only the ItemText children there.
+  leading?: React.ReactNode
+}) {
   return (
     <SelectPrimitive.Item
       data-slot="select-item"
@@ -120,6 +126,7 @@ function SelectItem({
           <CheckIcon className="size-4" />
         </SelectPrimitive.ItemIndicator>
       </span>
+      {leading}
       <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
     </SelectPrimitive.Item>
   )
