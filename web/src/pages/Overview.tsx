@@ -3,13 +3,14 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useSearch } from '@tanstack/react-router'
-import { Radar, Maximize2, Phone, Check } from 'lucide-react'
+import { Maximize2, Phone, Check } from 'lucide-react'
 import { get, fmtAgo, fmtTime } from '../api'
 import type { Overview as OverviewData, OnCallNow, ProblemRow, NPEvent } from '../types'
-import { stateLabel, stateIcon, stateColor, sevColor, eventBadge } from '../types'
+import { sevColor, eventBadge } from '../types'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Empty, ErrorState } from '@/components/kit'
+import { Empty, ErrorState, StateBadge } from '@/components/kit'
+import { NorthMark } from '../components/Layout'
 import { humanizeOutput } from '@/lib/humanize'
 import { StatCard, StatusDonut } from '../components/dash/overview-cards'
 import { useDelta } from '../components/dash/delta'
@@ -100,7 +101,7 @@ export function OverviewPage() {
     return (
       <div className="p-6 space-y-5">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold flex items-center gap-2"><Radar className="text-primary" size={22} /> Northplane {t('wallboard')}</h1>
+          <h1 className="text-xl font-bold flex items-center gap-2"><NorthMark size={22} radius={6} /> Northplane {t('wallboard')}</h1>
           <span className="text-muted-foreground text-sm tabular-nums">{now.toLocaleTimeString()}</span>
         </div>
         {tiles}
@@ -211,8 +212,8 @@ function ProblemList({ problems, big }: { problems: ProblemRow[]; big?: boolean 
           key={p.object.id} to="/objects/$id" params={{ id: p.object.id }}
           className={`flex items-center gap-3 py-2 hover:bg-card/60 px-1 rounded ${big ? 'text-base' : 'text-sm'}`}
         >
-          <span className={`${stateColor(p.object.kind, p.state.state)} font-bold w-20`}>
-            {stateIcon(p.object.kind, p.state.state)} {stateLabel(p.object.kind, p.state.state)}
+          <span className="w-24 shrink-0">
+            <StateBadge kind={p.object.kind} state={p.state.state} />
           </span>
           <span className="text-foreground font-medium truncate">
             {p.object.kind === 'service' && p.object.hostName ? `${p.object.hostName} / ` : ''}{p.object.name}

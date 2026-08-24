@@ -1,6 +1,19 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* Polaris type trio (self-hosted via @fontsource — no external font hosts,
+ * works fully on-prem): IBM Plex Sans for UI, IBM Plex Mono for data
+ * (hostnames, IPs, check output, durations), Space Grotesk for brand +
+ * page-title display. */
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+@import "@fontsource/space-grotesk/500.css";
+@import "@fontsource/space-grotesk/600.css";
+@import "@fontsource/space-grotesk/700.css";
+
 /* Light/dark MODE is a `.light` class on <html> (mode.ts); dark is the default
  * (no class). Bind Tailwind's `dark:` variant to that class instead of the
  * default OS media query, so shadcn's `dark:` utilities fire exactly in the
@@ -62,6 +75,11 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
 
+  /* Polaris type tokens — font-sans / font-mono / font-display utilities. */
+  --font-sans: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --font-display: 'Space Grotesk', 'Avenir Next', 'Segoe UI', system-ui, sans-serif;
+
   /* app-specific semantic state colours (kept for existing call sites) */
   --color-success: var(--success);
   --color-warning: var(--warning);
@@ -97,54 +115,57 @@
   /* base radius (0.625rem ≈ rounded-lg, slightly rounder than Tailwind default) */
   --radius: 0.625rem;
 
-  --background: #020617;          /* slate-950 */
-  --foreground: #e2e8f0;          /* slate-200 */
+  /* Polaris — deep polar navy, one indigo accent (design foundations v0.1). */
+  --background: #0B0F1B;
+  --foreground: #EEF2FB;
 
-  --card: #0f172a;                /* slate-900 — panel / card surfaces */
-  --card-foreground: #e2e8f0;     /* slate-200 */
-  --popover: #0f172a;             /* slate-900 — same panel surface as card */
-  --popover-foreground: #e2e8f0;  /* slate-200 */
+  --card: #121828;                /* panel / card surfaces */
+  --card-foreground: #EEF2FB;
+  --popover: #131A2C;             /* floating surfaces sit a hair above cards */
+  --popover-foreground: #EEF2FB;
 
-  --primary: #3b82f6;             /* blue-500 — accent / active */
-  --primary-foreground: #f8fafc;  /* slate-50 */
-  --secondary: #1e293b;           /* slate-800 — secondary surfaces */
-  --secondary-foreground: #e2e8f0;/* slate-200 */
+  --primary: #5E7FF2;             /* Polaris indigo — accent / active */
+  --primary-foreground: #FFFFFF;
+  --secondary: #1A2136;           /* raised secondary surfaces */
+  --secondary-foreground: #EEF2FB;
 
-  --muted: #1e293b;               /* slate-800 — secondary surfaces, chips */
-  --muted-foreground: #94a3b8;    /* slate-400 — secondary text */
-  --accent: #334155;              /* slate-700 — hover / active surfaces */
-  --accent-foreground: #f1f5f9;   /* slate-100 */
+  --muted: #1A2136;               /* secondary surfaces, chips */
+  --muted-foreground: #8B96B2;    /* secondary text */
+  --accent: #232C46;              /* hover / active surfaces */
+  --accent-foreground: #EEF2FB;
 
-  --destructive: #dc2626;         /* red-600 — destructive surfaces */
-  --destructive-foreground: #fef2f2;
+  --destructive: #D8383F;         /* destructive surfaces */
+  --destructive-foreground: #FEF2F2;
 
-  --border: #1e293b;              /* slate-800 */
-  --input: #334155;               /* slate-700 — control borders */
-  --ring: #3b82f6;                /* blue-500 — focus ring */
+  --border: #232C46;              /* hairline */
+  --input: #2E3A5C;               /* control borders */
+  --ring: #5E7FF2;                /* focus ring */
 
-  /* app semantic state colours */
-  --success: #34d399;             /* emerald-400 — OK state */
-  --warning: #fbbf24;             /* amber-400 — WARN state */
-  --danger: #f87171;              /* red-400 — CRIT state */
+  /* app semantic state colours — Polaris status set (dot + label, never
+     color alone; CVD-checked against the card surface) */
+  --success: #34B678;             /* OK state */
+  --warning: #CE9722;             /* WARN state */
+  --danger: #E4484F;              /* CRIT state */
 
-  /* chart palette (blue / emerald / amber / violet / rose) */
-  --chart-1: #3b82f6;
-  --chart-2: #34d399;
-  --chart-3: #fbbf24;
-  --chart-4: #a78bfa;
-  --chart-5: #fb7185;
+  /* chart palette — fixed slot order, CVD-validated for the dark surface
+     (blue / orange / aqua / yellow / magenta) */
+  --chart-1: #5E7FF2;
+  --chart-2: #D95926;
+  --chart-3: #199E70;
+  --chart-4: #C98500;
+  --chart-5: #D55181;
 
-  /* sidebar — the app shell's <aside> reads these tokens (Layout.tsx). Kept
-     equal to the current flat look: same surface as the page background, with
-     slate-900 as the nav-hover fill. Colour themes override this whole group. */
-  --sidebar: #020617;             /* = background (flat, as before the token switch) */
-  --sidebar-foreground: #e2e8f0;  /* slate-200 */
-  --sidebar-primary: #3b82f6;     /* blue-500 */
-  --sidebar-primary-foreground: #f8fafc;
-  --sidebar-accent: #0f172a;      /* slate-900 — nav hover (= card) */
-  --sidebar-accent-foreground: #f1f5f9;
-  --sidebar-border: #1e293b;      /* slate-800 */
-  --sidebar-ring: #3b82f6;        /* blue-500 */
+  /* sidebar — the Polaris brand rail: its own slightly-lifted navy so the
+     shell reads as chrome distinct from the content plane. Colour themes
+     override this whole group. */
+  --sidebar: #0C111E;
+  --sidebar-foreground: #C8D0E4;
+  --sidebar-primary: #7593F7;     /* accent, lifted for the dark rail */
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #131A2C;      /* nav hover */
+  --sidebar-accent-foreground: #EEF2FB;
+  --sidebar-border: #1B2236;
+  --sidebar-ring: #5E7FF2;
 }
 
 /*
@@ -153,44 +174,46 @@
  * borders; a theme's dark sidebar rail is preserved across modes. Regenerate
  * with gen-modes.mjs.
  */
-/* Northplane — LIGHT mode. */
+/* Northplane (Polaris) — LIGHT mode: first-class twin. Visible card borders
+   (#E4E8F2 on #F5F6FA) — the old #efeff0-on-#F3F4F6 hairlines disappeared.
+   The dark brand rail is kept across modes. */
 :root.light {
   color-scheme: light;
-  --background: #F3F4F6;
-  --foreground: #1A1D23;
+  --background: #F5F6FA;
+  --foreground: #141926;
   --card: #FFFFFF;
-  --card-foreground: #1A1D23;
+  --card-foreground: #141926;
   --popover: #FFFFFF;
-  --popover-foreground: #1A1D23;
-  --primary: #3b82f6;
+  --popover-foreground: #141926;
+  --primary: #3D5BD9;
   --primary-foreground: #ffffff;
-  --secondary: #ECEEF1;
-  --secondary-foreground: #1A1D23;
-  --muted: #ECEEF1;
-  --muted-foreground: #5F6875;
-  --accent: #E4E7EC;
-  --accent-foreground: #1A1D23;
-  --destructive: #dc2626;
+  --secondary: #EEF1F7;
+  --secondary-foreground: #141926;
+  --muted: #EEF1F7;
+  --muted-foreground: #6B7692;
+  --accent: #E6EAF4;
+  --accent-foreground: #141926;
+  --destructive: #D2373E;
   --destructive-foreground: #ffffff;
-  --border: #efeff0;
-  --input: #E1E4E9;
-  --ring: #3b82f6;
-  --success: #059669;
-  --warning: #b45309;
-  --danger: #dc2626;
-  --chart-1: #3b82f6;
-  --chart-2: #3b82f6;
-  --chart-3: #059669;
-  --chart-4: #b45309;
-  --chart-5: #dc2626;
-  --sidebar: #020617;
-  --sidebar-foreground: #D6DBE4;
-  --sidebar-primary: #3b82f6;
+  --border: #E4E8F2;
+  --input: #CBD3E4;
+  --ring: #3D5BD9;
+  --success: #178A50;
+  --warning: #9A6A00;
+  --danger: #C42F36;
+  --chart-1: #3D5BD9;
+  --chart-2: #EB6834;
+  --chart-3: #1BAF7A;
+  --chart-4: #EDA100;
+  --chart-5: #E87BA4;
+  --sidebar: #0C111E;
+  --sidebar-foreground: #C8D0E4;
+  --sidebar-primary: #7593F7;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #1b1f2e;
-  --sidebar-accent-foreground: #EEF1F6;
-  --sidebar-border: rgba(255,255,255,0.08);
-  --sidebar-ring: #3b82f6;
+  --sidebar-accent: #131A2C;
+  --sidebar-accent-foreground: #EEF2FB;
+  --sidebar-border: #1B2236;
+  --sidebar-ring: #5E7FF2;
 }
 
 :root[data-theme="currentRed"] {
@@ -2540,7 +2563,14 @@ body {
   background: var(--background);
   color: var(--foreground);
   -webkit-font-smoothing: antialiased;
-  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family: var(--font-sans);
+}
+
+/* Page titles carry the Polaris display face (h1 only — dialog/card titles
+   stay in the UI sans). */
+h1 {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
 }
 
 /* One visible keyboard-focus indicator everywhere (A-15.x accessibility). */

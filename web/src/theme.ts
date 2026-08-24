@@ -27,10 +27,11 @@ export type ThemeId = string
 const IDS = new Set<string>(THEMES.map((t) => t.id))
 const KEY = 'np.theme'
 // BASE is the :root fallback (Northplane) — selecting it clears the attribute.
-// INITIAL is what a user with no saved preference gets: Obsidian & Fire is the
-// product default. (Kept distinct so BASE stays the attribute-cleared sentinel.)
+// INITIAL is what a user with no saved preference gets: since the Polaris
+// redesign the base palette IS the product default. (Kept distinct so BASE
+// stays the attribute-cleared sentinel.)
 const BASE: ThemeId = 'northplane'
-const INITIAL: ThemeId = 'obsidianFire'
+const INITIAL: ThemeId = BASE
 
 function readCache(): ThemeId {
   try {

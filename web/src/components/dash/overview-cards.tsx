@@ -1,11 +1,11 @@
-// Overview hero cards: KPI stat cards (corner badge + big value/total +
-// sublabel) and an SVG service-status donut. Built to read like a NOC board
-// while staying token-driven so every colour theme + light/dark mode themes
-// correctly. No chart dependency — the donut is inline SVG.
-//
-// Deliberately FLAT: no drop shadow, a hairline tinted border and a slim
-// status stripe. Elevation was doing no work here (nothing floats above the
-// page) and made a wall of tiles read as noisy.
+// Overview hero cards (Polaris): KPI stat cards (label + big value/total +
+// corner badge + sublabel on a neutral card — health reads from the value and
+// the labeled badge, not from tinted borders) and a service-status STACKED BAR
+// with a labeled legend. The old thick donut is gone: close-together values
+// compare poorly on arcs, and a thin bar with 2px surface gaps plus counts in
+// the legend reads instantly on a NOC board. Token-driven so every colour
+// theme + light/dark mode themes correctly. No chart dependency — inline SVG
+// and flexbox only.
 import { type ReactNode } from 'react'
 import { Link } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
@@ -22,18 +22,9 @@ const toneVar: Record<Tone, string> = {
 }
 const toneText: Record<Tone, string> = {
   default: 'text-foreground',
-  ok: 'text-success',
+  ok: 'text-foreground',
   warn: 'text-warning',
   crit: 'text-danger',
-}
-// Status-coloured card border so each KPI reads its health at a glance (a plain
-// neutral border made every card look the same) — kept to a faint tint so the
-// colour registers without shouting. Works in light + dark.
-const toneBorder: Record<Tone, string> = {
-  default: 'border-border',
-  ok: 'border-success/20',
-  warn: 'border-warning/25',
-  crit: 'border-danger/25',
 }
 
 export function StatCard({
@@ -44,9 +35,7 @@ export function StatCard({
   to?: '/objects' | '/alerts' | '/problems'; search?: ObjectsSearch
 }) {
   const inner = (
-    <div className={cn('relative overflow-hidden rounded-xl border bg-card px-4 pt-3 pb-3.5 transition-colors hover:border-ring/40', toneBorder[tone])}>
-      {/* Slim status stripe on the left edge — the one saturated accent. */}
-      {tone !== 'default' && <span className="absolute inset-y-0 left-0 w-0.5 opacity-70" style={{ backgroundColor: toneVar[tone] }} aria-hidden />}
+    <div className="rounded-xl border border-border bg-card px-4 pt-3 pb-3.5 transition-colors hover:border-ring/40">
       <div className="flex items-start justify-between gap-2">
         <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{label}</div>
         {badge != null && (
@@ -59,7 +48,7 @@ export function StatCard({
         )}
       </div>
       <div className="mt-1.5 flex items-baseline gap-1.5">
-        <span className={cn('text-3xl font-bold tabular-nums leading-none', toneText[tone])}>{value}</span>
+        <span className={cn('text-[26px] font-semibold tabular-nums leading-none', toneText[tone])}>{value}</span>
         {total != null && <span className="text-sm text-muted-foreground tabular-nums">/ {total}</span>}
         {unit && <span className="text-xs text-muted-foreground">{unit}</span>}
       </div>
@@ -69,48 +58,38 @@ export function StatCard({
   return to ? <Link to={to} search={search ?? {}} className="block">{inner}</Link> : inner
 }
 
-// ── Service-status donut ───────────────────────────────────────────────
+// ── Service-status stacked bar ─────────────────────────────────────────
 export interface Segment { label: string; value: number; color: string }
 
-function Donut({ segments, size = 150, stroke = 15, children }: { segments: Segment[]; size?: number; stroke?: number; children?: ReactNode }) {
-  const r = (size - stroke) / 2
-  const C = 2 * Math.PI * r
-  const shown = segments.filter((s) => s.value > 0)
-  const total = shown.reduce((a, s) => a + s.value, 0) || 1
-  // Prefix sums for arc offsets — computed without render-time mutation.
-  const before = shown.map((_, i) => shown.slice(0, i).reduce((a, x) => a + x.value, 0))
-  const single = shown.length <= 1
-  return (
-    <div className="relative shrink-0" style={{ width: size, height: size }}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90">
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--muted)" strokeWidth={stroke} />
-        {shown.map((s, i) => {
-          const len = (s.value / total) * C
-          const off = ((before[i] ?? 0) / total) * C
-          return (
-            <circle key={i} cx={size / 2} cy={size / 2} r={r} fill="none" stroke={s.color} strokeWidth={stroke}
-              strokeDasharray={`${len} ${C - len}`} strokeDashoffset={-off} strokeLinecap={single ? 'round' : 'butt'} />
-          )
-        })}
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">{children}</div>
-    </div>
-  )
-}
-
 export function StatusDonut({ segments, total, healthyPct }: { segments: Segment[]; total: number; healthyPct: number }) {
+  const shown = segments.filter((s) => s.value > 0)
   return (
-    <div className="flex items-center gap-5">
-      <Donut segments={segments}>
-        <div className="text-2xl font-bold tabular-nums text-foreground">{healthyPct}%</div>
-        <div className="text-[11px] text-muted-foreground">{total} total</div>
-      </Donut>
-      <div className="min-w-0 flex-1 space-y-1.5">
+    <div className="space-y-3">
+      <div className="flex items-baseline gap-1.5">
+        <span className="text-2xl font-semibold tabular-nums text-foreground">{healthyPct}%</span>
+        <span className="text-xs text-muted-foreground">· {total} total</span>
+      </div>
+      {/* Thin stacked bar; the 2px gaps are the card surface doing the
+          separating (never a stroke around the marks). */}
+      <div className="flex h-3 overflow-hidden rounded-md" aria-hidden>
+        {shown.map((s, i) => (
+          <span
+            key={s.label}
+            className={cn('h-full', i > 0 && 'ml-0.5', i === 0 && 'rounded-l-md', i === shown.length - 1 && 'rounded-r-md')}
+            style={{ backgroundColor: s.color, flexGrow: s.value, flexBasis: 6, minWidth: 6 }}
+          />
+        ))}
+        {shown.length === 0 && <span className="h-full w-full rounded-md bg-muted" />}
+      </div>
+      <div className="space-y-1.5">
         {segments.map((s) => (
           <div key={s.label} className="flex items-center gap-2 text-sm">
-            <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: s.color }} />
+            <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: s.color }} aria-hidden />
             <span className="text-muted-foreground">{s.label}</span>
             <span className="ml-auto font-semibold tabular-nums text-foreground/90">{s.value}</span>
+            <span className="w-12 text-right text-xs tabular-nums text-muted-foreground/70">
+              {total > 0 ? `${Math.round((s.value / total) * 1000) / 10}%` : '—'}
+            </span>
           </div>
         ))}
       </div>

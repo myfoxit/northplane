@@ -10,7 +10,7 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { X, RefreshCw, Tag, Search } from 'lucide-react'
 import { get, post, del, fmtTime, fmtAgo, queryClient, APIError, type ListResponse } from '../api'
 import type { NPObject, NPEvent, SeriesResult, ObjectSpec, ObjectsSearch } from '../types'
-import { stateLabel, stateIcon, stateColor, eventBadge } from '../types'
+import { stateLabel, eventBadge } from '../types'
 import { useRefreshInterval } from '../settings'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
@@ -18,7 +18,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { Empty, LabelChips, ErrorState, DuplicateButton } from '@/components/kit'
+import { Empty, LabelChips, ErrorState, DuplicateButton, StateBadge } from '@/components/kit'
 import { redactSecrets } from '@/lib/redact'
 import { parsePerfdata } from '@/lib/perfdata'
 import { humanizeOutput } from '@/lib/humanize'
@@ -190,10 +190,8 @@ export function ObjectsPage() {
                 style={{ top: vi.start, height: vi.size }}
               >
                 <Link to="/objects/$id" params={{ id: o.id }} className="flex items-center gap-3 flex-1 min-w-0 h-full">
-                  <span className={`w-24 shrink-0 font-semibold ${o.state ? stateColor(o.kind, o.state.state) : 'text-muted-foreground'}`}>
-                    {o.state?.lastCheck
-                      ? `${stateIcon(o.kind, o.state.state)} ${stateLabel(o.kind, o.state.state)}`
-                      : `○ ${t('pending')}`}
+                  <span className="w-24 shrink-0">
+                    <StateBadge kind={o.kind} state={o.state?.state ?? 0} pending={!o.state?.lastCheck} />
                   </span>
                   <span className="w-16 shrink-0 text-xs text-muted-foreground uppercase">{o.kind}</span>
                   {/* aria-hidden: keep the row link's accessible name the
@@ -341,9 +339,9 @@ export function ObjectDetailPage() {
           <h1 className="text-xl font-bold flex items-center gap-3">
             {obj.name}
             {cs && (
-              <span className={`text-base font-bold ${stateColor(obj.kind, cs.state)}`}>
-                {stateIcon(obj.kind, cs.state)} {stateLabel(obj.kind, cs.state)}
-                <span className="text-muted-foreground font-normal text-xs ml-1">
+              <span className="inline-flex items-center gap-2 font-normal">
+                <StateBadge kind={obj.kind} state={cs.state} />
+                <span className="text-muted-foreground font-normal text-xs">
                   ({cs.stateType} {cs.attempt}x)
                 </span>
               </span>
@@ -544,10 +542,8 @@ function RelatedServicesCard({ title, services }: { title: string; services: NPO
                 key={s.id} to="/objects/$id" params={{ id: s.id }}
                 className="flex items-center gap-3 py-1.5 px-2 -mx-2 rounded-md hover:bg-muted/40 text-sm group"
               >
-                <span className={`w-28 shrink-0 font-semibold ${s.state ? stateColor(s.kind, s.state.state) : 'text-muted-foreground'}`}>
-                  {s.state?.lastCheck
-                    ? `${stateIcon(s.kind, s.state.state)} ${stateLabel(s.kind, s.state.state)}`
-                    : `○ ${t('pending')}`}
+                <span className="w-28 shrink-0">
+                  <StateBadge kind={s.kind} state={s.state?.state ?? 0} pending={!s.state?.lastCheck} />
                 </span>
                 <span className="font-medium truncate w-56 shrink-0 text-foreground">{s.name}</span>
                 <span className="text-muted-foreground text-xs truncate flex-1">{humanizeOutput(s.state?.output)}</span>

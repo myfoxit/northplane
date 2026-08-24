@@ -6,10 +6,9 @@ import { Link } from '@tanstack/react-router'
 import { RefreshCw, Check } from 'lucide-react'
 import { get, post, queryClient, fmtAgo } from '../api'
 import type { ProblemRow, Alert } from '../types'
-import { stateLabel, stateIcon, stateColor } from '../types'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Empty, ErrorState } from '@/components/kit'
+import { Empty, ErrorState, StateBadge } from '@/components/kit'
 import { AckDialog, DowntimeDialog } from '../components/AckDialog'
 import { t } from '../i18n'
 import { useRefreshInterval } from '../settings'
@@ -64,8 +63,8 @@ export function ProblemsPage() {
           return (
             <div key={p.object.id}
               className="flex items-center gap-3 bg-card/50 border border-border rounded-lg px-3 py-2 group">
-              <span className={`${stateColor(p.object.kind, p.state.state)} font-bold text-sm w-24 shrink-0`}>
-                {stateIcon(p.object.kind, p.state.state)} {stateLabel(p.object.kind, p.state.state)}
+              <span className="w-24 shrink-0">
+                <StateBadge kind={p.object.kind} state={p.state.state} />
               </span>
               <div className="min-w-0 flex-1">
                 <Link to="/objects/$id" params={{ id: p.object.id }}
@@ -75,9 +74,9 @@ export function ProblemsPage() {
                 <div className="text-xs text-muted-foreground truncate">{p.state.output}</div>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
-                {p.state.ackedBy && <Badge variant="outline" className="bg-sky-500/10 text-sky-400 border-sky-800">{t('acked')}: {p.state.ackedBy}</Badge>}
+                {p.state.ackedBy && <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">{t('acked')}: {p.state.ackedBy}</Badge>}
                 {p.state.downtimeDepth > 0 && <Badge variant="outline" className="bg-muted text-muted-foreground border-input">{t('inDowntime')}</Badge>}
-                {p.state.flapping && <Badge variant="outline" className="bg-purple-500/10 text-purple-400 border-purple-800">{t('flapping')}</Badge>}
+                {p.state.flapping && <Badge variant="outline" className="bg-warning/10 text-warning border-warning/30">{t('flapping')}</Badge>}
                 <span className="text-xs text-muted-foreground/70 tabular-nums w-16 text-right">{fmtAgo(p.state.lastHardChange)}</span>
               </div>
               <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">

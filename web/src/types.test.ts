@@ -40,13 +40,13 @@ describe('stateIcon', () => {
 describe('stateColor', () => {
   it('maps host states to the host palette', () => {
     expect([0, 1, 2, 3].map((s) => stateColor('host', s))).toEqual([
-      'text-emerald-400', 'text-red-400', 'text-slate-400', 'text-slate-400',
+      'text-success', 'text-danger', 'text-muted-foreground', 'text-muted-foreground',
     ])
   })
 
   it('maps service states to the service palette', () => {
     expect([0, 1, 2, 3].map((s) => stateColor('service', s))).toEqual([
-      'text-emerald-400', 'text-amber-400', 'text-red-400', 'text-slate-400',
+      'text-success', 'text-warning', 'text-danger', 'text-muted-foreground',
     ])
   })
 
@@ -58,14 +58,14 @@ describe('stateColor', () => {
 
 describe('sevColor', () => {
   it('maps each known severity to its token set', () => {
-    expect(sevColor('critical')).toContain('text-red-400')
-    expect(sevColor('warning')).toContain('text-amber-400')
-    expect(sevColor('ok')).toContain('text-emerald-400')
+    expect(sevColor('critical')).toContain('text-danger')
+    expect(sevColor('warning')).toContain('text-warning')
+    expect(sevColor('ok')).toContain('text-success')
   })
 
-  it('falls back to the info/sky palette for info and undefined', () => {
-    const sky = 'text-sky-400'
-    expect(sevColor('info')).toContain(sky)
-    expect(sevColor(undefined)).toContain(sky)
+  it('falls back to the info/primary tint for info and undefined', () => {
+    const info = 'text-primary'
+    expect(sevColor('info')).toContain(info)
+    expect(sevColor(undefined)).toContain(info)
   })
 })

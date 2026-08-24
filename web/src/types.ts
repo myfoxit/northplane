@@ -646,23 +646,41 @@ export function stateIcon(kind: Kind, state: number): string {
 }
 
 export function stateColor(kind: Kind, state: number): string {
-  if (kind === 'host') return ['text-emerald-400', 'text-red-400', 'text-slate-400', 'text-slate-400'][state] ?? ''
-  return ['text-emerald-400', 'text-amber-400', 'text-red-400', 'text-slate-400'][state] ?? ''
+  if (kind === 'host') return ['text-success', 'text-danger', 'text-muted-foreground', 'text-muted-foreground'][state] ?? ''
+  return ['text-success', 'text-warning', 'text-danger', 'text-muted-foreground'][state] ?? ''
+}
+
+// Polaris severity-badge system: a tinted pill (surface + border + text in the
+// state's hue) that always carries the state LABEL — status is never color
+// alone. stateDotClass gives the matching solid dot.
+export function stateBadgeClass(kind: Kind, state: number): string {
+  const ok = 'bg-success/10 text-success border-success/30'
+  const warn = 'bg-warning/10 text-warning border-warning/30'
+  const crit = 'bg-danger/10 text-danger border-danger/30'
+  const unk = 'bg-muted text-muted-foreground border-input'
+  if (kind === 'host') return [ok, crit, unk, unk][state] ?? unk
+  return [ok, warn, crit, unk][state] ?? unk
+}
+
+export function stateDotClass(kind: Kind, state: number): string {
+  const unk = 'bg-muted-foreground'
+  if (kind === 'host') return ['bg-success', 'bg-danger', unk, unk][state] ?? unk
+  return ['bg-success', 'bg-warning', 'bg-danger', unk][state] ?? unk
 }
 
 export function sevColor(sev?: Severity): string {
   switch (sev) {
-    case 'critical': return 'bg-red-500/15 text-red-400 border-red-500/30'
-    case 'warning': return 'bg-amber-500/15 text-amber-400 border-amber-500/30'
-    case 'ok': return 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-    default: return 'bg-sky-500/15 text-sky-400 border-sky-500/30'
+    case 'critical': return 'bg-danger/10 text-danger border-danger/30'
+    case 'warning': return 'bg-warning/10 text-warning border-warning/30'
+    case 'ok': return 'bg-success/10 text-success border-success/30'
+    default: return 'bg-primary/10 text-primary border-primary/30'
   }
 }
 
-// UNKNOWN styling (slate) — there is no 'unknown' Severity, so the backend
+// UNKNOWN styling (neutral) — there is no 'unknown' Severity, so the backend
 // alerts an UNKNOWN state as "warning" (SeverityFromState). Used to badge an
 // event by its actual state rather than that coerced severity.
-const UNKNOWN_BADGE = 'bg-slate-500/15 text-slate-300 border-slate-500/30'
+const UNKNOWN_BADGE = 'bg-muted text-muted-foreground border-input'
 
 // eventBadge decides the coloured badge for an event row. A state_change into
 // the UNKNOWN state (svcStates[3]) is badged "UNKNOWN" in slate instead of the

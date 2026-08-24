@@ -5,12 +5,13 @@
 // Dialog/Tabs/Table/Badge/Toggle/TextArea) are intentionally NOT here —
 // consumers use shadcn @/components/ui/* directly.
 import { useState, type ReactNode } from 'react'
-import { Loader2, X, AlertTriangle, RefreshCw, Copy } from 'lucide-react'
+import { Inbox, Loader2, X, AlertTriangle, RefreshCw, Copy } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { APIError } from '../api'
+import { stateBadgeClass, stateDotClass, stateLabel } from '../types'
 import { t } from '../i18n'
 import { isDuration } from '@/lib/duration'
 
@@ -30,7 +31,35 @@ export function Spinner() {
 }
 
 export function Empty({ text }: { text: string }) {
-  return <div className="text-muted-foreground text-sm p-6 text-center">{text}</div>
+  return (
+    <div className="flex flex-col items-center gap-2 p-6 text-center">
+      <div className="flex size-9 items-center justify-center rounded-full bg-muted" aria-hidden>
+        <Inbox size={16} className="text-muted-foreground" />
+      </div>
+      <div className="text-muted-foreground text-sm">{text}</div>
+    </div>
+  )
+}
+
+// StateBadge — Polaris severity pill: dot + state label, never color alone.
+// `pending` renders the neutral not-yet-checked variant.
+export function StateBadge({ kind, state, pending, className }: {
+  kind: 'host' | 'service'; state: number; pending?: boolean; className?: string
+}) {
+  const base = 'inline-flex items-center gap-1.5 h-5 rounded-md border px-2 text-[10px] font-semibold uppercase tracking-wide whitespace-nowrap'
+  if (pending) {
+    return (
+      <span className={cn(base, 'bg-muted text-muted-foreground border-input', className)}>
+        <span className="size-1.5 rounded-full bg-muted-foreground/60" aria-hidden /> {t('pending')}
+      </span>
+    )
+  }
+  return (
+    <span className={cn(base, stateBadgeClass(kind, state), className)}>
+      <span className={cn('size-1.5 rounded-full', stateDotClass(kind, state))} aria-hidden />
+      {stateLabel(kind, state)}
+    </span>
+  )
 }
 
 // ErrorState: inline failure UI for a query that errored — mirrors Empty,

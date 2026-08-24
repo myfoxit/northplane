@@ -390,23 +390,25 @@ var loginTpl = template.Must(template.New("login").Parse(`<!doctype html>
 <title>Northplane — Anmeldung</title>
 <style>
 :root{color-scheme:dark}
-body{font-family:system-ui,-apple-system,sans-serif;background:#0b1220;color:#e2e8f0;display:grid;place-items:center;min-height:100vh;margin:0}
-.card{background:#111a2e;border:1px solid #1e293b;border-radius:12px;padding:2.2rem;width:20rem}
-h1{font-size:1.15rem;margin:0 0 1.4rem;display:flex;align-items:center;gap:.5rem}
-h1 b{color:#60a5fa}
-label{display:block;font-size:.8rem;color:#94a3b8;margin:.8rem 0 .25rem}
-input{width:100%;box-sizing:border-box;background:#0b1220;border:1px solid #334155;border-radius:8px;color:#e2e8f0;padding:.55rem .7rem;font-size:.9rem}
-button{width:100%;margin-top:1.2rem;background:#2563eb;border:0;border-radius:8px;color:#fff;padding:.6rem;font-size:.9rem;cursor:pointer}
-button:hover{background:#1d4ed8}
-.sso{background:#1e293b;margin-top:.6rem}
-.err{background:#7f1d1d;border-radius:8px;padding:.55rem .7rem;font-size:.82rem;margin-bottom:1rem}
-.alt{font-size:.8rem;color:#94a3b8;text-align:center;margin-top:1rem}
-.alt a{color:#60a5fa;text-decoration:none}
+body{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;background:radial-gradient(620px 380px at 50% -90px,rgba(94,127,242,0.10),rgba(94,127,242,0) 70%),#0B0F1B;color:#C8D0E4;display:grid;place-items:center;min-height:100vh;margin:0}
+.card{background:#121828;border:1px solid #232C46;border-radius:14px;padding:2.2rem;width:21rem;box-shadow:0 24px 60px rgba(3,6,14,.5)}
+h1{font-size:1.15rem;margin:0 0 1.4rem;display:flex;align-items:center;gap:.6rem;color:#EEF2FB;letter-spacing:-.01em}
+.logo{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;background:linear-gradient(140deg,#6487FF,#4A67DE);flex:none}
+label{display:block;font-size:.8rem;color:#8B96B2;margin:.8rem 0 .25rem}
+input{width:100%;box-sizing:border-box;background:#0E1524;border:1px solid #2E3A5C;border-radius:8px;color:#EEF2FB;padding:.55rem .7rem;font-size:.9rem}
+input:focus{outline:2px solid rgba(94,127,242,.55);outline-offset:1px;border-color:#5E7FF2}
+button{width:100%;margin-top:1.2rem;background:#5E7FF2;border:0;border-radius:8px;color:#fff;padding:.6rem;font-size:.9rem;font-weight:600;cursor:pointer}
+button:hover{background:#4A67DE}
+.sso{background:#1A2136;font-weight:500;margin-top:.6rem}
+.sso:hover{background:#232C46}
+.err{background:rgba(216,56,63,.14);border:1px solid rgba(216,56,63,.4);color:#F1595F;border-radius:8px;padding:.55rem .7rem;font-size:.82rem;margin-bottom:1rem}
+.alt{font-size:.8rem;color:#8B96B2;text-align:center;margin-top:1rem}
+.alt a{color:#7593F7;text-decoration:none}
 .alt a:hover{text-decoration:underline}
-.v{color:#475569;font-size:.7rem;text-align:center;margin-top:1.2rem}
+.v{color:#5D6884;font-size:.7rem;text-align:center;margin-top:1.2rem}
 </style></head><body>
 <form class="card" method="post" action="/login">
-  <h1><b>▲</b> Northplane</h1>
+  <h1><span class="logo"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 2.6 L14.1 9.9 L21.4 12 L14.1 14.1 L12 21.4 L9.9 14.1 L2.6 12 L9.9 9.9 Z" fill="#FFFFFF"/></svg></span> Northplane</h1>
   {{if .Error}}<div class="err">{{.Error}}</div>{{end}}
   <label for="email">E-Mail</label>
   <input id="email" name="email" type="email" autocomplete="username" required>
@@ -440,21 +442,23 @@ var setupTpl = template.Must(template.New("setup").Parse(`<!doctype html>
 <title>Northplane — Einrichtung</title>
 <style>
 :root{color-scheme:dark}
-body{font-family:system-ui,-apple-system,sans-serif;background:#0b1220;color:#e2e8f0;display:grid;place-items:center;min-height:100vh;margin:0}
-.card{background:#111a2e;border:1px solid #1e293b;border-radius:12px;padding:2.2rem;width:20rem}
-h1{font-size:1.15rem;margin:0 0 .4rem;display:flex;align-items:center;gap:.5rem}
-h1 b{color:#60a5fa}
-p.hint{font-size:.8rem;color:#94a3b8;margin:0 0 1.2rem}
-label{display:block;font-size:.8rem;color:#94a3b8;margin:.8rem 0 .25rem}
-input{width:100%;box-sizing:border-box;background:#0b1220;border:1px solid #334155;border-radius:8px;color:#e2e8f0;padding:.55rem .7rem;font-size:.9rem}
-button{width:100%;margin-top:1.2rem;background:#2563eb;border:0;border-radius:8px;color:#fff;padding:.6rem;font-size:.9rem;cursor:pointer}
-button:hover{background:#1d4ed8}
-.sso{background:#1e293b;margin-top:.6rem}
-.err{background:#7f1d1d;border-radius:8px;padding:.55rem .7rem;font-size:.82rem;margin-bottom:1rem}
-.v{color:#475569;font-size:.7rem;text-align:center;margin-top:1.2rem}
+body{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;background:radial-gradient(620px 380px at 50% -90px,rgba(94,127,242,0.10),rgba(94,127,242,0) 70%),#0B0F1B;color:#C8D0E4;display:grid;place-items:center;min-height:100vh;margin:0}
+.card{background:#121828;border:1px solid #232C46;border-radius:14px;padding:2.2rem;width:21rem;box-shadow:0 24px 60px rgba(3,6,14,.5)}
+h1{font-size:1.15rem;margin:0 0 .4rem;display:flex;align-items:center;gap:.6rem;color:#EEF2FB;letter-spacing:-.01em}
+.logo{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;background:linear-gradient(140deg,#6487FF,#4A67DE);flex:none}
+p.hint{font-size:.8rem;color:#8B96B2;margin:0 0 1.2rem}
+label{display:block;font-size:.8rem;color:#8B96B2;margin:.8rem 0 .25rem}
+input{width:100%;box-sizing:border-box;background:#0E1524;border:1px solid #2E3A5C;border-radius:8px;color:#EEF2FB;padding:.55rem .7rem;font-size:.9rem}
+input:focus{outline:2px solid rgba(94,127,242,.55);outline-offset:1px;border-color:#5E7FF2}
+button{width:100%;margin-top:1.2rem;background:#5E7FF2;border:0;border-radius:8px;color:#fff;padding:.6rem;font-size:.9rem;font-weight:600;cursor:pointer}
+button:hover{background:#4A67DE}
+.sso{background:#1A2136;font-weight:500;margin-top:.6rem}
+.sso:hover{background:#232C46}
+.err{background:rgba(216,56,63,.14);border:1px solid rgba(216,56,63,.4);color:#F1595F;border-radius:8px;padding:.55rem .7rem;font-size:.82rem;margin-bottom:1rem}
+.v{color:#5D6884;font-size:.7rem;text-align:center;margin-top:1.2rem}
 </style></head><body>
 <form class="card" method="post" action="/setup">
-  <h1><b>▲</b> Northplane</h1>
+  <h1><span class="logo"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 2.6 L14.1 9.9 L21.4 12 L14.1 14.1 L12 21.4 L9.9 14.1 L2.6 12 L9.9 9.9 Z" fill="#FFFFFF"/></svg></span> Northplane</h1>
   <p class="hint">Erstkonfiguration — Administrator-Konto anlegen</p>
   {{if .Error}}<div class="err">{{.Error}}</div>{{end}}
   <label for="name">Name</label>
@@ -547,23 +551,24 @@ var registerTpl = template.Must(template.New("register").Parse(`<!doctype html>
 <title>Northplane — Registrierung</title>
 <style>
 :root{color-scheme:dark}
-body{font-family:system-ui,-apple-system,sans-serif;background:#0b1220;color:#e2e8f0;display:grid;place-items:center;min-height:100vh;margin:0}
-.card{background:#111a2e;border:1px solid #1e293b;border-radius:12px;padding:2.2rem;width:20rem}
-h1{font-size:1.15rem;margin:0 0 .4rem;display:flex;align-items:center;gap:.5rem}
-h1 b{color:#60a5fa}
-p.hint{font-size:.8rem;color:#94a3b8;margin:0 0 1.2rem}
-label{display:block;font-size:.8rem;color:#94a3b8;margin:.8rem 0 .25rem}
-input{width:100%;box-sizing:border-box;background:#0b1220;border:1px solid #334155;border-radius:8px;color:#e2e8f0;padding:.55rem .7rem;font-size:.9rem}
-button{width:100%;margin-top:1.2rem;background:#2563eb;border:0;border-radius:8px;color:#fff;padding:.6rem;font-size:.9rem;cursor:pointer}
-button:hover{background:#1d4ed8}
-.err{background:#7f1d1d;border-radius:8px;padding:.55rem .7rem;font-size:.82rem;margin-bottom:1rem}
-.alt{font-size:.8rem;color:#94a3b8;text-align:center;margin-top:1rem}
-.alt a{color:#60a5fa;text-decoration:none}
+body{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;background:radial-gradient(620px 380px at 50% -90px,rgba(94,127,242,0.10),rgba(94,127,242,0) 70%),#0B0F1B;color:#C8D0E4;display:grid;place-items:center;min-height:100vh;margin:0}
+.card{background:#121828;border:1px solid #232C46;border-radius:14px;padding:2.2rem;width:21rem;box-shadow:0 24px 60px rgba(3,6,14,.5)}
+h1{font-size:1.15rem;margin:0 0 .4rem;display:flex;align-items:center;gap:.6rem;color:#EEF2FB;letter-spacing:-.01em}
+.logo{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;background:linear-gradient(140deg,#6487FF,#4A67DE);flex:none}
+p.hint{font-size:.8rem;color:#8B96B2;margin:0 0 1.2rem}
+label{display:block;font-size:.8rem;color:#8B96B2;margin:.8rem 0 .25rem}
+input{width:100%;box-sizing:border-box;background:#0E1524;border:1px solid #2E3A5C;border-radius:8px;color:#EEF2FB;padding:.55rem .7rem;font-size:.9rem}
+input:focus{outline:2px solid rgba(94,127,242,.55);outline-offset:1px;border-color:#5E7FF2}
+button{width:100%;margin-top:1.2rem;background:#5E7FF2;border:0;border-radius:8px;color:#fff;padding:.6rem;font-size:.9rem;font-weight:600;cursor:pointer}
+button:hover{background:#4A67DE}
+.err{background:rgba(216,56,63,.14);border:1px solid rgba(216,56,63,.4);color:#F1595F;border-radius:8px;padding:.55rem .7rem;font-size:.82rem;margin-bottom:1rem}
+.alt{font-size:.8rem;color:#8B96B2;text-align:center;margin-top:1rem}
+.alt a{color:#7593F7;text-decoration:none}
 .alt a:hover{text-decoration:underline}
-.v{color:#475569;font-size:.7rem;text-align:center;margin-top:1.2rem}
+.v{color:#5D6884;font-size:.7rem;text-align:center;margin-top:1.2rem}
 </style></head><body>
 <form class="card" method="post" action="/register">
-  <h1><b>▲</b> Northplane</h1>
+  <h1><span class="logo"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 2.6 L14.1 9.9 L21.4 12 L14.1 14.1 L12 21.4 L9.9 14.1 L2.6 12 L9.9 9.9 Z" fill="#FFFFFF"/></svg></span> Northplane</h1>
   <p class="hint">Neues Konto anlegen</p>
   {{if .Error}}<div class="err">{{.Error}}</div>{{end}}
   <label for="name">Name</label>
@@ -682,13 +687,13 @@ var statusTpl = template.Must(template.New("status").Parse(`<!doctype html>
 <title>{{.Title}} — Status</title>
 <style>
 :root{color-scheme:dark}
-body{font-family:system-ui,sans-serif;background:#0b1220;color:#e2e8f0;max-width:42rem;margin:0 auto;padding:2rem 1rem}
-h1{font-size:1.3rem}
-.banner{border-radius:10px;padding:1rem 1.2rem;margin:1.2rem 0;font-weight:600}
-.ok{background:#064e3b;color:#6ee7b7}.warn{background:#78350f;color:#fcd34d}.crit{background:#7f1d1d;color:#fca5a5}
-.row{display:flex;justify-content:space-between;padding:.7rem .4rem;border-bottom:1px solid #1e293b}
-.state{font-weight:600}.state.ok{color:#34d399}.state.warn{color:#fbbf24}.state.crit{color:#f87171}.state.unknown{color:#94a3b8}
-.f{color:#475569;font-size:.75rem;margin-top:2rem;text-align:center}
+body{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;background:#0B0F1B;color:#C8D0E4;max-width:42rem;margin:0 auto;padding:2rem 1rem}
+h1{font-size:1.3rem;color:#EEF2FB;letter-spacing:-.01em}
+.banner{border-radius:12px;padding:1rem 1.2rem;margin:1.2rem 0;font-weight:600;border:1px solid transparent}
+.ok{background:rgba(52,182,120,.13);border-color:rgba(52,182,120,.35);color:#4EC583}.warn{background:rgba(206,151,34,.13);border-color:rgba(206,151,34,.35);color:#E0A32E}.crit{background:rgba(216,56,63,.13);border-color:rgba(216,56,63,.4);color:#F1595F}
+.row{display:flex;justify-content:space-between;padding:.7rem .4rem;border-bottom:1px solid #232C46}
+.state{font-weight:600}.state.ok{color:#4EC583}.state.warn{color:#E0A32E}.state.crit{color:#F1595F}.state.unknown{color:#8B96B2}
+.f{color:#5D6884;font-size:.75rem;margin-top:2rem;text-align:center}
 </style></head><body>
 <h1>{{.Title}}</h1>
 <div class="banner {{.OverallClass}}">{{.OverallText}}</div>
