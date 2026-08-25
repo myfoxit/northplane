@@ -80,14 +80,19 @@ export function EventsPage() {
   })
   const objectId = objects?.items?.find((o) => o.name === objectRef)?.id ?? objectRef
 
-  const from = hours ? new Date(Date.now() - Number(hours) * 3_600_000).toISOString() : ''
-  const params = `types=${type}&severity=${severity}&from=${encodeURIComponent(from)}` +
-    `&objectId=${encodeURIComponent(objectId)}`
+  // from= is computed at fetch/click time, not during render — Date.now()
+  // in render trips react-hooks/purity, and a per-fetch anchor also keeps
+  // the window sliding across auto-refreshes.
+  const buildParams = () => {
+    const from = hours ? new Date(Date.now() - Number(hours) * 3_600_000).toISOString() : ''
+    return `types=${type}&severity=${severity}&from=${encodeURIComponent(from)}` +
+      `&objectId=${encodeURIComponent(objectId)}`
+  }
   const { data, isLoading, isError, error, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useInfiniteQuery({
       queryKey: ['events', type, severity, hours, objectId],
       queryFn: ({ pageParam }) => get<ListResponse<NPEvent>>(
-        `/events?${params}&limit=200${pageParam ? `&cursor=${encodeURIComponent(pageParam)}` : ''}`),
+        `/events?${buildParams()}&limit=200${pageParam ? `&cursor=${encodeURIComponent(pageParam)}` : ''}`),
       initialPageParam: '',
       getNextPageParam: (last) => last.nextCursor || undefined,
       placeholderData: keepPreviousData, // filter changes render instantly
@@ -101,7 +106,8 @@ export function EventsPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-bold">{t('events')}</h1>
-        <a href={`/api/v1/events:export?${params}`}
+        <a href="/api/v1/events:export"
+          onClick={(e) => { e.preventDefault(); window.location.href = `/api/v1/events:export?${buildParams()}` }}
           className="text-xs text-muted-foreground hover:text-foreground/90">⇩ NDJSON Export</a>
       </div>
       <div className="flex gap-2 flex-wrap">
