@@ -146,7 +146,7 @@ Format rules:
 | Contact channel preferences (`preferences[].period`) | the contact's `timeZone` (built-in names `worktime`/`arbeitszeit` = Mon–Fri 08:00–17:59 and `night`/`nacht` = the inverse also exist) — see [Contacts and on-call](/docs/alarming/contacts-and-oncall/) |
 | On-call rotation `restriction` | the schedule's `timeZone` |
 | Object `notificationPeriod` (direct object notifications) | **UTC** — write the ranges in UTC for this use |
-| Object `checkPeriod` | stored and shown in the effective config, but **not consulted by the scheduler** — checks run regardless |
+| Object `checkPeriod` | enforced: outside the period scheduled runs and freshness probes are skipped (the object keeps its last state); manual check-now always runs |
 
 ## What gets suppressed, and by what
 

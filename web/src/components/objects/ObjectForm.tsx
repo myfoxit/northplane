@@ -112,7 +112,7 @@ export function ObjectForm({ kind, edit, copyFrom, existingNames, onDone, onCanc
         <div className="overflow-y-auto min-h-0 flex-1 px-6 py-4">
           <TabsContent value="basis" className="mt-0 space-y-4">
             <div className="grid grid-cols-2 gap-2">
-              <Field label={t('name')} required>
+              <Field label={t('name')} required hint={!isEdit && !name ? t('nameRequiredHint') : undefined}>
                 <Input value={name} onChange={(e) => setName(e.target.value)}
                   disabled={isEdit} placeholder={kind === 'host' ? 'web01' : 'http'} autoFocus={!isEdit} />
               </Field>

@@ -1,6 +1,6 @@
 ---
 title: CI/CD pipeline
-description: How a merge to main becomes a production deploy — the CI jobs, the Deploy workflow (publish, deploy, deploy-hetzner, verify, rollback), GitHub variables and secrets, image tags, the release workflow and how the docs ship.
+description: How a merge to main becomes a production deploy — the CI jobs, the Deploy workflow (publish, deploy, verify, rollback), GitHub variables and secrets, image tags, the release workflow and how the docs ship.
 sidebar:
   order: 4
 ---
@@ -10,7 +10,7 @@ The repository `myfoxit/northplane` (private, default branch `main`) has three G
 | Workflow | File | Trigger | Result |
 |---|---|---|---|
 | **CI** | `.github/workflows/ci.yml` | push to `main`/`master`, pull requests | quality gate: UI, docs, typed-codegen drift, lint, tests, e2e, PostgreSQL matrix, cross-build |
-| **Deploy** | `.github/workflows/deploy.yml` | CI completed successfully on `main`, or manual dispatch | image `ghcr.io/myfoxit/northplane:main-<sha12>` + `latest`; rollout to `np-01` (job `deploy`) and `np-02` (job `deploy-hetzner`) |
+| **Deploy** | `.github/workflows/deploy.yml` | CI completed successfully on `main`, or manual dispatch | image `ghcr.io/myfoxit/northplane:main-<sha12>` + `latest`; rollout to `np-01` (job `deploy`) |
 | **Release** | `.github/workflows/release.yml` | tag push `v*` | GitHub Release with tarballs + `checksums.txt`; multi-arch image with semver tags |
 
 :::note[A push to main is a production deploy]
@@ -22,8 +22,8 @@ There is no staging gate between `main` and `doktrace.com`. Merge only what you 
 1. **Push/merge to `main`.** CI starts; all jobs run in parallel where possible (`test`, `e2e`, `postgres` and `cross-build` wait for `ui`).
 2. **CI finishes green.** The `workflow_run` trigger starts **Deploy** (`publish` runs only when `github.event.workflow_run.conclusion == 'success'`; a manual dispatch always proceeds). Concurrency group `deploy-production`, `cancel-in-progress: false` — one rollout at a time, never cancelled mid-flight.
 3. **`publish`** checks out the CI run's `head_sha`, builds the Dockerfile with buildx for `linux/amd64` and `linux/arm64` (`VERSION=main-<sha12>`, GHA layer cache; the Dockerfile cross-compiles from the build platform, so no QEMU) and pushes `ghcr.io/myfoxit/northplane:main-<sha12>` and `:latest`.
-4. **`deploy`** (np-01) and **`deploy-hetzner`** (np-02) run in parallel after `publish`: SSH set-up → render `.env` → ship the compose stack → `docker compose pull`/`up -d` → verify → roll back on failure → summary line.
-5. The verified run on 2026-08-23 (run `32629242562`, merge `daa6dc5`, 08:48 UTC) ended with `publish` and `deploy` succeeded, `deploy-hetzner` failed; the container on `np-01` started at 08:50:57 UTC — under three minutes after the Deploy run began.
+4. **`deploy`** (np-01) runs after `publish`: SSH set-up → render `.env` → ship the compose stack → `docker compose pull`/`up -d` → verify → roll back on failure → summary line.
+5. The verified run on 2026-08-23 (run `32629242562`, merge `daa6dc5`, 08:48 UTC) ended with `publish` and `deploy` succeeded (the since-removed `deploy-hetzner` job failed); the container on `np-01` started at 08:50:57 UTC — under three minutes after the Deploy run began.
 
 ## CI jobs
 
@@ -67,7 +67,7 @@ permissions:
   packages: write # push the image to ghcr.io
 ```
 
-Manual dispatch (**Actions → Deploy → Run workflow**) re-publishes the image for the current `main` and rolls it out; the `demo` dropdown overrides the repository variable `NORTHPLANE_DEMO` **for np-01 and for that run only** (`repo-default` keeps the variable). The `deploy-hetzner` job ignores the dropdown — np-02 is always a real-data instance.
+Manual dispatch (**Actions → Deploy → Run workflow**) re-publishes the image for the current `main` and rolls it out; the `demo` dropdown overrides the repository variable `NORTHPLANE_DEMO` **for np-01 and for that run only** (`repo-default` keeps the variable).
 
 ### Job `publish`
 
@@ -117,19 +117,22 @@ done
 echo "rollout did not become healthy"; exit 1
 ```
 
-### Job `deploy-hetzner` (np-02)
+### Former job `deploy-hetzner` (np-02) — removed
 
-Same shape, different target and files: `Host np-02` = `vars.HETZNER_HOST`, user `deploy`, key `secrets.HETZNER_SSH_KEY`, host key `vars.HETZNER_KNOWN_HOSTS`; ships `deploy/docker-compose.yml` **and** `deploy/Caddyfile` to `/opt/northplane`; renders `.env` with `DOMAIN=localhost`, `SERVER_IP=<HETZNER_HOST>`, `ACME_EMAIL=admin@doktrace.com`, `NORTHPLANE_BASE_URL=https://<HETZNER_HOST>`, `NORTHPLANE_DEMO=false`, `NORTHPLANE_DATA_DIR=/var/lib/northplane/real`, `NP_DEFAULT_ADMIN_EMAIL=root@localhost`, `NP_DEFAULT_ADMIN_PASSWORD=<secrets.HETZNER_ADMIN_PASSWORD>`. Because the app container is distroless and not published on the host, the health probe goes through Caddy: `docker compose exec -T caddy wget -qO- http://northplane:8443/healthz`.
-
-:::caution[np-02 is gone — this job fails on every run]
-Verified 2026-08-23: `91.98.92.10` no longer answers on port 22 and serves a parking page on 443 — the Hetzner box was reclaimed and the IP reassigned. `deploy-hetzner` fails at "Ship compose stack" (`ssh: connect to host 91.98.92.10 port 22: Connection timed out`) on every run (2026-08-14, 2026-08-21, 2026-08-23). `HETZNER_HOST` and `HETZNER_KNOWN_HOSTS` now point at a stranger's host. Either re-create the box and rotate the `HETZNER_*` variables and secrets ([recreation checklist](/docs/deployment/provisioning/#np-02-recreation-checklist)) or remove the job.
-:::
+The standalone Hetzner box np-02 (`91.98.92.10`) was reclaimed and its IP reassigned to a
+stranger's host; every run of its `deploy-hetzner` job failed at "Ship compose stack" from
+2026-08-14 on. The job was **removed from `deploy.yml`** so a rollout can no longer attempt to
+ship credentials to a host we do not own. To bring a standalone box back: provision it
+([recreation checklist](/docs/deployment/provisioning/#np-02-recreation-checklist)), restore the
+job from git history, and rotate `HETZNER_HOST`/`HETZNER_KNOWN_HOSTS`/`HETZNER_SSH_KEY`/
+`HETZNER_ADMIN_PASSWORD` first. The still-configured `HETZNER_*` variables and secrets are
+unused and stale until then.
 
 ## Reading a red run
 
-The `deploy` and `deploy-hetzner` jobs are independent (`needs: publish` each). A red Deploy run therefore does **not** mean production missed the rollout:
+A red Deploy run does **not** always mean production missed the rollout:
 
-1. Open the run and look at the per-job conclusions. `publish` green + `deploy` green = `np-01` is live on the new image, whatever `deploy-hetzner` says.
+1. Open the run and look at the per-job conclusions. `publish` green + `deploy` green = `np-01` is live on the new image.
 2. Confirm on the instance: `curl -s https://doktrace.com/api/v1/system/info` — `version` must equal `main-<sha12>` of the merge commit.
 3. If `deploy` itself is red: the "Verify rollout" step tells you whether the image never changed (pull/login problem) or the app never returned `ok` on `/healthz` (it crashed on start — read `docker compose logs northplane` on the VM). The rollback step has already restored `.env.previous`; production is on the previous tag.
 4. If CI was red, Deploy never started (`workflow_run` with a non-success conclusion skips `publish`); fix `main` or re-run the failed CI jobs (`gh run rerun --failed <id>`). Known flaky/non-blocking: the `postgres` job.
@@ -161,8 +164,8 @@ Created under **Settings → Secrets and variables → Actions** (values verifie
 | `NORTHPLANE_BASE_URL` | `https://doktrace.com` | `deploy` — `.env` |
 | `NORTHPLANE_DEMO` | `false` (set 2026-08-20) | `deploy` — the demo/real switch |
 | `NP_DEFAULT_ADMIN_EMAIL` | `admin@doktrace.com` | `deploy` — `.env` |
-| `HETZNER_HOST` | `91.98.92.10` | `deploy-hetzner` — **stale, host is gone** |
-| `HETZNER_KNOWN_HOSTS` | `91.98.92.10 ssh-ed25519 …` | `deploy-hetzner` — stale |
+| `HETZNER_HOST` | `91.98.92.10` | unused since the `deploy-hetzner` job was removed — stale, host is gone |
+| `HETZNER_KNOWN_HOSTS` | `91.98.92.10 ssh-ed25519 …` | unused — stale |
 
 ### Repository secrets (names only)
 

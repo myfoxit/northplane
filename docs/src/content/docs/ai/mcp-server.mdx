@@ -55,7 +55,7 @@ The stdio process wires no scheduler, escalation engine, bundle planner, report 
 
 ## Tokens and RBAC
 
-The MCP session is the token. Each tool call is checked against the token's permissions with the same permission the equivalent REST route uses; a denial comes back as an MCP tool error `error: permission denied: <perm> required` and is audited as `ai.denied.<tool>`. Tool execution then follows the shared gate: tenant policy → RBAC → proposal for mutating tools (unless the policy auto-approves them) → execute → audit (`ai.read.<tool>`, `ai.execute.<tool>`, `ai.propose.<tool>`). Proposals land in **Admin → AI approvals**, where a human with `config:write` approves or denies them — see [Approvals](/docs/ai/agent-chat/#approvals), including the caveat that approval executes only when the server-level `ai.provider` is configured.
+The MCP session is the token. Each tool call is checked against the token's permissions with the same permission the equivalent REST route uses; a denial comes back as an MCP tool error `error: permission denied: <perm> required` and is audited as `ai.denied.<tool>`. Tool execution then follows the shared gate: tenant policy → RBAC → proposal for mutating tools (unless the policy auto-approves them) → execute → audit (`ai.read.<tool>`, `ai.execute.<tool>`, `ai.propose.<tool>`). Proposals land in **Admin → AI approvals**, where a human with `config:write` approves or denies them — see [Approvals](/docs/ai/agent-chat/#approvals); approval executes the tool directly (no server-level `ai.provider` needed).
 
 Recommended token shape: minted with `aiAgent: true` (audits as actor type `ai_agent`), scoped to exactly what the agent should do, with an expiry — see [API tokens](/docs/administration/api-tokens/). The built-in role `ai-agent` is a reasonable starting point (`objects:read, alerts:read, alerts:ack, incidents:read, incidents:write, events:read, metrics:read, oncall:read, checks:run, downtimes:write, silences:write, config:propose, reports:render`); note that its `config:propose` is consumed by no tool — the config tools need `config:write`.
 
@@ -110,12 +110,10 @@ Each prompt returns one `user` message with the fixed text; no arguments.
 | Preset | Label (EN / DE) | Scopes |
 |---|---|---|
 | `read` | Read only / Nur lesen | `objects:read,alerts:read,incidents:read,events:read,oncall:read,metrics:read,reports:render` |
-| `operate` | Read + operate / Lesen + Bedienen | read set + `alerts:ack,objects:write,maintenance:write` |
+| `operate` | Read + operate / Lesen + Bedienen | read set + `alerts:ack,checks:run,downtimes:write,silences:write` |
 | `configure` | Read + configure / Lesen + Konfigurieren | read set + `config:write,oncall:write` |
 
-:::caution[The "operate" preset does not cover downtimes, silences or rechecks]
-`maintenance:write` is not a permission any tool or REST route checks; downtimes need `downtimes:write`, silences `silences:write` and `run_check_now` needs `checks:run`. With the `operate` preset the only permitted mutating tool is `acknowledge_alert`. Add `downtimes:write`, `silences:write` and `checks:run` explicitly (or mint the token with the `ai-agent` role) when the agent should schedule downtimes, silence alerts or trigger rechecks. `objects:write` in the preset is not used by any tool either.
-:::
+The `operate` scopes match what the operate tools actually check: `acknowledge_alert` (`alerts:ack`), `run_check_now` (`checks:run`), `create_downtime` (`downtimes:write`) and `create_silence` (`silences:write`).
 
 The tab's footnote reminds you of the local alternative: "Locally on the same host, stdio works too: `northplaned mcp` with `NORTHPLANE_TOKEN` in the environment."
 

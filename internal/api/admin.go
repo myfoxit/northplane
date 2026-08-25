@@ -191,7 +191,7 @@ func (a *API) registerAdmin() {
 			}
 			a.audit(r, p, "secret.put", param(r, "name"), nil, nil) // value never logged
 			w.WriteHeader(http.StatusNoContent)
-		})
+		}).Status(http.StatusNoContent)
 	a.handle("GET /api/v1/secrets", "List secret names (values never returned)",
 		"admin:secrets", nil, []string{},
 		func(w http.ResponseWriter, r *http.Request, p *auth.Principal) {
@@ -427,7 +427,21 @@ func (a *API) registerUsers() {
 				a.fail(w, r, err)
 				return
 			}
-			a.writeList(w, users, "")
+			// Home-tenant filter: a tenant admin with admin:users must not
+			// see the whole installation's directory. Cross-tenant admins
+			// select the tenant via X-Northplane-Tenant as everywhere else.
+			tenant := a.tenantOf(r, p)
+			scoped := make([]*model.User, 0, len(users))
+			for _, u := range users {
+				home := u.TenantID
+				if home == "" {
+					home = model.DefaultTenant
+				}
+				if home == tenant {
+					scoped = append(scoped, u)
+				}
+			}
+			a.writeList(w, scoped, "")
 		})
 
 	a.handle("GET /api/v1/users/{id}", "Get a user", "admin:users", nil, model.User{},

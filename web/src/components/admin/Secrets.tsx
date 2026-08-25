@@ -23,7 +23,7 @@ export function SecretsTab() {
   const [creating, setCreating] = useState(false)
   return (
     <div className="space-y-4">
-      <TableActions onCreate={() => setCreating(true)} label={t('create')} />
+      <TableActions onCreate={() => setCreating(true)} label={t('create')} writePerm="admin:secrets" />
       <p className="text-xs text-muted-foreground">
         {t('secretsIntro')} <code className="text-muted-foreground">$SECRET:name$</code>
       </p>

@@ -183,7 +183,18 @@ func (a *API) registerAIChat() {
 			if !a.decode(w, r, &pol) {
 				return
 			}
-			if err := a.aiService().SavePolicy(r.Context(), a.principalFor(r, p), &pol); err != nil {
+			pr := a.principalFor(r, p)
+			// Optimistic concurrency when the client sends If-Match (the SPA
+			// does); without the header the write stays unconditional.
+			if v := ifMatchVersion(r); v > 0 {
+				if cur, err := a.aiService().Policy(r.Context(), pr.TenantID); err == nil && cur.Version != v {
+					a.problem(w, r, http.StatusConflict, "np:conflict/version",
+						"policy changed concurrently",
+						fmt.Sprintf("have %d, expected %d", cur.Version, v))
+					return
+				}
+			}
+			if err := a.aiService().SavePolicy(r.Context(), pr, &pol); err != nil {
 				a.aiChatError(w, r, err)
 				return
 			}
@@ -249,6 +260,14 @@ func (a *API) registerAIChat() {
 			chat, err := a.Store.GetAIChat(r.Context(), tenant, p.ActorID, param(r, "id"))
 			if err != nil {
 				a.aiChatError(w, r, err)
+				return
+			}
+			// Optimistic concurrency when the client sends If-Match (the SPA
+			// does); without the header the write stays unconditional.
+			if v := ifMatchVersion(r); v > 0 && chat.Version != v {
+				a.problem(w, r, http.StatusConflict, "np:conflict/version",
+					"chat changed concurrently",
+					fmt.Sprintf("have %d, expected %d", chat.Version, v))
 				return
 			}
 			var in chatInput
@@ -323,7 +342,7 @@ func (a *API) registerAIChat() {
 				return
 			}
 			a.streamChatTurn(w, r, p, in.ChatID, in.Message, in.Trigger, in.MessageID)
-		})
+		}).Status(http.StatusOK) // SSE stream, not a resource creation
 }
 
 // principalFor scopes the principal to the effective tenant of the

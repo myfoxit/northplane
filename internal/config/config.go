@@ -72,6 +72,12 @@ type Config struct {
 	// the viewer role only — an admin promotes them afterwards. Off by
 	// default: most installs are invite-only (SPEC §13.2 stays intact).
 	AllowSignup bool `yaml:"allowSignup"`
+
+	// DisableAssistant (env NORTHPLANE_DISABLE_ASSISTANT=true /
+	// `disableAssistant: true`) switches the embedded Stept assistant
+	// (chat widget + product tours) off at runtime: server-rendered pages
+	// omit the snippet and the SPA skips injecting the loader. Default on.
+	DisableAssistant bool `yaml:"disableAssistant"`
 }
 
 // TTSConfig holds server-wide text-to-speech settings; the per-tenant
@@ -450,6 +456,9 @@ func applyEnv(c *Config) {
 	}
 	if v, ok := os.LookupEnv("NORTHPLANE_ALLOW_SIGNUP"); ok {
 		c.AllowSignup, _ = strconv.ParseBool(v)
+	}
+	if v, ok := os.LookupEnv("NORTHPLANE_DISABLE_ASSISTANT"); ok {
+		c.DisableAssistant, _ = strconv.ParseBool(v)
 	}
 	str("NORTHPLANE_OIDC_ISSUER", &c.OIDC.Issuer)
 	str("NORTHPLANE_OIDC_CLIENT_ID", &c.OIDC.ClientID)

@@ -80,6 +80,15 @@ export function ReportsPage() {
       onDone: () => { setToast(t('saved')); setTimeout(() => setToast(null), 2500) },
     },
   )
+  // Starter content instead of a bare "No entries." (DASH-1): a 30-day
+  // availability report over all objects, refined afterwards in the dialog.
+  const createStarter = useSave<void>(
+    () => reportApi.create({
+      name: 'availability-30d', type: 'availability',
+      params: { windowDays: 30, target: 99.9 },
+    } as unknown as Report),
+    { invalidate: [reportApi.queryKey as unknown as string[]] },
+  )
 
   const rows = data ?? []
   if (isError && !data) {
@@ -98,7 +107,16 @@ export function ReportsPage() {
       )}
 
       {isLoading && <Spinner />}
-      {!isLoading && rows.length === 0 && <Empty text={t('empty')} />}
+      {!isLoading && rows.length === 0 && (
+        <div className="space-y-3">
+          <Empty text={t('reportsEmptyHint')} />
+          <div className="flex justify-center">
+            <Button variant="outline" disabled={createStarter.isPending} onClick={() => createStarter.mutate()}>
+              {t('createStarterReport')}
+            </Button>
+          </div>
+        </div>
+      )}
       {rows.length > 0 && (
         <Card>
           <CardContent>

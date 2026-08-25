@@ -70,6 +70,14 @@ func Backup(ctx context.Context, cfg config.Config, store *storage.Store, versio
 		}
 	}
 
+	// E2E check artifacts (screenshots/traces, SPEC §8.6).
+	artifactsSrc := cfg.ArtifactsDir()
+	if _, err := os.Stat(artifactsSrc); err == nil {
+		if err := copyTree(artifactsSrc, filepath.Join(target, "artifacts")); err != nil {
+			return "", fmt.Errorf("artifacts: %w", err)
+		}
+	}
+
 	raw, _ := json.MarshalIndent(manifest, "", "  ")
 	manifestPath := filepath.Join(target, "manifest.json")
 	if err := os.WriteFile(manifestPath, raw, 0o640); err != nil {

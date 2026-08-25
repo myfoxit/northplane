@@ -45,7 +45,7 @@ export function SourcesTab() {
   const [copying, setCopying] = useState<EventSourceDef | null>(null)
   return (
     <div className="space-y-4">
-      <TableActions onCreate={() => setEditing('new')} label={t('create')} />
+      <TableActions onCreate={() => setEditing('new')} label={t('create')} writePerm="config:write" />
       <Table>
         <TableHeader>
           <TableRow>

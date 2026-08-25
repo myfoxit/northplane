@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/northplane/northplane/internal/auth"
@@ -48,6 +49,7 @@ func (a *API) registerReportsDashboards() {
 				a.fail(w, r, err)
 				return
 			}
+			data.Lang = reportLang(r)
 			a.audit(r, p, "report.render", rep.Name, nil, map[string]string{"format": format})
 			switch format {
 			case "json":
@@ -153,6 +155,47 @@ type ReportData struct {
 	WindowDays  int               `json:"windowDays"`
 	Rows        []ReportRow       `json:"rows"`
 	Totals      map[string]string `json:"totals,omitempty"`
+	Lang        string            `json:"-"` // template language, "" = de
+}
+
+// reportLabels localises the print template's chrome (I18N-2: English
+// UIs used to get German report headers). German stays the default —
+// the domain reference language (§12.4).
+var reportLabels = map[string]map[string]string{
+	"de": {"type": "Typ", "window": "Zeitraum", "days": "Tage",
+		"generated": "Erstellt", "empty": "Keine Daten im Zeitraum."},
+	"en": {"type": "Type", "window": "Window", "days": "days",
+		"generated": "Generated", "empty": "No data in the window."},
+}
+
+// L resolves one localised template label.
+func (d *ReportData) L(key string) string {
+	m, ok := reportLabels[d.Lang]
+	if !ok {
+		m = reportLabels["de"]
+	}
+	return m[key]
+}
+
+// LangAttr is the <html lang> value.
+func (d *ReportData) LangAttr() string {
+	if d.Lang == "en" {
+		return "en"
+	}
+	return "de"
+}
+
+// reportLang picks the render language: explicit ?lang= wins, else the
+// Accept-Language header (the SPA's browser sends it), else German.
+func reportLang(r *http.Request) string {
+	l := strings.ToLower(r.URL.Query().Get("lang"))
+	if l == "" {
+		l = strings.ToLower(r.Header.Get("Accept-Language"))
+	}
+	if strings.HasPrefix(l, "en") {
+		return "en"
+	}
+	return "de"
 }
 
 // ReportRow is one line.
@@ -220,9 +263,15 @@ func (a *API) buildReportData(ctx context.Context, tenantID string, rep *model.R
 		if len(entries) > 500 {
 			entries = entries[:500]
 		}
+		// Default: scheduled downtimes do not count against availability;
+		// includeDowntimes: true keeps them in as real down time.
+		var sub downtimeSubtractor
+		if !params.IncludeDowntimes {
+			sub = a.newDowntimeSubtractor(ctx, tenantID)
+		}
 		var sumAvail float64
 		for _, e := range entries {
-			down, err := ObjectDowntime(ctx, a.Store, tenantID, e.Object.ID, from, to)
+			down, err := ObjectDowntime(ctx, a.Store, tenantID, e.Object.ID, from, to, sub.forObject(e.Object.ID))
 			if err != nil {
 				return nil, err
 			}
@@ -386,7 +435,7 @@ func writeReportCSV(w io.Writer, data *ReportData) {
 
 // reportHTML is the print-optimised template (SPEC §9.8 HTML-first).
 var reportHTML = template.Must(template.New("report").Parse(`<!doctype html>
-<html lang="de"><head><meta charset="utf-8">
+<html lang="{{.LangAttr}}"><head><meta charset="utf-8">
 <title>{{.Title}} — Northplane Report</title>
 <style>
 body{font-family:system-ui,-apple-system,sans-serif;margin:2rem auto;max-width:60rem;color:#111}
@@ -401,11 +450,11 @@ tr.warn td{background:#fef3c7}
 @media print{body{margin:0}}
 </style></head><body>
 <h1>{{.Title}}</h1>
-<p class="meta">Typ: {{.Type}} · Zeitraum: {{.WindowDays}} Tage · Erstellt: {{.GeneratedAt.Format "2006-01-02 15:04 MST"}} · Northplane</p>
+<p class="meta">{{.L "type"}}: {{.Type}} · {{.L "window"}}: {{.WindowDays}} {{.L "days"}} · {{.L "generated"}}: {{.GeneratedAt.Format "2006-01-02 15:04 MST"}} · Northplane</p>
 {{if .Rows}}<table><thead><tr><th>Name</th>
 {{$first := index .Rows 0}}{{range $k, $v := $first.Values}}<th>{{$k}}</th>{{end}}
 </tr></thead><tbody>
 {{range .Rows}}<tr class="{{.Class}}"><td>{{.Name}}</td>{{range $k, $v := .Values}}<td>{{$v}}</td>{{end}}</tr>
-{{end}}</tbody></table>{{else}}<p>Keine Daten im Zeitraum.</p>{{end}}
+{{end}}</tbody></table>{{else}}<p>{{.L "empty"}}</p>{{end}}
 {{if .Totals}}<div class="totals">{{range $k, $v := .Totals}}<strong>{{$k}}</strong>: {{$v}} &nbsp; {{end}}</div>{{end}}
 </body></html>`))

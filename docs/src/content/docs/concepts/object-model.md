@@ -90,7 +90,7 @@ The [Templates](/docs/monitoring/templates/) page shows how to build a template 
 A `CheckCommand` resource (`/api/v1/check-commands`, bundle kind `CheckCommand`) has `name`, `type` (`exec` \| `builtin` \| `agent` \| `passive`), `line` (argv; for `builtin` the first element is the check name, the rest are flags), `env` (export `NAGIOS_*`/`NORTHPLANE_*` environment macros to exec plugins) and `timeout`. For named `exec`/`agent` commands the object's `args` are **not** appended to `line`; they are only available as `$ARG1$…$ARG32$` inside it. Environment macro export happens only for named commands with `env: true`, never for inline `builtin:`/`exec:` references.
 
 :::caution
-`CheckCommand.timeout` is stored but the executor uses only the object's effective `spec.timeout`. `checkPeriod` and `zone` are resolved into the catalog but no scheduler or executor code consults them — checks run around the clock regardless of `checkPeriod`.
+`CheckCommand.timeout` is stored but the executor uses only the object's effective `spec.timeout`. `checkPeriod` is enforced: scheduled runs and freshness probes outside the period are skipped (manual check-now always runs). `zone` is resolved into the catalog but not consulted.
 :::
 
 ### Macros

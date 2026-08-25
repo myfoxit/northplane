@@ -24,13 +24,50 @@ import { TypeBadge, StatusBadge, TableActions, RowActions } from './common'
 
 const channelsApi = resourceApi<Channel>('channels')
 
+// Radix SelectItem cannot carry an empty value — this sentinel stands in
+// for "" (the backend default) in select-typed config fields.
+const SELECT_DEFAULT = '__default__'
+
+// SecretInput masks credential values on screen (SEC-1) with a reveal
+// toggle; autoComplete off so browsers don't offer to save channel creds.
+function SecretInput({ value, onChange, label }: { value: string; onChange: (v: string) => void; label: string }) {
+  const [show, setShow] = useState(false)
+  return (
+    <div className="relative">
+      <Input
+        type={show ? 'text' : 'password'}
+        autoComplete="new-password"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="pr-16"
+      />
+      <button
+        type="button"
+        tabIndex={-1}
+        className="absolute inset-y-0 right-2 my-auto h-6 rounded px-1.5 text-xs text-muted-foreground hover:text-foreground"
+        aria-label={`${label}: ${show ? t('hideValue') : t('showValue')}`}
+        onClick={() => setShow((s) => !s)}>
+        {show ? t('hideValue') : t('showValue')}
+      </button>
+    </div>
+  )
+}
+
 const CHANNEL_TYPES: ChannelType[] = [
   'email', 'webhook', 'slack', 'teams', 'ntfy', 'sms', 'push', 'voice',
   'mqtt', 'servicenow', 'zendesk', 'jira', 'ticket',
 ]
 
-// Field spec per config key. secret → render the $SECRET hint.
-type FieldSpec = { key: string; label: string; secret?: boolean; hint?: string; type?: 'number' }
+// Field spec per config key. secret → masked input + $SECRET hint.
+// boolean → Switch writing trueValue (default "true") / "". select →
+// options ('' = backend default, rendered via a sentinel because Radix
+// items cannot carry an empty value).
+type FieldSpec = {
+  key: string; label: string; secret?: boolean; hint?: string
+  type?: 'number' | 'boolean' | 'select'
+  options?: { value: string; label: string }[]
+  trueValue?: string
+}
 // Per-channel-type key sets (SPEC §12.3). Web push needs no config (VAPID is
 // server-side); the push keys below only feed the mobile app (FCM/APNs).
 const CONFIG_FIELDS: Record<string, FieldSpec[]> = {
@@ -40,7 +77,10 @@ const CONFIG_FIELDS: Record<string, FieldSpec[]> = {
   webhook: [
     { key: 'url', label: 'URL' },
     { key: 'secret', label: 'HMAC-Secret', secret: true },
-    { key: 'method', label: t('httpMethod'), hint: t('postDefault') },
+    { key: 'method', label: t('httpMethod'), type: 'select', options: [
+      { value: '', label: 'POST' }, { value: 'PUT', label: 'PUT' },
+      { value: 'PATCH', label: 'PATCH' }, { value: 'GET', label: 'GET' },
+    ] },
   ],
   slack: [{ key: 'url', label: t('webhookUrl'), secret: true }],
   teams: [{ key: 'url', label: t('webhookUrl'), secret: true }],
@@ -67,7 +107,7 @@ const CONFIG_FIELDS: Record<string, FieldSpec[]> = {
     { key: 'apnsKeyId', label: 'APNs-Key-ID' },
     { key: 'apnsTeamId', label: 'APNs-Team-ID' },
     { key: 'apnsTopic', label: 'APNs-Topic', hint: t('apnsTopicHint') },
-    { key: 'apnsSandbox', label: 'APNs-Sandbox (true/false)' },
+    { key: 'apnsSandbox', label: 'APNs-Sandbox', type: 'boolean' },
   ],
   // voice is provider-driven (asterisk | twilio | generic-http) — the
   // concrete keys come from voiceFields() based on config.provider. Speech
@@ -81,9 +121,9 @@ const CONFIG_FIELDS: Record<string, FieldSpec[]> = {
     { key: 'username', label: t('username') },
     { key: 'password', label: t('password'), secret: true },
     { key: 'qos', label: 'QoS', hint: '0 | 1 | 2' },
-    { key: 'retain', label: 'Retain (true/false)' },
+    { key: 'retain', label: 'Retain', type: 'boolean' },
     { key: 'clientId', label: 'Client-ID' },
-    { key: 'tlsInsecure', label: t('tlsInsecure') },
+    { key: 'tlsInsecure', label: t('tlsInsecure'), type: 'boolean' },
   ],
   // Ticket-Systeme (F-04.05): Ticket bei Eskalation, Auto-Close bei Resolve.
   servicenow: [
@@ -92,14 +132,14 @@ const CONFIG_FIELDS: Record<string, FieldSpec[]> = {
     { key: 'password', label: t('password'), secret: true },
     { key: 'table', label: t('table'), hint: t('incidentDefault') },
     { key: 'closeState', label: 'Close-State', hint: t('closeStateHint') },
-    { key: 'autoClose', label: 'Auto-Close (true/false)' },
+    { key: 'autoClose', label: 'Auto-Close', type: 'boolean' },
   ],
   zendesk: [
     { key: 'url', label: 'Subdomain-URL', hint: 'https://<subdomain>.zendesk.com' },
     { key: 'email', label: t('agentEmail') },
     { key: 'apiToken', label: t('apiToken'), secret: true },
     { key: 'closeStatus', label: 'Close-Status', hint: t('solvedDefault') },
-    { key: 'autoClose', label: 'Auto-Close (true/false)' },
+    { key: 'autoClose', label: 'Auto-Close', type: 'boolean' },
   ],
   jira: [
     { key: 'url', label: 'Jira-URL', hint: 'https://<org>.atlassian.net' },
@@ -108,7 +148,7 @@ const CONFIG_FIELDS: Record<string, FieldSpec[]> = {
     { key: 'username', label: t('userEmail') },
     { key: 'password', label: t('apiToken'), secret: true },
     { key: 'closeTransitionId', label: 'Close-Transition-ID', hint: t('closeTransitionHint') },
-    { key: 'autoClose', label: 'Auto-Close (true/false)' },
+    { key: 'autoClose', label: 'Auto-Close', type: 'boolean' },
   ],
   ticket: [
     { key: 'url', label: 'Create-URL (POST, JSON)' },
@@ -118,7 +158,7 @@ const CONFIG_FIELDS: Record<string, FieldSpec[]> = {
     { key: 'refField', label: t('ticketIdField'), hint: t('ticketIdFieldHint') },
     { key: 'ticketUrlTemplate', label: t('ticketUrlTemplate'), hint: 'https://…/{ref}' },
     { key: 'closeUrl', label: 'Close-URL', hint: t('refPlaceholderHint') },
-    { key: 'autoClose', label: 'Auto-Close (true/false)' },
+    { key: 'autoClose', label: 'Auto-Close', type: 'boolean' },
   ],
 }
 
@@ -144,7 +184,7 @@ function voiceFields(provider: string): FieldSpec[] {
         { key: 'exten', label: 'Exten', hint: 's' },
         { key: 'callerId', label: 'Caller-ID', hint: 'Northplane <8000>' },
         { key: 'timeoutMs', label: 'Timeout (ms)', hint: '30000' },
-        { key: 'tls', label: 'TLS (on/off)' },
+        { key: 'tls', label: 'TLS', type: 'boolean', trueValue: 'on' },
         ...tts,
         { key: 'ttsDir', label: t('ttsDirField'), hint: t('ttsDirHint') },
         { key: 'ttsDirPBX', label: t('ttsDirPBXField') },
@@ -202,8 +242,10 @@ function emailFields(provider: string): FieldSpec[] {
         { key: 'port', label: 'Port', type: 'number', hint: t('smtpPortHint') },
         { key: 'username', label: t('username') },
         { key: 'password', label: t('password'), secret: true },
-        { key: 'tls', label: t('tlsMode'), hint: t('tlsModeHint') },
-        { key: 'allowPlaintext', label: t('allowPlaintext'), hint: t('allowPlaintextHint') },
+        { key: 'tls', label: t('tlsMode'), type: 'select', options: [
+          { value: '', label: 'STARTTLS' }, { value: 'implicit', label: 'implicit (Port 465)' },
+        ], hint: t('tlsModeHint') },
+        { key: 'allowPlaintext', label: t('allowPlaintext'), type: 'boolean', hint: t('allowPlaintextHint') },
       ]
   }
 }
@@ -229,7 +271,7 @@ export function ChannelsTab() {
   const [copying, setCopying] = useState<Channel | null>(null)
   return (
     <div className="space-y-4">
-      <TableActions onCreate={() => setEditing('new')} label={t('create')} />
+      <TableActions onCreate={() => setEditing('new')} label={t('create')} writePerm="config:write" />
       <Table>
         <TableHeader>
           <TableRow>
@@ -402,9 +444,32 @@ function ChannelForm({ doc, etag, isNew, copyOf, onClose }: {
                         {VOICE_PROVIDERS.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
                       </SelectContent>
                     </Select>
+                  ) : f.type === 'boolean' ? (
+                    <div className="flex h-9 items-center">
+                      <Switch
+                        checked={config[f.key] === (f.trueValue ?? 'true')}
+                        onCheckedChange={(v) => setField(f.key, v ? (f.trueValue ?? 'true') : '')}
+                        aria-label={f.label}
+                      />
+                    </div>
+                  ) : f.type === 'select' && f.options ? (
+                    <Select
+                      value={config[f.key] || SELECT_DEFAULT}
+                      onValueChange={(v) => setField(f.key, v === SELECT_DEFAULT ? '' : v)}>
+                      <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {f.options.map((o) => (
+                          <SelectItem key={o.value || SELECT_DEFAULT} value={o.value || SELECT_DEFAULT}>
+                            {o.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : f.secret ? (
+                    <SecretInput value={config[f.key] ?? ''} onChange={(v) => setField(f.key, v)} label={f.label} />
                   ) : (
                     <Input
-                      type={f.type === 'number' ? 'number' : (f.secret ? 'text' : 'text')}
+                      type={f.type === 'number' ? 'number' : 'text'}
                       value={config[f.key] ?? ''}
                       onChange={(e) => setField(f.key, e.target.value)}
                     />

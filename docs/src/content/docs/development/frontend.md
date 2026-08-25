@@ -29,7 +29,7 @@ Declared but unused in `src`: `next-themes` and the `sonner` toaster wrapper (th
 
 ```text
 web/
-├── index.html                 entry; lang="de"; Stept bootstrap snippet
+├── index.html                 entry; lang="de" (Stept loads at runtime via main.tsx)
 ├── public/                    favicon.svg, sw.js (service-worker kill switch)
 ├── e2e/                       Playwright specs, global-setup/teardown, lib/roles.ts
 ├── src/
@@ -151,7 +151,7 @@ On the Go side `internal/web/web.go` embeds `dist/` with `//go:embed all:dist` a
 
 ## The Stept widget and the CSP hash
 
-The SPA and the server-rendered login and register pages embed the Stept assistant (chat widget + product tours): an inline bootstrap script sets `window.SteptSettings = { workspaceKey: "wk_…" }` and an async `<script>` loads `https://app.stepped.ai/widget-assets/loader.js`. The snippet exists twice with the same hard-coded key — in `web/index.html` and as `steptSnippet` in `internal/web/web.go` — and there is no configuration switch.
+The SPA and the server-rendered login and register pages embed the Stept assistant (chat widget + product tours). The SPA injects it at runtime: `main.tsx` asks the anonymous `/api/v1/system/info` whether the assistant is enabled, then sets `window.SteptSettings = { workspaceKey: "wk_…" }` from bundled JS and appends the async loader `<script>` for `https://app.stepped.ai/widget-assets/loader.js`. The server-rendered pages keep an inline bootstrap snippet (`steptSnippet` in `internal/web/web.go`). **Runtime switch:** `NORTHPLANE_DISABLE_ASSISTANT=true` (config `disableAssistant: true`) turns the widget off everywhere without a rebuild.
 
 The server's Content-Security-Policy for non-`/api/` paths allows exactly that: `app.stepped.ai` in `img-src`, `script-src`, `connect-src` (https + wss) and `frame-src`, plus the inline bootstrap script by SHA-256 hash, which keeps `script-src` free of `'unsafe-inline'`:
 
@@ -165,4 +165,4 @@ If you change a single byte of the inline script (for example a new workspace ke
 printf '%s' '<script-body>' | openssl dgst -sha256 -binary | openssl base64
 ```
 
-Removing the widget means deleting the two `<script>` lines in `web/index.html`, the `steptSnippet` constant and its uses in `web.go`, and the Stept origins + hash from the CSP, then `make web`. The documentation at `/docs/` uses its own CSP without Stept (see [Documentation](/docs/development/documentation/)); the full header set is in [TLS and proxying](/docs/administration/tls-and-proxy/).
+Disabling the widget is a config switch (see above). Removing it entirely means deleting the injection block in `web/src/main.tsx`, the `steptSnippet` constant and its uses in `web.go`, and the Stept origins + hash from the CSP, then `make web`. The documentation at `/docs/` uses its own CSP without Stept (see [Documentation](/docs/development/documentation/)); the full header set is in [TLS and proxying](/docs/administration/tls-and-proxy/).

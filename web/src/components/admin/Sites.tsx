@@ -52,7 +52,7 @@ export function SitesTab() {
   })
   return (
     <div className="space-y-4">
-      <TableActions onCreate={() => setCreating(true)} label={t('create')} />
+      <TableActions onCreate={() => setCreating(true)} label={t('create')} writePerm="config:write" />
       <Table>
         <TableHeader>
           <TableRow>

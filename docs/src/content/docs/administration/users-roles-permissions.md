@@ -35,7 +35,7 @@ All routes need `admin:users` unless stated otherwise. New users are created in 
 
 | Endpoint | Behaviour |
 |---|---|
-| [`GET /api/v1/users`](/docs/reference/api/operations/get_users/) | Lists **all users of the instance** (not filtered by tenant), ordered by name |
+| [`GET /api/v1/users`](/docs/reference/api/operations/get_users/) | Lists the users of the **effective tenant** (home tenant; cross-tenant admins select one via `X-Northplane-Tenant`), ordered by name |
 | [`GET /api/v1/users/{id}`](/docs/reference/api/operations/get_users_id/) | One user |
 | [`POST /api/v1/users`](/docs/reference/api/operations/post_users/) | `{name, email, password?, roles?, disabled?}` → `201 User`. `password` is optional (≥ 12 characters when given); without it the account can only log in via OIDC until an admin sets one. Duplicate e-mail → `409 np:users/email-in-use`. Audit `user.create`. |
 | [`PUT /api/v1/users/{id}`](/docs/reference/api/operations/put_users_id/) | Partial update `{name?, email?, roles?, disabled?}` — absent fields stay unchanged. Audit `user.update` with before/after. |
@@ -109,10 +109,11 @@ Endpoints: `GET /api/v1/roles` (`?q=&cursor=&limit=`, default 500) and `GET /api
 
 **Admin → Roles (Rollen)** shows Name (with a "System" badge), Berechtigungen, Erbt von (includes) and IdP-Gruppen; the dialog edits Name, the permission list, Inherits, IdP groups and the scope fields.
 
-:::caution[Two gaps in this version]
+:::caution[One gap in this version]
 - **Folder and selector scope are not implemented.** `scope.folder`, `scope.selector` and `scope.tenantId` are persisted, but the authenticator never populates a folder scope on the principal, so the check on host/service create/update always passes and the selector is never evaluated. Tenant isolation comes from the principal's tenant, not from `scope.tenantId`. Treat a role as tenant-wide.
-- **System roles are editable through the API.** The UI hides the controls, but `PUT`/`DELETE /api/v1/roles/{name}` with `admin:write` will change or delete `admin`, `operator`, `viewer` or `ai-agent` in the caller's tenant.
 :::
+
+System roles are immutable through the API: `PUT`/`DELETE /api/v1/roles/{name}` on a `system: true` role returns `403 np:rbac/system-role` (the seed/reconcile paths write through the store directly). To vary a built-in, create a custom role — optionally with `includes` — instead.
 
 ## Permission model
 

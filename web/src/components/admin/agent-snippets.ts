@@ -1,21 +1,24 @@
 // Agent enrollment snippets (pure data/functions, separated from the
 // Agents tab component for react-refresh and unit tests).
+import { t } from '../../i18n'
 
 export const TOKEN_PLACEHOLDER = 'np_<TOKEN>'
 export const INSTALL_CMD = 'curl -fsSL https://raw.githubusercontent.com/myfoxit/northplane/main/install.sh | sh'
 
+// Comments follow the UI language (I18N-3) — the keys themselves are the
+// agent's real config vocabulary and stay as-is.
 export function agentYaml(server: string, token: string, hostname: string): string {
   return [
     `server: ${server}`,
     `token: ${token}`,
-    hostname ? `hostname: ${hostname}` : '# hostname: web-01   # Standard: OS-Hostname',
+    hostname ? `hostname: ${hostname}` : `# hostname: web-01   # ${t('agentYamlHostnameDefault')}`,
     'interval: 60s',
     'disk: ["/"]',
-    '# net: ["eth0"]   # optional: Interfaces filtern (Standard: alle)',
-    '# Aktiver Modus (Server fragt den Agent ab, NCPA-Stil) — optional:',
+    `# net: ["eth0"]   # ${t('agentYamlNetHint')}`,
+    `# ${t('agentYamlActiveMode')}`,
     '# listen: ":5693"',
-    '# listenToken: <eigenes-langes-secret>',
-    '# Eigene Nagios-Plugin-Checks — optional:',
+    `# listenToken: ${t('agentYamlListenToken')}`,
+    `# ${t('agentYamlCustomChecks')}`,
     '# checks:',
     '#   - service: check_postgres',
     '#     command: check_postgres',

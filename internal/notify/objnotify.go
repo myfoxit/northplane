@@ -49,6 +49,7 @@ func (m *Manager) deliverObjectNotification(ctx context.Context, item *storage.O
 	if err != nil {
 		return "", err
 	}
+	item.ChannelID = channel.ID // surfaces the failing instance in DLQ rows
 
 	name := job.ObjectName
 	if job.HostName != "" {

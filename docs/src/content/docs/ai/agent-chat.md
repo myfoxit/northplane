@@ -24,7 +24,7 @@ Northplane ships an AI agent that can read and — with human approval — opera
 All three funnel tool execution through one gate: **tenant tool policy → RBAC of the calling principal → propose/approve for mutating tools → execute → audit**. The MCP surface is documented on [MCP server](/docs/ai/mcp-server/).
 
 :::caution[What still depends on the server-level provider]
-`Service.Enabled()` is true only when `ai.provider` in `config.yaml` is not `none`. It gates the legacy sidebar, `POST /incidents/{id}:summarize`, background incident summaries **and the execution step of approvals** (`:approve` only executes an approved action when a server-level provider is configured — see [Approvals](#approvals)). The agent chat and MCP themselves do not need it.
+`Service.Enabled()` is true only when `ai.provider` in `config.yaml` is not `none`. It gates the legacy sidebar, `POST /incidents/{id}:summarize` and background incident summaries. The agent chat, MCP and the execution of approved actions do not need it.
 :::
 
 ## Providers
@@ -111,7 +111,7 @@ The tenant-wide policy decides which tools exist, which mutating tools skip appr
 
 | Field | Semantics |
 |---|---|
-| `disabled[]` | tools neither advertised to the model (agent chat, MCP) nor executable — execution is refused with `tool "x" is disabled by policy` and audited as `ai.disabled.<tool>`. The legacy sidebar still *advertises* all tools but execution is blocked the same way. |
+| `disabled[]` | tools neither advertised to the model (agent chat, legacy sidebar, MCP) nor executable — execution is refused with `tool "x" is disabled by policy` and audited as `ai.disabled.<tool>`. |
 | `autoApprove[]` | mutating tools that skip the approval queue (still RBAC-checked and audited). Only valid for mutating tools: `tool "x" is read-only — autoApprove applies to mutating tools`. |
 | `maxRounds` | agent-loop cap per user turn: `0` = default **10**, maximum **24** (`maxRounds must be between 0 (default) and 24`). Not applied to the legacy sidebar (fixed 8). |
 | `version` | incremented on every save |
@@ -191,7 +191,7 @@ Status lifecycle: `proposed` → `approved` → `executed` or `failed`; or `prop
 | Method + path | Permission | Behaviour |
 |---|---|---|
 | `GET /api/v1/ai/actions?status=` ([get_ai_actions](/docs/reference/api/operations/get_ai_actions/)) | `alerts:read` | newest first, max 100, optional status filter |
-| `POST /api/v1/ai/actions/{id}:approve` ([post_ai_actions_id_approve](/docs/reference/api/operations/post_ai_actions_id_approve/)) | **`config:write`** | marks `approved` (only from `proposed`, otherwise 404), audit `ai.action.approve`; **then, only if a server-level provider is configured**, executes the tool under the **approver's** permissions → `{"status":"executed","result":…}` or `502 np:ai/execute` (`approved but execution failed`, status `failed`). With `ai.provider: none` the answer is `{"status":"approved"}` and **nothing is executed**. |
+| `POST /api/v1/ai/actions/{id}:approve` ([post_ai_actions_id_approve](/docs/reference/api/operations/post_ai_actions_id_approve/)) | **`config:write`** | marks `approved` (only from `proposed`, otherwise 404), audit `ai.action.approve`; then executes the tool under the **approver's** permissions → `{"status":"executed","result":…}` or `502 np:ai/execute` (`approved but execution failed`, status `failed`). Execution needs no server-level `ai.provider` — approvals from the agent chat and MCP run too. |
 | `POST /api/v1/ai/actions/{id}:deny` ([post_ai_actions_id_deny](/docs/reference/api/operations/post_ai_actions_id_deny/)) | `alerts:ack` | status `denied`, audit `ai.action.deny` |
 
 Execution re-evaluates the tool's required permission (including the per-kind permission derived from the stored arguments) against the **approver**; if the approver lacks it the action fails with `approver lacks permission X required by tool` (audit `ai.execute.denied.<tool>`). The tool then runs as a synthetic `ai_agent` principal (`actorId: ai-approved`, name = the original proposer, permissions = the approver's) and the result is stored on the action.

@@ -20,8 +20,8 @@ All four filters live in the URL (`?selector=…&q=…&kind=…&state=…`), so 
 
 | Control | Placeholder / options | What it does |
 |---|---|---|
-| Tag-icon input | "Filter (e.g. env=prod)" (Filter (z.B. env=prod)); tooltip "Label selector (e.g. env=prod)" | A **label selector** — the same grammar as in bundles, silences and dashboards (`env=prod`, `env!=dev`, `team in (a,b)` … see [Object model](/docs/concepts/object-model/)). Sent as `selector=` to the API. |
-| Search-icon input | "Full text…" (Volltext…); tooltip "Full-text search (name / output)" | Free text matched against object name and check output. Sent as `q=`. |
+| **Label selector** input (tag icon, labelled) | "Filter (e.g. env=prod)" (Filter (z.B. env=prod)) | A **label selector** — the same grammar as in bundles, silences and dashboards (`env=prod`, `env!=dev`, `team in (a,b)` … see [Object model](/docs/concepts/object-model/)). Sent as `selector=` to the API. |
+| **Full text** input (search icon, labelled) | "Full text…" (Volltext…) | Free text matched against object name and check output. Sent as `q=`. |
 | Kind select | **Hosts + Services** / Hosts / Services | Client-side filter on the kind. |
 | State select | **All statuses** (Alle Status), **Problems** (Probleme), OK, Up, Warning, Critical, Unknown, Down, Unreachable, Pending | Client-side filter on the current hard state. **Problems** is everything that is not OK/Up/Pending. |
 | **Reset filter** (Filter zurücksetzen) | shown when kind or state is set | Clears kind and state (not the text inputs). |

@@ -49,6 +49,9 @@ func (a *API) UpsertResourceDoc(ctx context.Context, tenantID, kind, name string
 	if err := a.validateResourceDoc(kind, doc); err != nil {
 		return nil, err
 	}
+	if a.systemRoleImmutable(ctx, tenantID, kind, name) {
+		return nil, fmt.Errorf("system role %q is immutable", name)
+	}
 	env, err := a.Store.PutResource(ctx, tenantID, kind, name, doc, expectVersion)
 	if err != nil {
 		return nil, err
@@ -59,6 +62,9 @@ func (a *API) UpsertResourceDoc(ctx context.Context, tenantID, kind, name string
 
 // DeleteResourceDoc removes a document and signals the config change.
 func (a *API) DeleteResourceDoc(ctx context.Context, tenantID, kind, name string) error {
+	if a.systemRoleImmutable(ctx, tenantID, kind, name) {
+		return fmt.Errorf("system role %q is immutable", name)
+	}
 	if err := a.Store.DeleteResource(ctx, tenantID, kind, name); err != nil {
 		return err
 	}

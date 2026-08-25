@@ -52,7 +52,7 @@ Semantics to keep in mind:
 
 | | |
 |---|---|
-| List | `GET /api/v1/notifications/dead-letters?limit=100` — permission `alerts:read`, newest first, tenant-scoped; items carry `kind`, `attempts`, `lastError`, `payload` (the channel type and alert id are inside the payload; `channelId` is empty) |
+| List | `GET /api/v1/notifications/dead-letters?limit=100` — permission `alerts:read`, newest first, tenant-scoped; items carry `kind`, `attempts`, `lastError`, `payload` (the channel type and alert id are inside the payload; `channelId` names the channel instance the failed delivery resolved to) |
 | Replay | `POST /api/v1/notifications/dead-letters/{id}:replay` — permission `alerts:ack`; resets `attempts` to 0, clears the error, makes the item due now; `202 Accepted`; audit `dlq.replay` |
 | UI | **Admin → Dead letters (Dead-Letters)**: time, kind, attempts, last error, **Replay** |
 | Metrics | `np_notifications_total{result="sent"}` / `{result="failed"}` / `{result="dead"}`, `np_queue_notifications_depth`, `np_events_dropped_total{source="notify"}` on `/metrics`; `GET /api/v1/system/health` → `notify: {sent, failed, dead, dropped}` |

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -66,6 +67,9 @@ func main() {
 			}
 		case "--version":
 			fmt.Println("np", version)
+			return
+		case "--help", "-h":
+			usage()
 			return
 		default:
 			fmt.Fprintf(os.Stderr, "unknown flag %q\n\n", flag)
@@ -399,21 +403,49 @@ func truncate(s string, n int) string {
 
 func (c *cli) describe(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: np describe <object-id>")
+		return fmt.Errorf("usage: np describe <object-id|host-name>")
 	}
-	data, err := c.do(http.MethodGet, "/api/v1/objects/"+args[0], nil, "")
+	ref := args[0]
+	data, err := c.do(http.MethodGet, "/api/v1/objects/"+ref, nil, "")
 	if err != nil {
-		return err
+		// The route resolves ids only; keep the usage promise by falling
+		// back to an exact host-name match.
+		id, lookupErr := c.hostIDByName(ref)
+		if lookupErr != nil || id == "" {
+			return err
+		}
+		ref = id
+		if data, err = c.do(http.MethodGet, "/api/v1/objects/"+ref, nil, ""); err != nil {
+			return err
+		}
 	}
 	if err := writeStdout(pretty(data)); err != nil {
 		return err
 	}
-	eff, err := c.do(http.MethodGet, "/api/v1/objects/"+args[0]+"/effective-config", nil, "")
+	eff, err := c.do(http.MethodGet, "/api/v1/objects/"+ref+"/effective-config", nil, "")
 	if err == nil {
 		fmt.Println("--- effective config (templates resolved) ---")
 		return writeStdout(pretty(eff))
 	}
 	return nil
+}
+
+// hostIDByName resolves an exact host name to its id ("" if no match).
+func (c *cli) hostIDByName(name string) (string, error) {
+	data, err := c.do(http.MethodGet, "/api/v1/hosts?q="+url.QueryEscape(name), nil, "")
+	if err != nil {
+		return "", err
+	}
+	var resp struct{ Items []objView }
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return "", err
+	}
+	for _, it := range resp.Items {
+		if it.Name == name {
+			return it.ID, nil
+		}
+	}
+	return "", nil
 }
 
 func (c *cli) apply(args []string) error {
@@ -541,7 +573,9 @@ func (c *cli) downtime(args []string) error {
 	}
 	h := 2.0
 	if hours != "" {
-		fmt.Sscanf(hours, "%f", &h)
+		if n, err := fmt.Sscanf(hours, "%f", &h); err != nil || n != 1 || h <= 0 {
+			return fmt.Errorf("--hours: %q is not a positive number", hours)
+		}
 	}
 	start := time.Now().UTC()
 	payload, _ := json.Marshal(map[string]any{
@@ -569,7 +603,9 @@ func (c *cli) silence(args []string) error {
 	}
 	h := 2.0
 	if hours != "" {
-		fmt.Sscanf(hours, "%f", &h)
+		if n, err := fmt.Sscanf(hours, "%f", &h); err != nil || n != 1 || h <= 0 {
+			return fmt.Errorf("--hours: %q is not a positive number", hours)
+		}
 	}
 	payload, _ := json.Marshal(map[string]any{
 		"selector": sel, "comment": comment,

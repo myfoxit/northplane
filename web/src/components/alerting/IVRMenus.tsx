@@ -141,11 +141,15 @@ function MenuDialog({ state, policies, onClose }: {
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
-      <DialogContent className="max-w-2xl">
+      {/* Viewport-bounded with an internal scroll region: menus with many
+          options grew taller than the screen and pushed Save below the
+          fold — the action row now stays pinned (FORM-5). */}
+      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>{state.copyOf ? `${t('duplicate')}: ${state.copyOf}` : isNew ? t('create') : `${t('edit')}: ${state.menu.name}`}</DialogTitle>
         </DialogHeader>
-        <form onSubmit={onSubmit} className="space-y-3">
+        <form onSubmit={onSubmit} className="flex flex-col min-h-0 flex-1">
+          <div className="space-y-3 overflow-y-auto min-h-0 flex-1 pr-1">
           <div className="grid grid-cols-2 gap-3">
             <Field label={t('name')} required>
               <Input value={m.name} disabled={!isNew}
@@ -190,8 +194,9 @@ function MenuDialog({ state, policies, onClose }: {
           </div>
 
           <FormError error={save.error} />
+          </div>
 
-          <div className="flex items-center justify-between pt-2">
+          <div className="flex items-center justify-between pt-3 mt-3 border-t border-border shrink-0">
             {!isNew ? <DeleteButton onDelete={() => remove.mutate(state.menu.name)} /> : <span />}
             <SubmitRow onCancel={onClose} saving={save.isPending} disabled={!m.name} />
           </div>

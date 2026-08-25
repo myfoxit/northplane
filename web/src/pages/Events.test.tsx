@@ -70,7 +70,7 @@ describe('<EventsPage />', () => {
     renderWithProviders(<EventsPage />)
 
     await screen.findByText('state_change')
-    await user.type(screen.getByPlaceholderText('Object-ID…'), 'web')
+    await user.type(screen.getByPlaceholderText(/objekt|object/i), 'web')
     await waitFor(() => expect(seen).toContain('web'))
   })
 })

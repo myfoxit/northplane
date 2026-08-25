@@ -100,6 +100,12 @@ func (ex *Executor) Run(ctx context.Context, sched *scheduler.Scheduler) {
 		if entry == nil {
 			continue // deleted between scheduling and execution
 		}
+		// checkPeriod gates scheduled runs (and freshness probes): outside
+		// the period the object keeps its last state and the wheel re-arms
+		// on its own. A manual check-now always runs.
+		if !job.Priority && !entry.TimePeriod.Contains(time.Now()) {
+			continue
+		}
 		switch entry.Class {
 		case model.CommandBuiltin:
 			wg.Add(1)

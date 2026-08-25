@@ -29,9 +29,7 @@ Each row shows the severity badge, the title and a meta line `<status> by <acked
 
 After a manual alarm is raised a green "Alarm raised." (Alarm ausgelöst.) banner shows for 2.5 s. The empty state reads "No active alerts — you're all caught up." (Keine aktiven Alarme — alles ruhig.)
 
-:::note[Snooze is API-only]
-The UI offers acknowledge and resolve. Snoozing (`POST /api/v1/alerts/{id}:snooze` with `until`) is available through the API, `np` and the alarm app but has no button here — see [Acknowledge and snooze](/docs/alarming/acknowledge-and-snooze/).
-:::
+Open alerts also offer **Snooze** (1 h / 4 h / 24 h) — ack now, auto-unack later; other durations via `POST /api/v1/alerts/{id}:snooze` — see [Acknowledge and snooze](/docs/alarming/acknowledge-and-snooze/).
 
 ### Trigger-alarm dialog
 
@@ -65,24 +63,26 @@ Route `/incidents`. Data: `GET /api/v1/incidents?limit=100` (`incidents:read`). 
 | **AI summary** (AI-Zusammenfassung, sparkles icon) | `POST /api/v1/incidents/{id}:summarize` (`incidents:write`) | Needs a server-level AI provider (`ai.provider` in `config.yaml`); otherwise the API answers `503 np:ai/disabled` and nothing changes. The summary (2–3 sentences, German) is stored on the incident. See [Agent chat](/docs/ai/agent-chat/). |
 | **Resolve** (Schließen) | `POST /api/v1/incidents/{id}:resolve` (`incidents:write`) | Resolves the incident **and** its open/acknowledged alerts. |
 
-Empty state: "No open incidents. Incidents form automatically from alert rules, or you can open one manually." Creating, merging and editing incidents is API-only (`POST /api/v1/incidents`, `…:merge`, `PUT`) — see [Alerts and incidents](/docs/concepts/alerts-incidents/).
+Empty state: "No open incidents. Incidents form automatically from alert rules, or you can open one manually." **New incident** (title, severity, impact, ticket URL) creates one manually via `POST /api/v1/incidents`; merging and editing stay API-only (`…:merge`, `PUT`) — see [Alerts and incidents](/docs/concepts/alerts-incidents/).
 
 ## Events page
 
-Route `/events`. Data: `GET /api/v1/events?types=<type>&objectId=<id>&limit=200` (`events:read`). The newest 200 events matching the filters are listed; there is no time-range filter or pagination in the UI (use the API or the export for more).
+Route `/events`. Data: `GET /api/v1/events?types=<type>&severity=<sev>&from=<rfc3339>&objectId=<id>&limit=200` (`events:read`), pages of 200 continued with **Load more** (cursor-based).
 
 ![Events page](../../../assets/screenshots/events.webp)
 
 
 | Control | Behaviour |
 |---|---|
-| Type select | **All types** (Alle Typen) or one of the 12 types below |
-| **Object-ID…** input | Restricts to one object (paste the UUID from the object detail URL) |
-| **⇩ NDJSON Export** link | `GET /api/v1/events:export?types=<type>` — streams the matching events as newline-delimited JSON for SIEM or archival use (the object filter is not applied to the export) |
+| Type select | **All types** (Alle Typen) or one of the 14 types below |
+| Severity select | **All severities** or `critical`/`warning`/`info`/`ok` |
+| Time range select | everything, last hour, 24 hours, 7 or 30 days (`from=`) |
+| Object input | object **name** (autocomplete) or id; names resolve to the id filter |
+| **⇩ NDJSON Export** link | `GET /api/v1/events:export?…` — streams the current filters as newline-delimited JSON for SIEM or archival use |
 
-Each row is a collapsible `details` element: time, type badge, a state/severity badge, and the payload's `summary`, `output` or `object` text; expanding the row shows the full payload as pretty-printed JSON. Rows for events without any of those text fields (some `config` or `ack` events) show only time and badges.
+Each row is a collapsible `details` element: time, type badge, a state/severity badge, and a one-line summary; expanding the row shows the full payload as pretty-printed JSON. Rows without a natural text field get a composed summary per type — `notification` shows channel → contact and status, `escalation` the step and contacts, `ack` who acknowledged, `config` the changed kinds.
 
-The 12 types offered by the filter:
+The 14 types offered by the filter:
 
 | Type | Emitted when |
 |---|---|
@@ -97,9 +97,10 @@ The 12 types offered by the filter:
 | `downtime` | a downtime is created |
 | `silence` | a silence is created |
 | `heartbeat_missed` | a heartbeat did not beat in time (and again, with `resolve: true`, when it recovers) |
+| `flapping_start` / `flapping_end` | an object enters/leaves flap suppression |
 | `ai_action` | defined for AI tool executions — currently not emitted by the server |
 
-Events of other types (`flapping_start`/`flapping_end`, `incident_update`, `system`) are stored and shown under **All types** but cannot be selected individually in this dropdown.
+Events of other types (`incident_update`, `system`) are stored and shown under **All types** but cannot be selected individually in this dropdown.
 
 The full event model with payloads, retention and the SSE stream for external consumers is in [Events](/docs/concepts/events/).
 

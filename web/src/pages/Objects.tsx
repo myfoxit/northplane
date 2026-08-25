@@ -133,18 +133,29 @@ export function ObjectsPage() {
           <Button variant="ghost" onClick={() => setBatch(true)}>{t('batchAdd')}</Button>
         </div>
       </div>
-      <div className="flex gap-2 flex-wrap">
-        {/* Two distinct search scopes, disambiguated by icon + tooltip (LIST-2):
-            a label selector vs. free-text over name/output. */}
-        <div className="relative max-w-xs w-full">
-          <Tag size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-          <Input placeholder={t('filter')} title={t('labelSelectorTitle')}
-            value={selector} onChange={(e) => setSelector(e.target.value)} className="pl-8" />
+      <div className="flex gap-2 flex-wrap items-end">
+        {/* Two distinct search scopes: a label selector vs. free-text over
+            name/output. Disambiguated by a visible label above each input
+            (OBJ-2), not only icon + tooltip. */}
+        <div className="max-w-xs w-full">
+          <label htmlFor="objects-selector" className="block text-[11px] font-medium text-muted-foreground mb-0.5">
+            {t('labelSelectorShort')}
+          </label>
+          <div className="relative">
+            <Tag size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+            <Input id="objects-selector" placeholder={t('filter')} title={t('labelSelectorTitle')}
+              value={selector} onChange={(e) => setSelector(e.target.value)} className="pl-8" />
+          </div>
         </div>
-        <div className="relative max-w-xs w-full">
-          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-          <Input placeholder={t('fulltextPlaceholder')} title={t('fulltextSearchTitle')}
-            value={query} onChange={(e) => setQuery(e.target.value)} className="pl-8" />
+        <div className="max-w-xs w-full">
+          <label htmlFor="objects-fulltext" className="block text-[11px] font-medium text-muted-foreground mb-0.5">
+            {t('fulltextShort')}
+          </label>
+          <div className="relative">
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+            <Input id="objects-fulltext" placeholder={t('fulltextPlaceholder')} title={t('fulltextSearchTitle')}
+              value={query} onChange={(e) => setQuery(e.target.value)} className="pl-8" />
+          </div>
         </div>
         <Select value={kindFilter || ALL} onValueChange={(v) => patchSearch({ kind: (v === ALL ? undefined : v) as ObjectsSearch['kind'] })}>
           <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
@@ -560,7 +571,7 @@ function RelatedServicesCard({ title, services }: { title: string; services: NPO
 // HistoryList: event timeline with severity-coloured badges so CRITICAL vs OK
 // transitions read at a glance (DETAIL-5).
 function HistoryList({ events }: { events: NPEvent[] }) {
-  if (events.length === 0) return <Empty text={t('empty')} />
+  if (events.length === 0) return <Empty text={t('historyEmptyHint')} />
   return (
     <div className="space-y-0.5 text-sm">
       {events.map((e) => (

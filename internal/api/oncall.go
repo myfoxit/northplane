@@ -121,7 +121,7 @@ func (a *API) registerOnCall() {
 			}
 			a.audit(r, p, "override.create", ov.ID, nil, ov)
 			a.writeJSON(w, http.StatusCreated, ov)
-		})
+		}).Status(http.StatusCreated)
 
 	a.handle("GET /api/v1/schedules/{name}/overrides", "List overrides of a schedule",
 		"oncall:read", nil, listResponse{},

@@ -7,6 +7,8 @@
 import { type ReactNode } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { useWhoami } from '@/hooks/useWhoami'
+import { hasPermission } from '../../permissions'
 import { t } from '../../i18n'
 
 // Status badges — never colour-only (A-15.29ff): each carries its word.
@@ -29,13 +31,19 @@ export function TypeBadge({ children }: { children: ReactNode }) {
 }
 
 // Header above each management table: title-less, just the create button.
-export function TableActions({ onCreate, label, children }: {
-  onCreate?: () => void; label: string; children?: ReactNode
+// writePerm hides the create button from operators whose request would
+// only 403 (RBAC-1) — the API enforces regardless.
+export function TableActions({ onCreate, label, writePerm, children }: {
+  onCreate?: () => void; label: string; writePerm?: string; children?: ReactNode
 }) {
+  const { data: me } = useWhoami()
+  // Fail open while whoami is still loading/unavailable — the API enforces
+  // regardless, and a momentary button beats hiding it from an admin.
+  const allowed = !writePerm || !me || hasPermission(me.permissions, writePerm)
   return (
     <div className="flex items-center gap-2 justify-end">
       {children}
-      {onCreate && <Button variant="default" size="sm" onClick={onCreate}>{label}</Button>}
+      {onCreate && allowed && <Button variant="default" size="sm" onClick={onCreate}>{label}</Button>}
     </div>
   )
 }

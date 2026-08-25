@@ -317,6 +317,9 @@ func isStreamingPath(path string) bool {
 		return true
 	case path == "/api/v1/events:export":
 		return true
+	case path == "/api/v1/audit:export":
+		// NDJSON audit export: can stream far past the request deadline.
+		return true
 	case path == "/api/v1/ai/chat":
 		// Agent-chat SSE turn: long-lived while the model streams.
 		return true

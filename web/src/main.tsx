@@ -124,6 +124,23 @@ if ('serviceWorker' in navigator) {
     .catch(() => {})
 }
 
+// Stept assistant (chat widget + product tours): injected at runtime so
+// the disableAssistant config switches it off without a rebuild
+// (WIDGET-1). /system/info is anonymous, so this also works pre-login.
+fetch('/api/v1/system/info')
+  .then((r) => (r.ok ? r.json() : null))
+  .then((info: { assistant?: boolean } | null) => {
+    if (!info || info.assistant === false) return
+    ;(window as unknown as { SteptSettings?: object }).SteptSettings = {
+      workspaceKey: 'wk_As5wfPgMuFbm3VtLaaKEB4xm',
+    }
+    const s = document.createElement('script')
+    s.src = 'https://app.stepped.ai/widget-assets/loader.js'
+    s.async = true
+    document.body.appendChild(s)
+  })
+  .catch(() => {})
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>

@@ -127,8 +127,17 @@ var dummyPassHash = auth.HashSecret("northplane-nonexistent-account-placeholder"
 // steptSnippet embeds the Stept assistant (chat widget + product tours) on
 // the server-rendered auth pages; the SPA carries the same snippet in its
 // index.html. The CSP in server.go allowlists exactly this origin.
-const steptSnippet = template.HTML(`<script>window.SteptSettings={workspaceKey:"wk_As5wfPgMuFbm3VtLaaKEB4xm"}</script>
+var steptSnippetHTML = template.HTML(`<script>window.SteptSettings={workspaceKey:"wk_As5wfPgMuFbm3VtLaaKEB4xm"}</script>
 <script src="https://app.stepped.ai/widget-assets/loader.js" async></script>`)
+
+// steptSnippet returns the assistant bootstrap for server-rendered pages,
+// or nothing when the runtime off-switch (disableAssistant) is set.
+func (p *Pages) steptSnippet() template.HTML {
+	if p.cfg.DisableAssistant {
+		return ""
+	}
+	return steptSnippetHTML
+}
 
 // loginLimiter throttles local-login attempts per client IP to blunt
 // online password brute-forcing of the break-glass admin accounts.
@@ -356,6 +365,14 @@ func (p *Pages) callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p.setSession(w, r, session, sessionTTL)
+	// Audit like the local/LDAP paths (RBAC-10: SSO logins used to leave
+	// no trail). The session was just minted, so resolving it is safe.
+	if userID, tenantID, _, err := p.store.GetSession(r.Context(), session); err == nil {
+		_, _ = p.store.AppendAudit(r.Context(), &model.AuditEntry{
+			TenantID: tenantID, ActorType: model.ActorUser, ActorID: userID,
+			Action: "login.oidc", SourceIP: remoteIP(r),
+		})
+	}
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
@@ -369,6 +386,14 @@ func (p *Pages) setSession(w http.ResponseWriter, r *http.Request, session strin
 
 func (p *Pages) logout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie("np_session"); err == nil {
+		// Resolve before deleting so the audit names who logged out
+		// (RBAC-10: logouts used to leave no trail).
+		if userID, tenantID, _, err := p.store.GetSession(r.Context(), c.Value); err == nil {
+			_, _ = p.store.AppendAudit(r.Context(), &model.AuditEntry{
+				TenantID: tenantID, ActorType: model.ActorUser, ActorID: userID,
+				Action: "logout", SourceIP: remoteIP(r),
+			})
+		}
 		_ = p.store.DeleteSession(r.Context(), c.Value)
 	}
 	http.SetCookie(w, &http.Cookie{Name: "np_session", Value: "", Path: "/", MaxAge: -1})
@@ -429,7 +454,7 @@ func (p *Pages) loginPage(w http.ResponseWriter, r *http.Request, errMsg string)
 	}
 	_ = loginTpl.Execute(w, map[string]any{
 		"Error": errMsg, "SSO": p.oidc != nil, "Version": p.version,
-		"Signup": p.cfg.AllowSignup, "Stept": steptSnippet,
+		"Signup": p.cfg.AllowSignup, "Stept": p.steptSnippet(),
 	})
 }
 
@@ -604,7 +629,7 @@ func (p *Pages) registerPage(w http.ResponseWriter, r *http.Request, errMsg stri
 		w.WriteHeader(http.StatusBadRequest)
 	}
 	_ = registerTpl.Execute(w, map[string]any{
-		"Error": errMsg, "Version": p.version, "Stept": steptSnippet,
+		"Error": errMsg, "Version": p.version, "Stept": p.steptSnippet(),
 	})
 }
 
