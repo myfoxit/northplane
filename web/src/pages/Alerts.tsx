@@ -10,7 +10,10 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardHeader, CardTitle, CardAction, CardContent } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Empty, ErrorState } from '@/components/kit'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Input } from '@/components/ui/input'
+import { Empty, ErrorState, Field, FormError, SubmitRow, useSave } from '@/components/kit'
 import { AckDialog } from '../components/AckDialog'
 import { TriggerAlertDialog } from '../components/TriggerAlertDialog'
 import { t } from '../i18n'
@@ -40,6 +43,12 @@ export function AlertsPage() {
   })
   const resolve = useMutation({
     mutationFn: (id: string) => post(`/alerts/${id}:resolve`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['alerts'] }),
+  })
+  // Snooze = ack now, auto-unack at `until` (UX-1: was API-only).
+  const snooze = useMutation({
+    mutationFn: ({ id, hours }: { id: string; hours: number }) =>
+      post(`/alerts/${id}:snooze`, { until: new Date(Date.now() + hours * 3_600_000).toISOString() }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['alerts'] }),
   })
   const rows = (data?.items ?? []).filter((a) => !severity || a.severity === (severity as Severity))
@@ -96,6 +105,20 @@ export function AlertsPage() {
               {a.status === 'open' && (
                 <Button size="sm" onClick={() => setAckTarget(a)}>{t('ack')}</Button>
               )}
+              {a.status === 'open' && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="sm" variant="ghost">{t('snoozeAction')}</Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {([1, 4, 24] as const).map((h) => (
+                      <DropdownMenuItem key={h} onClick={() => snooze.mutate({ id: a.id, hours: h })}>
+                        {h} {t('hours')}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
               {(a.status === 'open' || a.status === 'acked') && (
                 <Button size="sm" variant="ghost" onClick={() => resolve.mutate(a.id)}>{t('resolve')}</Button>
               )}
@@ -118,6 +141,56 @@ export function AlertsPage() {
   )
 }
 
+// Manual incident creation (INC-1): title + severity + impact + ticket URL
+// onto POST /incidents — the same shape the API accepts.
+function NewIncidentDialog({ onClose }: { onClose: () => void }) {
+  const [title, setTitle] = useState('')
+  const [severity, setSeverity] = useState<Severity>('warning')
+  const [impact, setImpact] = useState('')
+  const [ticketUrl, setTicketUrl] = useState('')
+  const save = useSave<void>(
+    () => post<Incident>('/incidents', {
+      title,
+      severity,
+      ...(impact ? { impact } : {}),
+      ...(ticketUrl ? { ticketUrl } : {}),
+    }),
+    { invalidate: [['incidents']], onDone: onClose },
+  )
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle>{t('newIncident')}</DialogTitle></DialogHeader>
+        <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); save.mutate() }}>
+          <Field label={t('title')} required>
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label={t('severity')}>
+              <Select value={severity} onValueChange={(v) => setSeverity(v as Severity)}>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {(['critical', 'warning', 'info'] as const).map((s) => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label={t('impact')}>
+              <Input value={impact} onChange={(e) => setImpact(e.target.value)} />
+            </Field>
+          </div>
+          <Field label="Ticket-URL" hint="https://…">
+            <Input value={ticketUrl} onChange={(e) => setTicketUrl(e.target.value)} type="url" />
+          </Field>
+          <FormError error={save.error} />
+          <SubmitRow onCancel={onClose} saving={save.isPending} disabled={!title} label={t('create')} />
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export function IncidentsPage() {
   const refresh = useRefreshInterval()
   const { data, isLoading, isError, error, refetch } = useQuery({
@@ -133,15 +206,22 @@ export function IncidentsPage() {
     mutationFn: (id: string) => post(`/incidents/${id}:summarize`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['incidents'] }),
   })
+  const [createOpen, setCreateOpen] = useState(false)
   const rows = data?.items ?? []
   if (isError && !data) {
     return <div className="p-8"><ErrorState error={error} onRetry={() => refetch()} /></div>
   }
   return (
     <div className="space-y-4">
-      <h1 className="text-lg font-bold">{t('incidents')}</h1>
+      <div className="flex items-center justify-between gap-2">
+        <h1 className="text-lg font-bold">{t('incidents')}</h1>
+        {/* Manual incidents were API-only (POST /incidents) while the empty
+            state said "open one manually" — the button closes that gap (INC-1). */}
+        <Button variant="default" onClick={() => setCreateOpen(true)}>{t('newIncident')}</Button>
+      </div>
       {isLoading && <Empty text={t('loading')} />}
       {!isLoading && rows.length === 0 && <Empty text={t('noIncidentsFriendly')} />}
+      {createOpen && <NewIncidentDialog onClose={() => setCreateOpen(false)} />}
       <div className="grid lg:grid-cols-2 gap-3">
         {rows.map((inc) => (
           <Card key={inc.id}>

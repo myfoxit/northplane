@@ -297,8 +297,12 @@ func (a *API) availability(ctx context.Context, tenantID string, bs *model.Busin
 	// union of per-object downtime (worst-case service view: any leaf
 	// down = service down — matches the "worst" default rule)
 	var totalDown time.Duration
+	var sub downtimeSubtractor
+	if bs.ExclDowntime {
+		sub = a.newDowntimeSubtractor(ctx, tenantID)
+	}
 	for _, id := range objIDs {
-		down, err := ObjectDowntime(ctx, a.Store, tenantID, id, from, to)
+		down, err := ObjectDowntime(ctx, a.Store, tenantID, id, from, to, sub.forObject(id))
 		if err != nil {
 			return 0, 0, err
 		}
@@ -312,10 +316,87 @@ func (a *API) availability(ctx context.Context, tenantID string, bs *model.Busin
 	return avail, totalDown, nil
 }
 
+// downtimeSubtractor reports, per object, how much of an interval lies
+// inside a scheduled downtime — the SLA math subtracts that when
+// excludeDowntimes is set. The zero value subtracts nothing.
+type downtimeSubtractor struct {
+	api      *API
+	tenantID string
+	dts      []*model.Downtime
+}
+
+// newDowntimeSubtractor loads the tenant's downtimes once (historic
+// windows included — SLA windows reach into the past).
+func (a *API) newDowntimeSubtractor(ctx context.Context, tenantID string) downtimeSubtractor {
+	dts, err := a.Store.ListDowntimes(ctx, tenantID, false)
+	if err != nil {
+		a.Log.Warn("sla: downtime load failed; not excluding downtimes", "err", err)
+		dts = nil
+	}
+	return downtimeSubtractor{api: a, tenantID: tenantID, dts: dts}
+}
+
+// forObject binds the subtractor to one object ("" matcher when the
+// subtractor is the zero value). Overlap is sampled at minute steps —
+// downtimes are minute-granular and RRULE occurrences make exact
+// interval algebra disproportionate here.
+func (s downtimeSubtractor) forObject(objectID string) func(start, end time.Time) time.Duration {
+	if s.api == nil || len(s.dts) == 0 {
+		return nil
+	}
+	var mine []*model.Downtime
+	for _, d := range s.dts {
+		switch {
+		case d.ObjectID == objectID:
+			mine = append(mine, d)
+		case d.ObjectID != "":
+			for _, childID := range s.api.Catalog.Children(d.ObjectID) {
+				if childID == objectID {
+					mine = append(mine, d)
+					break
+				}
+			}
+		case d.Selector != "":
+			sel, err := selector.Parse(d.Selector)
+			if err != nil {
+				continue
+			}
+			for _, e := range s.api.Catalog.Select(s.tenantID, sel) {
+				if e.Object.ID == objectID {
+					mine = append(mine, d)
+					break
+				}
+			}
+		}
+	}
+	if len(mine) == 0 {
+		return nil
+	}
+	return func(start, end time.Time) time.Duration {
+		var in time.Duration
+		for t := start; t.Before(end); {
+			next := t.Truncate(time.Minute).Add(time.Minute)
+			if next.After(end) {
+				next = end
+			}
+			for _, d := range mine {
+				if d.ActiveAt(t) {
+					in += next.Sub(t)
+					break
+				}
+			}
+			t = next
+		}
+		return in
+	}
+}
+
 // ObjectDowntime sums non-OK hard time of one object within [from,to)
-// from its state_change events plus the current state.
+// from its state_change events plus the current state. inDowntime, when
+// non-nil, returns the span of a bad interval covered by scheduled
+// downtimes; that span is not counted (excludeDowntimes).
 func ObjectDowntime(ctx context.Context, store *storage.Store, tenantID, objectID string,
-	from, to time.Time) (time.Duration, error) {
+	from, to time.Time, inDowntime func(start, end time.Time) time.Duration) (time.Duration, error) {
 	events, err := store.QueryEvents(ctx, storage.EventFilter{
 		TenantID: tenantID, ObjectID: objectID,
 		Types: []string{string(model.EventStateChange)},
@@ -337,7 +418,11 @@ func ObjectDowntime(ctx context.Context, store *storage.Store, tenantID, objectI
 		}
 		nowBad := payload.To != model.StateOK
 		if bad && !nowBad {
-			down += e.TS.Sub(cursor)
+			span := e.TS.Sub(cursor)
+			if inDowntime != nil {
+				span -= inDowntime(cursor, e.TS)
+			}
+			down += span
 		}
 		if nowBad && !bad {
 			cursor = e.TS
@@ -345,7 +430,11 @@ func ObjectDowntime(ctx context.Context, store *storage.Store, tenantID, objectI
 		bad = nowBad
 	}
 	if bad {
-		down += to.Sub(cursor)
+		span := to.Sub(cursor)
+		if inDowntime != nil {
+			span -= inDowntime(cursor, to)
+		}
+		down += span
 	}
 	return down, nil
 }

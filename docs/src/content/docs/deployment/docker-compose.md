@@ -5,7 +5,7 @@ sidebar:
   order: 2
 ---
 
-The standalone recipe runs Northplane and a TLS-terminating Caddy on one host with Docker Compose. It is the stack the Deploy workflow ships to a standalone box (job `deploy-hetzner`, see [CI/CD](/docs/deployment/ci-cd/)), and it is equally usable by hand: copy `.env.example` to `.env`, edit, `docker compose up -d`.
+The standalone recipe runs Northplane and a TLS-terminating Caddy on one host with Docker Compose. It is the stack the Deploy workflow used to ship to the standalone box np-02 (the `deploy-hetzner` job was removed with the box, see [CI/CD](/docs/deployment/ci-cd/)), and it is fully usable by hand: copy `.env.example` to `.env`, edit, `docker compose up -d`.
 
 Two compose files exist in the repository — pick the one that matches your situation:
 
@@ -130,7 +130,7 @@ Set by the compose file itself (not in `.env`): `NORTHPLANE_LISTEN=:8443`, `NORT
 The example ships with `NORTHPLANE_DEMO=true`, the matching `/demo` data directory and `NP_DEFAULT_ADMIN_PASSWORD=change-me`. For a real instance set `NORTHPLANE_DEMO=false`, `NORTHPLANE_DATA_DIR=/var/lib/northplane/real`, a strong admin password (or an empty one to use `/setup`), and keep `.env` at mode 0600 — the admin password is plain text in it and visible in `docker inspect`.
 :::
 
-For comparison, the Deploy workflow renders this `.env` for the standalone box: `NORTHPLANE_IMAGE=ghcr.io/myfoxit/northplane:main-<sha12>`, `DOMAIN=localhost`, `SERVER_IP=<HETZNER_HOST>`, `ACME_EMAIL=admin@doktrace.com`, `NORTHPLANE_BASE_URL=https://<HETZNER_HOST>`, `NORTHPLANE_DEMO=false`, `NORTHPLANE_DATA_DIR=/var/lib/northplane/real`, `NP_DEFAULT_ADMIN_EMAIL=root@localhost`, `NP_DEFAULT_ADMIN_PASSWORD=<secret HETZNER_ADMIN_PASSWORD>` — that is, a real-data instance on a bare IP; a domain is added later by changing `DOMAIN` in the workflow.
+For comparison, the removed `deploy-hetzner` job rendered this `.env` for the standalone box: `NORTHPLANE_IMAGE=ghcr.io/myfoxit/northplane:main-<sha12>`, `DOMAIN=localhost`, `SERVER_IP=<HETZNER_HOST>`, `ACME_EMAIL=admin@doktrace.com`, `NORTHPLANE_BASE_URL=https://<HETZNER_HOST>`, `NORTHPLANE_DEMO=false`, `NORTHPLANE_DATA_DIR=/var/lib/northplane/real`, `NP_DEFAULT_ADMIN_EMAIL=root@localhost`, `NP_DEFAULT_ADMIN_PASSWORD=<secret HETZNER_ADMIN_PASSWORD>` — that is, a real-data instance on a bare IP; a domain is added later by changing `DOMAIN` in the workflow.
 
 ## Caddy and certificates
 

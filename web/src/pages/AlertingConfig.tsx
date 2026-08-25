@@ -1,6 +1,7 @@
 // Alerting configuration: rules (CEL) + groups + escalation policies
 // (CMP Alarmserver Webmin parity, SPEC §9.2/§9.4).
-import { useRef, useState } from 'react'
+import { useRef } from 'react'
+import { useNavigate, useSearch } from '@tanstack/react-router'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { t } from '../i18n'
@@ -22,7 +23,14 @@ const labels: Record<Tab, string> = {
 }
 
 export function AlertingConfigPage() {
-  const [tab, setTab] = useState<Tab>('rules')
+  // Tab lives in ?tab= so Alerting views deep-link and survive back/forward
+  // (NAV-2), same as the Admin page.
+  const search = useSearch({ strict: false }) as { tab?: string }
+  const navigate = useNavigate()
+  const requested = search.tab as Tab | undefined
+  const tab: Tab = requested && tabs.includes(requested) ? requested : 'rules'
+  const setTab = (v: Tab) =>
+    navigate({ to: '/alerting', search: (prev) => ({ ...prev, tab: v }) })
   // The active tab registers its "open create dialog" handler here so the
   // primary Create button can live on the header/tab row instead of floating
   // mid-page over the empty state (NP-13).

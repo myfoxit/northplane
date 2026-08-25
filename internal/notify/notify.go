@@ -101,7 +101,7 @@ func (m *Manager) Run(ctx context.Context) {
 }
 
 // retryPolicy shapes the outbox retry loop. Defaults per SPEC §9.6:
-// 30s · 2^n with ±20 % jitter, capped at 1 h, DLQ after 30 attempts
+// 30s · 2^n with ±10 % jitter, capped at 1 h, DLQ after 30 attempts
 // (≈ 26 h). Channels override via config retryMaxAttempts /
 // retryBackoffSeconds / retryBackoffCapSeconds — an alarm SMS that
 // should retry every 30 s and give up after 5 tries is a config choice,
@@ -194,7 +194,7 @@ func (m *Manager) deliver(ctx context.Context, item *storage.OutboxItem) {
 		m.log.Error("notify: moved to DLQ", "item", item.ID, "err", err)
 	}
 	_ = m.store.OutboxRetry(ctx, item.ID, attempts,
-		time.Now().UTC().Add(pol.backoff(attempts)), dead, err.Error())
+		time.Now().UTC().Add(pol.backoff(attempts)), dead, err.Error(), item.ChannelID)
 }
 
 // notifyJob mirrors escalation.notifyJob (kept in sync via JSON shape).
@@ -232,6 +232,7 @@ func (m *Manager) deliverNotification(ctx context.Context, item *storage.OutboxI
 	if err != nil {
 		return "", err
 	}
+	item.ChannelID = channel.ID // surfaces the failing instance in DLQ rows
 
 	rctx := m.renderContext(alert, contact, job)
 	subject, body, err := m.render(channel, rctx)
@@ -560,6 +561,11 @@ func targetFor(typ model.ChannelType, contact *model.Contact, ch *model.Notifica
 		return contact.Phone
 	case model.ChannelPush:
 		return contact.UserID // subscriptions resolved per user
+	case model.ChannelNtfy:
+		// sendNtfy resolves the server itself (url defaults to ntfy.sh);
+		// requiring config.url here failed deliveries whose dialog marks
+		// the field optional (NTF-4). The topic is the real target.
+		return ch.Config["topic"]
 	default:
 		return ch.Config["url"] // team channels: fixed endpoint
 	}

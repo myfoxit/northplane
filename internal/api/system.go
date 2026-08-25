@@ -93,6 +93,9 @@ func (a *API) registerSystem() {
 				"uptime":     time.Since(a.StartedAt).Round(time.Second).String(),
 				"storage":    a.Store.Dialect().Name(),
 				"aiEnabled":  a.AI != nil && a.AI.Enabled(),
+				// The SPA injects the Stept assistant only when true — the
+				// runtime off-switch for the embedded widget (WIDGET-1).
+				"assistant": !a.Cfg.DisableAssistant,
 			})
 		})
 

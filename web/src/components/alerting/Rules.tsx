@@ -247,13 +247,13 @@ function RuleDialog({ state, groups, policies, onClose }: {
             <SeverityField value={r.severity} onChange={(v: Severity) => set({ severity: v })} label={t('severity')} />
             <Field label={t('dedupKey')} hint={t('optionalGoTemplate')}>
               <Input value={r.dedupKey ?? ''} onChange={(e) => set({ dedupKey: e.target.value || undefined })}
-                placeholder="{{.ObjectID}}" />
+                placeholder="{{ .rule.name }}/{{ .event.labels.host }}" />
             </Field>
           </div>
 
           <Field label={t('titleGoTemplate')} hint="optional">
             <Input value={r.title ?? ''} onChange={(e) => set({ title: e.target.value || undefined })}
-              placeholder="{{.ObjectName}} ist {{.ToLabel}}" />
+              placeholder="{{ .event.object }} is {{ .event.state }}" />
           </Field>
 
           <div className="grid grid-cols-2 gap-3">

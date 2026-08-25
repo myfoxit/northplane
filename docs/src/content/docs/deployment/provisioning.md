@@ -175,14 +175,14 @@ This is how `np-02` was built (the box no longer exists — see below). The same
    On Rocky 10 the script switches dockerd to the nftables backend and enables IPv4 forwarding; on a cloud provider make sure the external firewall allows TCP 80 and 443.
 3. Pin the host key: `ssh-keyscan -t ed25519 <new-ip>` → the `HETZNER_KNOWN_HOSTS` value.
 4. Set `HETZNER_HOST=<new-ip>`, `HETZNER_KNOWN_HOSTS`, and the secrets `HETZNER_SSH_KEY` (private key) and `HETZNER_ADMIN_PASSWORD` (break-glass admin `root@localhost`).
-5. Run the Deploy workflow. The `deploy-hetzner` job ships `deploy/docker-compose.yml` + `deploy/Caddyfile` + `.env` (`DOMAIN=localhost`, `SERVER_IP=<new-ip>`, real-data mode) and verifies `/healthz` through the Caddy container. The instance is live at `https://<new-ip>` with Caddy's internal certificate.
+5. Restore the `deploy-hetzner` job from git history (it was removed together with the lost box), then run the Deploy workflow. The job ships `deploy/docker-compose.yml` + `deploy/Caddyfile` + `.env` (`DOMAIN=localhost`, `SERVER_IP=<new-ip>`, real-data mode) and verifies `/healthz` through the Caddy container. The instance is live at `https://<new-ip>` with Caddy's internal certificate.
 6. Optional domain: create an A record → the box, then change `DOMAIN=localhost` in the job's "Render .env" step (it is hard-coded in `deploy.yml`, not a variable) and re-run — Caddy obtains the Let's Encrypt certificate.
 
 If you do this by hand instead of via CI, follow [Docker Compose → Running the stack by hand](/docs/deployment/docker-compose/#running-the-stack-by-hand).
 
 ## np-02 recreation checklist
 
-Verified 2026-08-23: the Hetzner box `91.98.92.10` is gone — port 22 times out and the IP serves a parking page, so Hetzner has reassigned it. `deploy-hetzner` fails on every Deploy run and the `HETZNER_*` variables point at a stranger's host. To restore a second, standalone instance:
+Verified 2026-08-23: the Hetzner box `91.98.92.10` is gone — port 22 times out and the IP serves a parking page, so Hetzner has reassigned it. The `deploy-hetzner` job was removed from `deploy.yml` (shipping credentials to a stranger's host on every run was worse than a red job). To restore a second, standalone instance:
 
 1. Order a new box (Rocky 10 or another RHEL-family image; Debian/Ubuntu would need the `dnf` lines adapted). Note its IPv4.
 2. **Rotate the CI key**: generate a fresh key pair and retire the old one — the old public key is authorised on a host you no longer control. (Nothing leaked: the failed runs time out at the TCP level, and `StrictHostKeyChecking yes` would refuse an unknown host key anyway.)

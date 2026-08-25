@@ -44,7 +44,7 @@ The link is `<baseUrl>/api/v1/ack/<alertId>.<contactId>.<expiry>.<hmac>`, signed
 :::
 
 :::caution[`:ack` ignores the tenant header]
-`POST /alerts/{id}:ack` acts on the **principal's own tenant**, not on `X-Northplane-Tenant`; an `admin:tenants` operator switched into another tenant gets `404` when acknowledging there. `:resolve` and `:snooze` honour the header. Use a token or user that belongs to that tenant.
+`:ack`, `:resolve` and `:snooze` all honour `X-Northplane-Tenant` for `admin:tenants` operators (the ack verb used to act on the principal's own tenant only).
 :::
 
 ## Comments
@@ -72,7 +72,7 @@ If the alert owns a ticket created with `autoClose`, any resolve enqueues the ti
 3. The escalation chain restarts **from step 0**, with `openedAt` treated as the wake-up time — so a first step with `after: 0s` fires within seconds, and later offsets count from the wake-up, not from the original opening. The policy is the rule's `escalationPolicy`, or for manual alarms the policy stored with the alert.
 4. If the alert was resolved in the meantime, nothing happens (`resolvedAt` clears the snooze). A plain ack on a snoozed alert is not possible (it is already `acked`); to change the deadline snooze again, to cancel the wake-up resolve the alert.
 
-The snooze is API-only today: the web UI offers acknowledge and resolve, not snooze.
+In the web UI, open alerts offer **Snooze** (1 h / 4 h / 24 h) next to acknowledge and resolve; other durations via the API.
 
 ```bash
 curl -s -X POST "$NP/api/v1/alerts/$ALERT:snooze" -H "Authorization: Bearer $TOK" \

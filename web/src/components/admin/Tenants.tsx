@@ -23,7 +23,7 @@ export function TenantsTab() {
   const [creating, setCreating] = useState(false)
   return (
     <div className="space-y-4">
-      <TableActions onCreate={() => setCreating(true)} label={t('create')} />
+      <TableActions onCreate={() => setCreating(true)} label={t('create')} writePerm="admin:tenants" />
       <Table>
         <TableHeader>
           <TableRow>

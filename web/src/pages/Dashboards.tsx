@@ -70,10 +70,24 @@ function WidgetTypeIcon({ type, size = 14, className }: {
   return <Icon size={size} className={className} />
 }
 
+// Starter dashboard for real-data instances (DASH-1): the widgets an
+// operator reaches for first — KPI tiles, problem list, alert list,
+// service donut, object table. Bindings stay global so it renders useful
+// content on any install without configuration.
+const STARTER_SPEC: { widgets: DashboardWidget[] } = {
+  widgets: [
+    { type: 'counters', x: 0, y: 0, w: 12, h: 2 },
+    { type: 'problems', x: 0, y: 2, w: 6, h: 2, limit: 10 },
+    { type: 'alerts', x: 6, y: 2, w: 6, h: 2, limit: 10 },
+    { type: 'donut', x: 0, y: 4, w: 4, h: 2, scope: 'services' },
+    { type: 'table', x: 4, y: 4, w: 8, h: 2, limit: 15 },
+  ],
+}
+
 function defaultWidget(type: DashboardWidget['type']): DashboardWidget {
   const base: DashboardWidget = { type, w: 6, h: 1 }
   switch (type) {
-    case 'counters': return { ...base, w: 12, h: 1 }
+    case 'counters': return { ...base, w: 12, h: 2 } // h:1 clipped the KPI tiles (DASH-7)
     case 'metric': return { ...base, w: 6, h: 2, range: '3h' }
     case 'gauge': return { ...base, w: 3, h: 2 }
     case 'stat': return { ...base, w: 3, h: 2, range: '6h' }
@@ -145,7 +159,23 @@ export function DashboardsPage() {
       </div>
 
       {isLoading && <Spinner />}
-      {!isLoading && (data?.length ?? 0) === 0 && <Empty text={t('empty')} />}
+      {!isLoading && (data?.length ?? 0) === 0 && (
+        <div className="space-y-3">
+          <Empty text={t('dashboardsEmptyHint')} />
+          {/* Starter content instead of a bare "No entries." on real-data
+              instances (DASH-1). */}
+          <div className="flex justify-center">
+            <Button variant="outline" disabled={create.isPending} onClick={() => {
+              create.mutate(
+                { name: 'overview', shared: true, spec: STARTER_SPEC },
+                { onSuccess: () => navigate({ to: '/dashboards/$name', params: { name: 'overview' } }) },
+              )
+            }}>
+              {t('createStarterDashboard')}
+            </Button>
+          </div>
+        </div>
+      )}
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {(data ?? []).map((d) => (
@@ -448,8 +478,10 @@ function DashControls({ range, setRange, refresh, setRefresh, onRefreshNow }: {
 }) {
   return (
     <div className="flex items-center gap-1.5">
-      <div className="flex items-center gap-1 text-muted-foreground">
-        <Clock size={14} className="shrink-0" />
+      {/* muted colour only on the icon — inheriting it made the select's
+          value read as disabled (DASH-7). */}
+      <div className="flex items-center gap-1">
+        <Clock size={14} className="shrink-0 text-muted-foreground" />
         <Select value={range} onValueChange={setRange}>
           <SelectTrigger className="h-8 w-[88px]" aria-label={t('timeRange')}><SelectValue /></SelectTrigger>
           <SelectContent>

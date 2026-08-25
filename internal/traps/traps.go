@@ -194,11 +194,57 @@ func (m *Manager) loadSources(ctx context.Context) (map[string][]boundSource, er
 			if s.Type != "snmp-trap" || !s.Enabled {
 				continue
 			}
+			s = m.resolveV3Secrets(ctx, t.ID, s)
 			addr := listenAddr(s)
 			out[addr] = append(out[addr], boundSource{tenantID: t.ID, src: s})
 		}
 	}
 	return out, nil
+}
+
+// resolveV3Secrets materialises v3AuthSecretRef/v3PrivSecretRef into the
+// inline v3AuthPass/v3PrivPass keys the USM table is built from. The
+// event-source dialog stores passphrases as secret references; an inline
+// passphrase (More settings) wins so configs that used it as a workaround
+// keep working. The returned source is a copy — the store's Config map is
+// never mutated. Resolution happens here (not in usmFromConfig) so
+// v3Signature also covers the resolved values and a rotated secret
+// triggers the listener rebuild.
+func (m *Manager) resolveV3Secrets(ctx context.Context, tenantID string, s *model.EventSource) *model.EventSource {
+	authRef := strings.TrimSpace(s.Config["v3AuthSecretRef"])
+	privRef := strings.TrimSpace(s.Config["v3PrivSecretRef"])
+	if m.Secret == nil || strings.TrimSpace(s.Config["v3User"]) == "" || (authRef == "" && privRef == "") {
+		return s
+	}
+	resolve := func(inlineKey, ref string) string {
+		if ref == "" || s.Config[inlineKey] != "" { // inline passphrase wins
+			return ""
+		}
+		v, err := m.Secret(ctx, tenantID, ref)
+		if err != nil {
+			m.Log.Warn("traps: v3 secret resolution failed; passphrase unset",
+				"source", s.Name, "ref", ref, "err", err)
+			return ""
+		}
+		return v
+	}
+	authPass := resolve("v3AuthPass", authRef)
+	privPass := resolve("v3PrivPass", privRef)
+	if authPass == "" && privPass == "" {
+		return s
+	}
+	cp := *s
+	cp.Config = make(map[string]string, len(s.Config)+2)
+	for k, v := range s.Config {
+		cp.Config[k] = v
+	}
+	if authPass != "" {
+		cp.Config["v3AuthPass"] = authPass
+	}
+	if privPass != "" {
+		cp.Config["v3PrivPass"] = privPass
+	}
+	return &cp
 }
 
 // listenAddr resolves the gosnmp listen string for a source.

@@ -12,8 +12,8 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    <!-- Stept assistant: chat widget + product tours (origin allowlisted in the server CSP) -->
-    <script>window.SteptSettings={workspaceKey:"wk_As5wfPgMuFbm3VtLaaKEB4xm"}</script>
-    <script src="https://app.stepped.ai/widget-assets/loader.js" async></script>
+    <!-- The Stept assistant (chat widget + product tours) is injected at
+         runtime by src/main.tsx when /system/info says it is enabled, so
+         NORTHPLANE_DISABLE_ASSISTANT works without a rebuild. -->
   </body>
 </html>

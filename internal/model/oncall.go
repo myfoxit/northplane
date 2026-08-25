@@ -153,11 +153,17 @@ func ResolveOnCall(s *Schedule, overrides []Override, t time.Time, offset int) [
 			loc = l
 		}
 	}
-	if offset == 0 {
-		for _, o := range overrides {
-			if !t.Before(o.Start) && t.Before(o.End) {
+	// An active override prepends its contact to the duty chain: offset 0
+	// is the override person, deeper offsets walk the regular wheel shifted
+	// by one — so escalateTo: backup honours the override (it pages the
+	// regular rotation) instead of resolving as if none existed.
+	for _, o := range overrides {
+		if !t.Before(o.Start) && t.Before(o.End) {
+			if offset == 0 {
 				return []OnCallShift{{ContactID: o.ContactID, Start: o.Start, End: o.End, Override: true}}
 			}
+			offset--
+			break
 		}
 	}
 	for _, layer := range s.Layers {

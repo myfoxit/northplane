@@ -33,7 +33,7 @@ export function ContactsTab() {
   const [copying, setCopying] = useState<Contact | null>(null)
   return (
     <div className="space-y-4">
-      <TableActions onCreate={() => setEditing('new')} label={t('create')} />
+      <TableActions onCreate={() => setEditing('new')} label={t('create')} writePerm="oncall:write" />
       <Table>
         <TableHeader>
           <TableRow>

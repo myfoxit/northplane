@@ -47,7 +47,8 @@ Escalation steps (`channels: [sms, voice]`) and contact preferences list channel
 | `email` | the contact's `email` | delivery fails: `contact "X" has no email target` |
 | `sms`, `voice` | the contact's `phone` (E.164) | delivery fails |
 | `push` | the contact's `userId` (user id or API-token id; see [Mobile push](/docs/alarming/mobile-push/)) | delivery fails |
-| all other types | the channel's own `config.url` | delivery fails — this is why an `ntfy` channel must carry a `url` even though the code would default to `https://ntfy.sh` |
+| `ntfy` | `config.topic` | delivery fails (`url` is genuinely optional — it defaults to `https://ntfy.sh`) |
+| all other types | the channel's own `config.url` | delivery fails |
 
 A failed target lookup is a normal delivery failure: it is retried and eventually dead-lettered like a provider error, and it is visible as a `notification` event with `status: failed`.
 
@@ -345,7 +346,7 @@ Web Push needs no config (the VAPID key pair is generated server-side). Result s
 
 | Key | Default | Notes |
 |---|---|---|
-| `url` | **set it** (`https://ntfy.sh` or your server) — an empty `url` fails the target check before the code default applies | server base |
+| `url` | optional — empty defaults to `https://ntfy.sh` | server base |
 | `topic` | required | path-escaped |
 | `token` | — | secret; `Authorization: Bearer` |
 
@@ -368,7 +369,7 @@ Body = rendered template, which **must be valid JSON** (default: a Slack Block K
 | `token` | secret; `Authorization: Bearer <token>` |
 | `secret` | secret; adds `X-Northplane-Signature: sha256=<hex HMAC-SHA256(secret, body)>` |
 
-Always `POST`, `Content-Type: application/json`, `User-Agent: Northplane-Webhook/1.0`, body = rendered template (default: the JSON document shown under [Message templates](#message-templates)); HTTP ≥ 300 → `webhook: HTTP <code>`; the response header `X-Request-Id` becomes the provider id. The `method` field offered by the UI is **not read** by the server — it always posts.
+`POST` by default, `Content-Type: application/json`, `User-Agent: Northplane-Webhook/1.0`, body = rendered template (default: the JSON document shown under [Message templates](#message-templates)); HTTP ≥ 300 → `webhook: HTTP <code>`; the response header `X-Request-Id` becomes the provider id. `config.method` selects `POST`, `PUT`, `PATCH` or `GET` (GET sends no body; anything else is rejected).
 
 :::note[Webhook channel vs. webhook subscription]
 A `webhook` **channel** is a notification target for escalation steps and posts the channel template per contact/step. An outgoing **webhook subscription** (`/api/v1/webhooks`, Admin → Webhooks) forwards raw events (`alert_opened`, `notification`, …) independent of any policy. See [Outgoing webhooks](/docs/alarming/webhooks-out/).

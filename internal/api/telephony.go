@@ -631,7 +631,7 @@ func (a *API) voiceAckResolve(w http.ResponseWriter, r *http.Request, c *telCall
 			return
 		}
 		_ = a.Escal.StopChain(r.Context(), alertID)
-		a.alertLifecycleEventTenant(r, c.tenant, alertID)
+		a.alertLifecycleEventTenant(r, c.tenant, alertID, "voice-inbound")
 		t.Say(p.ackConfirm).Say(p.bye).Hangup().write(w)
 	}
 	_, _ = a.Store.AppendAudit(r.Context(), &model.AuditEntry{
@@ -738,7 +738,7 @@ func (a *API) handleSMSInbound(w http.ResponseWriter, r *http.Request) {
 		alert := open[0]
 		if _, err := a.Store.AckAlert(r.Context(), c.tenant, alert.ID, contact.Name); err == nil {
 			_ = a.Escal.StopChain(r.Context(), alert.ID)
-			a.alertLifecycleEventTenant(r, c.tenant, alert.ID)
+			a.alertLifecycleEventTenant(r, c.tenant, alert.ID, "sms")
 			_, _ = a.Store.AppendAudit(r.Context(), &model.AuditEntry{
 				TenantID: c.tenant, ActorType: model.ActorUser, ActorID: contact.Name,
 				Action: "alert.ack", Resource: alert.ID,

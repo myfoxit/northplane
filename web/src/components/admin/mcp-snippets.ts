@@ -5,11 +5,12 @@ import { t } from '../../i18n'
 export const TOKEN_PLACEHOLDER = 'np_<TOKEN>'
 
 // Scope presets for the minted MCP token: read-only for pure analysis
-// agents; operate adds ack/recheck/downtime; configure adds the generic
-// config tools' write scopes.
+// agents; operate adds the scopes the operate tools actually check
+// (alerts:ack, checks:run, downtimes:write, silences:write); configure
+// adds the generic config tools' write scopes.
 export const SCOPE_PRESETS = [
   { key: 'read', label: t('scopeRead'), scopes: 'objects:read,alerts:read,incidents:read,events:read,oncall:read,metrics:read,reports:render' },
-  { key: 'operate', label: t('scopeOperate'), scopes: 'objects:read,alerts:read,incidents:read,events:read,oncall:read,metrics:read,reports:render,alerts:ack,objects:write,maintenance:write' },
+  { key: 'operate', label: t('scopeOperate'), scopes: 'objects:read,alerts:read,incidents:read,events:read,oncall:read,metrics:read,reports:render,alerts:ack,checks:run,downtimes:write,silences:write' },
   { key: 'configure', label: t('scopeConfigure'), scopes: 'objects:read,alerts:read,incidents:read,events:read,oncall:read,metrics:read,reports:render,config:write,oncall:write' },
 ] as const
 

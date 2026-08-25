@@ -160,19 +160,21 @@ spec:
 | `v3User` | — | USM user; setting it switches the listener into v3-capable mode (v1/v2c are still received) |
 | `v3SecLevel` | inferred | `noAuthNoPriv`, `authNoPriv`, `authPriv`; when empty, inferred from which passphrases are set |
 | `v3AuthProto` | `SHA` | `MD5`, `SHA`, `SHA224`, `SHA256`, `SHA384`, `SHA512` |
-| `v3AuthPass` | — | auth passphrase (inline) |
+| `v3AuthPass` | — | auth passphrase (inline; wins over the secret reference) |
+| `v3AuthSecretRef` | — | auth passphrase as a secret reference (what the Admin dialog writes) |
 | `v3PrivProto` | `AES` | `DES`, `AES`, `AES192`, `AES256` |
-| `v3PrivPass` | — | privacy passphrase (inline) |
+| `v3PrivPass` | — | privacy passphrase (inline; wins over the secret reference) |
+| `v3PrivSecretRef` | — | privacy passphrase as a secret reference |
 
 Event-source fields that apply as well: `enabled` (must be true), `labels` (merged into every
 event), `rateLimit`/`burst` (token bucket, default 50 events/s with burst 200; excess traps are
 dropped silently with a debug log). `authMode`, `secretRef` and `mapping` are not used by traps.
 
-:::caution[SNMPv3 passphrases are inline]
-The listener reads `v3AuthPass`/`v3PrivPass` from the source config; it does not resolve secret
-references. The Admin dialog writes `v3AuthSecretRef`/`v3PrivSecretRef`, which the listener ignores
-— enter `v3AuthPass`/`v3PrivPass` under "Further settings" (Weitere Einstellungen) or set them
-via the API/bundle.
+:::note[SNMPv3 passphrases: references or inline]
+The listener resolves `v3AuthSecretRef`/`v3PrivSecretRef` (what the Admin dialog writes) through
+the secret store; inline `v3AuthPass`/`v3PrivPass` win when both are set, so configs from before
+the resolver keep working. A rotated secret value triggers a listener rebuild on the next
+reconcile (≤ 30 s).
 :::
 
 :::caution[Docker: publish the UDP port]

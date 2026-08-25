@@ -39,7 +39,7 @@ export function UsersTab() {
 
   return (
     <div className="space-y-4">
-      <TableActions onCreate={() => setEditing('new')} label={t('newUser')} />
+      <TableActions onCreate={() => setEditing('new')} label={t('newUser')} writePerm="admin:users" />
       <Table>
         <TableHeader>
           <TableRow>

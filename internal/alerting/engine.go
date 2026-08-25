@@ -495,11 +495,58 @@ func (en *Engine) checkHeartbeats(ctx context.Context, now time.Time) {
 	}
 	en.mu.RUnlock()
 
+	// Heartbeat.Source may name the event source or carry its id; lastSeen
+	// is keyed by id (events only have SourceID), so resolve names to ids
+	// per tenant before matching — otherwise a rule written with the source
+	// name never arms.
+	srcIDs := map[string]map[string]string{} // tenant → source name → id
+	lookupSrcID := func(tenantID, ref string) string {
+		m, ok := srcIDs[tenantID]
+		if !ok {
+			m = map[string]string{}
+			if srcs, err := storage.LoadAll[model.EventSource](ctx, en.store, tenantID, storage.KindEventSource); err == nil {
+				for _, s := range srcs {
+					m[s.Name] = s.ID
+				}
+			}
+			srcIDs[tenantID] = m
+		}
+		return m[ref]
+	}
+	// A rule may also mirror an explicit heartbeat resource by name (the
+	// demo seed's demo-heartbeat-rule does); its beats count as "seen".
+	beatByName := map[string]map[string]*time.Time{} // tenant → heartbeat name → last beat
+	lookupBeat := func(tenantID, ref string) *time.Time {
+		m, ok := beatByName[tenantID]
+		if !ok {
+			m = map[string]*time.Time{}
+			if hbRes, err := en.store.ListHeartbeats(ctx, tenantID); err == nil {
+				for _, h := range hbRes {
+					m[h.Name] = h.LastBeat
+				}
+			}
+			beatByName[tenantID] = m
+		}
+		return m[ref]
+	}
+
 	for _, hb := range hbs {
 		key := hb.tenantID + "/" + hb.rule.Heartbeat.Source
+		altKey := ""
+		if id := lookupSrcID(hb.tenantID, hb.rule.Heartbeat.Source); id != "" && id != hb.rule.Heartbeat.Source {
+			altKey = hb.tenantID + "/" + id
+		}
 		en.mu.RLock()
 		last, seen := en.lastSeen[key]
+		if altKey != "" {
+			if l2, s2 := en.lastSeen[altKey]; s2 && (!seen || l2.After(last)) {
+				last, seen = l2, true
+			}
+		}
 		en.mu.RUnlock()
+		if lb := lookupBeat(hb.tenantID, hb.rule.Heartbeat.Source); lb != nil && (!seen || lb.After(last)) {
+			last, seen = *lb, true
+		}
 		if !seen {
 			continue // never seen: arms after first event
 		}

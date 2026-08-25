@@ -149,7 +149,25 @@ func (m *Manager) sendWebhook(ctx context.Context, ch *model.NotificationChannel
 	if u == "" {
 		return "", fmt.Errorf("webhook channel: config.url required")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, strings.NewReader(body))
+	// config.method (the dialog offers it): POST default, small allow-list
+	// so a typo cannot turn into an arbitrary verb. GET sends no body.
+	method := http.MethodPost
+	switch strings.ToUpper(strings.TrimSpace(ch.Config["method"])) {
+	case "", "POST":
+	case "PUT":
+		method = http.MethodPut
+	case "PATCH":
+		method = http.MethodPatch
+	case "GET":
+		method = http.MethodGet
+	default:
+		return "", fmt.Errorf("webhook channel: unsupported method %q (POST, PUT, PATCH or GET)", ch.Config["method"])
+	}
+	var bodyReader io.Reader
+	if method != http.MethodGet {
+		bodyReader = strings.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, u, bodyReader)
 	if err != nil {
 		return "", err
 	}

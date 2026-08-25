@@ -170,8 +170,16 @@ func scanOutbox(rows *sql.Rows) ([]*OutboxItem, error) {
 }
 
 // OutboxRetry reschedules after a failure; dead=true moves to the DLQ.
-func (s *Store) OutboxRetry(ctx context.Context, id string, attempts int, nextTry time.Time, dead bool, lastError string) error {
+// channelID, when non-empty, records the channel instance the delivery
+// resolved to so DLQ rows name the failing channel.
+func (s *Store) OutboxRetry(ctx context.Context, id string, attempts int, nextTry time.Time, dead bool, lastError, channelID string) error {
 	return s.Write(ctx, func(tx *sql.Tx) error {
+		if channelID != "" {
+			_, err := tx.ExecContext(ctx, s.Q(
+				`UPDATE outbox SET attempts = ?, next_try = ?, dead = ?, last_error = ?, channel_id = ? WHERE id = ?`),
+				attempts, s.T(nextTry), dead, lastError, channelID, id)
+			return err
+		}
 		_, err := tx.ExecContext(ctx, s.Q(
 			`UPDATE outbox SET attempts = ?, next_try = ?, dead = ?, last_error = ? WHERE id = ?`),
 			attempts, s.T(nextTry), dead, lastError, id)

@@ -278,7 +278,10 @@ export function Layout({ children }: { children: ReactNode }) {
           </div>
         )}
 
-        <main className="flex-1 min-w-0 p-5 overflow-auto">{children}</main>
+        {/* pb-24: the floating assistant bubble sits bottom-right — the
+            extra scroll room keeps it from covering the last table row and
+            its row actions (WIDGET-1). */}
+        <main className="flex-1 min-w-0 p-5 pb-24 overflow-auto">{children}</main>
       </div>
 
       {aiOpen && <AISidebar onClose={() => setAIOpen(false)} />}

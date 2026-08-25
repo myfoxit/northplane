@@ -247,10 +247,14 @@ func (s *Service) Converse(ctx context.Context, p *auth.Principal,
 	}
 	msgs = append(msgs, Message{Role: "user", Content: message})
 
-	var defs []ToolDef
-	for _, t := range s.tools {
-		defs = append(defs, t.Def)
+	// Advertise only policy-enabled tools — a disabled tool would be
+	// blocked at execution anyway, so offering it just wastes a round.
+	pol, polErr := s.Policy(ctx, p.TenantID)
+	if polErr != nil {
+		s.log.Warn("ai: policy load failed, using defaults", "err", polErr)
+		pol = &ToolPolicy{}
 	}
+	defs := s.enabledToolDefs(pol, nil)
 	system := s.systemPrompt(p)
 
 	type actionCard struct {

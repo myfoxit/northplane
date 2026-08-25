@@ -5,10 +5,10 @@ sidebar:
   order: 6
 ---
 
-**Admin** (Administration) at `/admin` gathers everything that is not day-to-day monitoring: identity and access, the alarming building blocks (contacts, channels, event sources, heartbeats, webhooks), multi-tenant and federation management, secrets and tokens, integration helpers (MCP, agents), operational queues (dead letters, AI approvals), configuration as code, the audit log, system health and the instance's appearance. The page is a single horizontally scrollable tab strip with 21 tabs; the first tab, **Users**, is selected by default.
+**Admin** (Administration) at `/admin` gathers everything that is not day-to-day monitoring: identity and access, the alarming building blocks (contacts, channels, event sources, heartbeats, webhooks), multi-tenant and federation management, secrets and tokens, integration helpers (MCP, agents), operational queues (dead letters, AI approvals), configuration as code, the audit log, system health and the instance's appearance. The page shows up to 21 tabs (wrapped into rows, filtered to what your permissions can actually use); the first visible tab is selected by default, and the active tab is mirrored into `?tab=` so Admin views deep-link and survive back/forward.
 
 :::caution[Tabs are not filtered by permission]
-The tab strip is the same for every user. Only the tenant switcher (`admin:tenants`) and the **Appearance** controls (`config:write`) are hidden or disabled client-side; every other tab renders and fires its requests, and a user without the permission sees empty tables or `403` errors (for example a tenant user opens **Tenants** and gets a **Create** button that fails). The API enforces the permissions listed below in all cases. This is tracked as RBAC-1/RBAC-2 in [Known issues](/docs/project/roadmap-and-known-issues/).
+Tabs are permission-filtered: a tab whose list request would only `403` is not offered (a tenant user without `admin:tenants` simply has no **Tenants** tab), and create buttons are hidden without the matching write permission. The API enforces the permissions listed below in all cases — the client filter only aligns what is shown.
 :::
 
 ## The 21 tabs

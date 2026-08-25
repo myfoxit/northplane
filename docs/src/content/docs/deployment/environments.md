@@ -14,7 +14,7 @@ The state below was checked live on 2026-08-23 by SSH/HTTP against the systems a
 | Environment | Role | Where | URL | Data mode | Running build | State (2026-08-23) |
 |---|---|---|---|---|---|---|
 | **np-01** | production | VM101 `saas1` (10.10.10.11) on Proxmox `51.83.96.40`, behind CT100 Caddy + Cloudflare | `https://doktrace.com` | **real** (since 2026-08-20) | `ghcr.io/myfoxit/northplane:main-daa6dc518a2b` (= `main` HEAD) | healthy; deploy job green |
-| **np-02** | second production instance (standalone, bundled Caddy) | Hetzner `91.98.92.10` | `https://91.98.92.10` | real (by workflow) | — | **decommissioned / unreachable** — box reclaimed, IP reassigned; `deploy-hetzner` job fails on every run; action needed |
+| **np-02** | second production instance (standalone, bundled Caddy) | Hetzner `91.98.92.10` | `https://91.98.92.10` | real (by workflow) | — | **decommissioned** — box reclaimed, IP reassigned; the `deploy-hetzner` job was removed, Deploy runs are green again |
 | **np-staging** | federation **edge** of production (tenant MyFoxIT, site `vm104-edge`); lab mirror | VM104 `saas4` (10.10.10.14) on the same Proxmox host | `https://10.10.10.14:8443` (private bridge; self-signed) | real (lab data) | not re-verified on 2026-08-23 | up; edge connected to prod (lab notes 2026-08-21) |
 | CT110 `targets` | lab check targets | 10.10.10.20 | — | — | — | up |
 | VM102 `saas2` "netlab" | network lab (containerlab, 2× Cisco IOSv, SR Linux) + `np-agent` → prod | 10.10.10.12 | — | — | — | up |
@@ -39,7 +39,7 @@ The state below was checked live on 2026-08-23 by SSH/HTTP against the systems a
 | TLS / ingress | Cloudflare-proxied A record → `51.83.96.40` → DNAT 443 → CT100 Caddy (`/etc/caddy/sites/saas1.caddy`, Let's Encrypt HTTP-01) → `10.10.10.11:8443` |
 | Published ports | `8443` plus `9162/udp`, `2023`, `8123`, `4573` (private bridge only; merged 2026-08-23, live with the next deploy) |
 | Agents reporting here | `np-prod` (VM101), `pve-host` (hypervisor), `netlab` (VM102), `alarmlab` (VM103) |
-| Last deploy | Deploy run `32629242562`, 2026-08-23 08:48 UTC, for merge `daa6dc5`: `publish` and `deploy` succeeded, `deploy-hetzner` failed (np-02) |
+| Last deploy | Deploy run `32629242562`, 2026-08-23 08:48 UTC, for merge `daa6dc5`: `publish` and `deploy` succeeded (the since-removed `deploy-hetzner` job failed) |
 | Docs | `/docs/` is served by every image built from the commit that introduced the embedded documentation onwards; the build verified at 08:50 UTC (`main-daa6dc518a2b`) predates it, the next Deploy run after the merge carries it ([CI/CD](/docs/deployment/ci-cd/)) |
 | Backups | none scheduled (no `vzdump` job on the host, no periodic app backup) — [Operations → Backups](/docs/deployment/operations/#backups) |
 
@@ -51,12 +51,12 @@ Topology, access and the compose file: [Proxmox VM](/docs/deployment/proxmox-vm/
 |---|---|
 | Address | `91.98.92.10` (repo variable `HETZNER_HOST`) |
 | 2026-08-23 | TCP/22 times out; `https://91.98.92.10/` answers 404 with a parking page (earlier observation: a Yahoo parking page). The Hetzner box has been reclaimed and the IP reassigned to a stranger |
-| Pipeline effect | `deploy-hetzner` fails at "Ship compose stack" (`ssh: connect to host 91.98.92.10 port 22: Connection timed out`) on **every** Deploy run — observed 2026-08-14, 2026-08-21, 2026-08-23. The `deploy` job for np-01 is independent and succeeds, so the red run does not mean production missed the rollout |
+| Pipeline effect | none since the `deploy-hetzner` job was removed from `deploy.yml`; before that it failed at "Ship compose stack" on every run (observed 2026-08-14 … 2026-08-23) while np-01's `deploy` job kept succeeding |
 | Design | the standalone recipe: `deploy/docker-compose.yml` + `deploy/Caddyfile` (bundled Caddy, bare-IP internal certificate, Let's Encrypt once `DOMAIN` is set), `.env` rendered by CI with `DOMAIN=localhost`, `SERVER_IP=91.98.92.10`, `NORTHPLANE_BASE_URL=https://91.98.92.10`, `NORTHPLANE_DEMO=false`, `NORTHPLANE_DATA_DIR=/var/lib/northplane/real`, `NP_DEFAULT_ADMIN_EMAIL=root@localhost`; provisioned with `deploy/provision-server.sh` as root on Rocky 10 |
-| Stale configuration | variables `HETZNER_HOST`, `HETZNER_KNOWN_HOSTS`; secrets `HETZNER_SSH_KEY`, `HETZNER_ADMIN_PASSWORD` — all refer to the lost box |
+| Stale configuration | variables `HETZNER_HOST`, `HETZNER_KNOWN_HOSTS`; secrets `HETZNER_SSH_KEY`, `HETZNER_ADMIN_PASSWORD` — unused since the job removal, still referring to the lost box |
 | Data | whatever lived in its `northplane-data` volume is gone with the box; no backup existed |
 
-**Action needed:** either re-create the box and repoint the pipeline (new key pair, `provision-server.sh`, new `HETZNER_HOST`/`HETZNER_KNOWN_HOSTS`/`HETZNER_SSH_KEY`/`HETZNER_ADMIN_PASSWORD`) — the step-by-step is the [np-02 recreation checklist](/docs/deployment/provisioning/#np-02-recreation-checklist) — or remove the `deploy-hetzner` job and the four `HETZNER_*` entries so that Deploy runs are green again.
+**Done:** the `deploy-hetzner` job was removed, so Deploy runs are green again. To bring a standalone box back, follow the [np-02 recreation checklist](/docs/deployment/provisioning/#np-02-recreation-checklist), restore the job from git history and rotate the four `HETZNER_*` entries.
 
 ## np-staging — VM104 (federation edge of production)
 
@@ -108,7 +108,7 @@ Guest list verified 2026-08-23; service details from the lab notes (see the [ope
 
 ## Open items
 
-1. **np-02 is gone** — repoint `deploy-hetzner` to a new box or remove it; the `HETZNER_*` variables/secrets are stale. Until then every Deploy run is red although production deploys fine. ([Provisioning](/docs/deployment/provisioning/#np-02-recreation-checklist))
+1. **np-02 is gone** — the `deploy-hetzner` job was removed (Deploy runs green again); the `HETZNER_*` variables/secrets remain stale until a new box is provisioned. ([Provisioning](/docs/deployment/provisioning/#np-02-recreation-checklist))
 2. **Schedule production backups** — there is no automated job yet; `secret.key` and the data volume need regular off-host copies. ([Operations → Backups](/docs/deployment/operations/#backups))
 3. **Confirm the alarm-input ports after the next deploy** — `9162/udp`, `2023`, `8123`, `4573` were merged into `deploy/docker-compose.vm.yml` on 2026-08-23; check with `docker compose ps` on the VM that they are mapped.
 4. **Confirm `/docs/` on doktrace.com after the next deploy** — the image verified on 2026-08-23 08:50 UTC predates the docs embedding; the first Deploy run after the docs merge serves it (check `https://doktrace.com/docs/`).

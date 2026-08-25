@@ -230,7 +230,7 @@ The channel's `$SECRET:smtp-pass$` reference requires `PUT /api/v1/secrets/smtp-
 3. CI: `np apply -f bundle.yaml --dry-run` on pull requests (token with `objects:read`), `np apply -f bundle.yaml` on merge (token with `config:write`). Add `--prune` only when the repository is the complete source of truth for the tenant — prune deletes every exported document not in the bundle, including dashboards and reports users created in the UI.
 4. Use a tenant-scoped token and the `X-Northplane-Tenant` header (or one token per tenant) for multi-tenant set-ups — a bundle is always applied into one tenant.
 
-Export limits: objects are exported up to 5 000 per tenant and resource documents up to 2 000 per kind; larger tenants would be truncated silently.
+Export pages through the full inventory (5 000 objects / 2 000 resource documents per page) — exports are complete regardless of tenant size.
 
 ## Federation
 

@@ -639,11 +639,20 @@ func (a *API) deleteByPlan(ctx context.Context, tenantID string, action PlanActi
 // exportBundle renders the canonical bundle of a tenant (SPEC §11.6).
 func (a *API) exportBundle(ctx context.Context, tenantID, folder string) ([]bundle.Doc, error) {
 	var docs []bundle.Doc
-	// objects
-	objs, err := a.Store.ListObjects(ctx, storage.ObjectFilter{
-		TenantID: tenantID, Folder: folder, Limit: 5000})
-	if err != nil {
-		return nil, err
+	// objects — page through everything; an export must never truncate
+	// silently (SPEC §11.6: the bundle is the canonical config).
+	var objs []*model.Object
+	for cursor := ""; ; {
+		page, err := a.Store.ListObjects(ctx, storage.ObjectFilter{
+			TenantID: tenantID, Folder: folder, Limit: 5000, Cursor: cursor})
+		if err != nil {
+			return nil, err
+		}
+		objs = append(objs, page...)
+		if len(page) < 5000 {
+			break
+		}
+		cursor = page[len(page)-1].ID
 	}
 	hostNames := map[string]string{}
 	for _, o := range objs {
@@ -678,9 +687,17 @@ func (a *API) exportBundle(ctx context.Context, tenantID, folder string) ([]bund
 		if storageKind == storage.KindRole {
 			continue // roles export via admin tooling only
 		}
-		envs, err := a.Store.ListResources(ctx, tenantID, storageKind, "", "", 2000)
-		if err != nil {
-			return nil, err
+		var envs []*storage.ResourceEnvelope
+		for cursor := ""; ; {
+			page, err := a.Store.ListResources(ctx, tenantID, storageKind, "", cursor, 2000)
+			if err != nil {
+				return nil, err
+			}
+			envs = append(envs, page...)
+			if len(page) < 2000 {
+				break
+			}
+			cursor = page[len(page)-1].Name
 		}
 		for _, env := range envs {
 			var body map[string]any

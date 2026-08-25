@@ -410,6 +410,10 @@ func (a *API) handleAlertmanager(w http.ResponseWriter, r *http.Request) {
 		a.problem(w, r, http.StatusNotFound, "np:ingress/unknown-source", "unknown event source", "")
 		return
 	}
+	if !src.Enabled {
+		a.problem(w, r, http.StatusForbidden, "np:ingress/disabled", "event source disabled", "")
+		return
+	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
 	if err != nil || !a.ingressAuth(r, src, body) {
 		a.problem(w, r, http.StatusUnauthorized, "np:ingress/auth", "ingress authentication failed", "")

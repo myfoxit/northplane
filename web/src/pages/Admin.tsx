@@ -6,10 +6,12 @@
 // per-row Bearbeiten/Löschen; ETag-versioned resources load via
 // resourceApi.get and PUT with that etag (409/412 → FormError).
 import { useState } from 'react'
+import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { Sparkles } from 'lucide-react'
 import { get, post, del, queryClient, fmtTime, type ListResponse } from '../api'
-import type { AIAction } from '../types'
+import type { AIAction, Whoami } from '../types'
+import { hasPermission } from '../permissions'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardAction, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -42,20 +44,56 @@ const tabs = [
 ] as const
 type Tab = typeof tabs[number]
 
+// The permission each tab's primary list request is guarded with on the
+// API. A tab whose every request would 403 is not offered at all — the
+// server still enforces everything; this only aligns what is shown.
+const TAB_PERMS: Record<Tab, string> = {
+  users: 'admin:users', roles: 'admin:read', contacts: 'oncall:read',
+  contactGroups: 'oncall:read', channels: 'objects:read', eventSources: 'objects:read',
+  webhooks: 'objects:read', heartbeats: 'objects:read', tenants: 'admin:tenants',
+  sites: 'objects:read', secrets: 'admin:secrets', tokens: 'admin:tokens',
+  mcp: 'admin:tokens', agents: 'admin:tokens', deadLetters: 'alerts:read',
+  bundles: 'config:write', audit: 'admin:audit', aiQueue: 'alerts:read',
+  aiProviders: 'admin:ai', health: 'admin:read', appearance: 'config:write',
+}
+
 export function AdminPage() {
-  const [tab, setTab] = useState<Tab>('users')
+  // The tab lives in ?tab= (NAV-2): deep-linkable, back/forward-safe.
+  const search = useSearch({ strict: false }) as { tab?: string }
+  const navigate = useNavigate()
+  const { data: me } = useQuery({
+    queryKey: ['whoami'],
+    queryFn: () => get<Whoami>('/whoami'),
+    staleTime: 5 * 60_000,
+  })
+  // me === undefined only during the very first load (the Layout's tenant
+  // switcher shares the query); rendering no tabs for that moment beats
+  // flashing 21 tabs at an operator who holds three.
+  const visible = me ? tabs.filter((tb) => hasPermission(me.permissions, TAB_PERMS[tb])) : []
+  const requested = search.tab as Tab | undefined
+  const tab: Tab = requested && visible.includes(requested) ? requested : (visible[0] ?? 'users')
+  const setTab = (v: Tab) =>
+    navigate({ to: '/admin', search: (prev) => ({ ...prev, tab: v }) })
+  if (!me) return <div className="space-y-4"><h1 className="text-lg font-bold">{t('admin')}</h1></div>
+  if (visible.length === 0) {
+    return (
+      <div className="space-y-4">
+        <h1 className="text-lg font-bold">{t('admin')}</h1>
+        <Empty text={t('notAuthorized')} />
+      </div>
+    )
+  }
   return (
     <div className="space-y-4">
       <h1 className="text-lg font-bold">{t('admin')}</h1>
       <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
-        {/* 19 tabs overflow one row — scroll horizontally instead of clipping
-            the last ones (NAV-1). w-max lets the list size to its content so
-            the wrapper is what scrolls; the thin scrollbar signals more tabs. */}
-        <div className="overflow-x-auto pb-1 [scrollbar-width:thin]">
-          <TabsList className="w-max">
-            {tabs.map((tb) => <TabsTrigger key={tb} value={tb}>{t(tb)}</TabsTrigger>)}
-          </TabsList>
-        </div>
+        {/* Up to 21 tabs (permission-filtered) — wrap into rows instead of
+            an overflow scroller: every tab stays visible without relying on
+            a scroll affordance (NAV-1). The tab is mirrored into ?tab= so
+            Admin views are deep-linkable and survive back/forward (NAV-2). */}
+        <TabsList className="h-auto w-max max-w-full flex-wrap">
+          {visible.map((tb) => <TabsTrigger key={tb} value={tb}>{t(tb)}</TabsTrigger>)}
+        </TabsList>
       </Tabs>
       {tab === 'users' && <UsersTab />}
       {tab === 'roles' && <RolesTab />}
@@ -191,11 +229,16 @@ function AuditTab() {
               <TableCell className="text-muted-foreground/70 tabular-nums">{e.seq}</TableCell>
               <TableCell className="text-muted-foreground text-xs tabular-nums">{fmtTime(e.ts)}</TableCell>
               <TableCell className="text-xs">
-                <Badge variant="outline" className={e.actorType === 'ai_agent'
-                  ? 'bg-purple-500/10 text-purple-400 border-purple-800'
-                  : 'bg-muted text-muted-foreground border-input'}>
-                  {e.actorType}
-                </Badge>
+                {/* Type badge + the concrete actor id — "user" alone does
+                    not tell an auditor WHO acted (AUDIT-1). */}
+                <span className="inline-flex items-center gap-1.5">
+                  <Badge variant="outline" className={e.actorType === 'ai_agent'
+                    ? 'bg-purple-500/10 text-purple-400 border-purple-800'
+                    : 'bg-muted text-muted-foreground border-input'}>
+                    {e.actorType}
+                  </Badge>
+                  <span className="text-muted-foreground font-mono truncate max-w-40">{e.actorId}</span>
+                </span>
               </TableCell>
               <TableCell className="text-foreground/90 font-mono text-xs">{e.action}</TableCell>
               <TableCell className="text-muted-foreground text-xs font-mono truncate max-w-48">{e.resource}</TableCell>

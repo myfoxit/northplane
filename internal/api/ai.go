@@ -109,7 +109,10 @@ func (a *API) registerAI() {
 				return
 			}
 			a.audit(r, p, "ai.action.approve", param(r, "id"), nil, nil)
-			if a.AI != nil && a.AI.Enabled() {
+			// Execution needs only the tool registry, not a configured
+			// ai.provider — approvals from the agent chat and MCP (which
+			// bring their own model) must run too.
+			if a.AI != nil {
 				// Execute under the approver's scopes (not god-mode): the human
 				// approval authorises only what the approver may themselves do.
 				result, err := a.AI.ExecuteApproved(r.Context(), tenant, param(r, "id"), p)

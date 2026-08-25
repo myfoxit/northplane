@@ -4,7 +4,7 @@
 // by only swapping the import path. Generic primitives (Button/Input/Card/
 // Dialog/Tabs/Table/Badge/Toggle/TextArea) are intentionally NOT here —
 // consumers use shadcn @/components/ui/* directly.
-import { useState, type ReactNode } from 'react'
+import { cloneElement, isValidElement, useId, useState, type ReactElement, type ReactNode } from 'react'
 import { Inbox, Loader2, X, AlertTriangle, RefreshCw, Copy } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -120,17 +120,26 @@ export function LabelChips({ labels }: { labels?: Record<string, string> }) {
 
 // —— from forms.tsx ————————————————————————————————————————————————————
 
-// Field: label + control + optional hint/error, grid-friendly.
+// Field: label + control + optional hint/error, grid-friendly. A single
+// child without an id gets a generated one wired to the label's htmlFor,
+// so the control carries an accessible name (A11Y-2) — components that
+// forward props to a native input (Input, Textarea, …) pick it up.
 export function Field({ label, hint, error, required, children, className }: {
   label: ReactNode; hint?: string; error?: string; required?: boolean
   children: ReactNode; className?: string
 }) {
+  const autoId = useId()
+  let control = children
+  if (isValidElement(children) && (children.props as { id?: string }).id == null) {
+    control = cloneElement(children as ReactElement<{ id?: string }>, { id: autoId })
+  }
   return (
     <div className={cn('block text-sm', className)}>
-      <Label className="block text-xs leading-tight break-words text-muted-foreground font-medium">
+      <Label htmlFor={control === children ? undefined : autoId}
+        className="block text-xs leading-tight break-words text-muted-foreground font-medium">
         {label}{required && <span className="text-destructive"> *</span>}
       </Label>
-      <div className="mt-1">{children}</div>
+      <div className="mt-1">{control}</div>
       {hint && !error && <span className="text-[11px] text-muted-foreground">{hint}</span>}
       {error && <span className="text-[11px] text-destructive">{error}</span>}
     </div>

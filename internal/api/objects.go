@@ -464,6 +464,23 @@ func (a *API) registerConfigResources() {
 		})
 }
 
+// systemRoleImmutable reports whether the named document is a built-in
+// role (model.Role.System). Those are immutable through the API — the UI
+// hides edit/delete, and the seed/reconcile paths write through the store
+// directly, so nothing legitimate mutates them here. Missing or non-role
+// documents pass (the caller's normal path handles those).
+func (a *API) systemRoleImmutable(ctx context.Context, tenantID, kind, name string) bool {
+	if kind != storage.KindRole {
+		return false
+	}
+	env, err := a.Store.ResolveResource(ctx, tenantID, kind, name)
+	if err != nil {
+		return false
+	}
+	var role model.Role
+	return json.Unmarshal(env.Doc, &role) == nil && role.System
+}
+
 // resourceCRUD generates the standard CRUD for resource-document kinds.
 func (a *API) resourceCRUD(path, kind, permPrefix string, proto any) {
 	readPerm := model.Permission(permPrefix + ":read")
@@ -543,6 +560,12 @@ func (a *API) resourceCRUD(path, kind, permPrefix string, proto any) {
 				return
 			}
 			name := param(r, "name")
+			if a.systemRoleImmutable(r.Context(), a.tenantOf(r, p), kind, name) {
+				a.problem(w, r, http.StatusForbidden, "np:rbac/system-role",
+					"system role is immutable",
+					"built-in roles cannot be modified; create a custom role (optionally with includes) instead")
+				return
+			}
 			old, _ := a.Store.GetResource(r.Context(), a.tenantOf(r, p), kind, name)
 			env, err := a.Store.PutResource(r.Context(), a.tenantOf(r, p), kind, name, doc, version)
 			if err != nil {
@@ -562,6 +585,11 @@ func (a *API) resourceCRUD(path, kind, permPrefix string, proto any) {
 	a.handle("DELETE /api/v1/"+path+"/{name}", "Delete "+kind, writePerm, nil, nil,
 		func(w http.ResponseWriter, r *http.Request, p *auth.Principal) {
 			name := param(r, "name")
+			if a.systemRoleImmutable(r.Context(), a.tenantOf(r, p), kind, name) {
+				a.problem(w, r, http.StatusForbidden, "np:rbac/system-role",
+					"system role is immutable", "built-in roles cannot be deleted")
+				return
+			}
 			old, _ := a.Store.GetResource(r.Context(), a.tenantOf(r, p), kind, name)
 			if err := a.Store.DeleteResource(r.Context(), a.tenantOf(r, p), kind, name); err != nil {
 				a.fail(w, r, err)

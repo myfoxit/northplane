@@ -136,7 +136,7 @@ func (a *API) registerAlerts() {
 		func(w http.ResponseWriter, r *http.Request, p *auth.Principal) {
 			var req ackRequest
 			_ = json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req) // body optional, capped
-			alert, err := a.ackAlert(r, p.TenantID, param(r, "id"), p.Name, req.Comment, p)
+			alert, err := a.ackAlert(r, a.tenantOf(r, p), param(r, "id"), p.Name, req.Comment, p)
 			if err != nil {
 				a.fail(w, r, err)
 				return
@@ -223,7 +223,7 @@ func (a *API) registerAlerts() {
 							Action: "alert.ack", Resource: alertID,
 							AfterJSON: `{"via":"ack-link"}`, SourceIP: remoteHost(r),
 						})
-						a.alertLifecycleEventTenant(r, t.ID, alertID)
+						a.alertLifecycleEventTenant(r, t.ID, alertID, "ack-link")
 					}
 				}
 				w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -293,7 +293,7 @@ func (a *API) registerAlerts() {
 						Action: "alert.ack", Resource: alertID,
 						AfterJSON: `{"via":"voice-dtmf"}`, SourceIP: remoteHost(r),
 					})
-					a.alertLifecycleEventTenant(r, t.ID, alertID)
+					a.alertLifecycleEventTenant(r, t.ID, alertID, "voice-dtmf")
 				}
 			}
 			say("Alert acknowledged. The escalation chain is stopped. Goodbye.")
@@ -650,8 +650,11 @@ func (a *API) alertLifecycleEvent(r *http.Request, tenantID string, alert *model
 	a.Bus.FanoutOnly(ev)
 }
 
-func (a *API) alertLifecycleEventTenant(r *http.Request, tenantID, alertID string) {
-	raw, _ := json.Marshal(map[string]any{"alertId": alertID, "via": "ack-link"})
+// alertLifecycleEventTenant emits the ack event for token/telephony
+// acknowledgements; via names the actual path (ack-link, voice-inbound,
+// voice-dtmf, sms) so event rows match the audit entries (ALM-11).
+func (a *API) alertLifecycleEventTenant(r *http.Request, tenantID, alertID, via string) {
+	raw, _ := json.Marshal(map[string]any{"alertId": alertID, "via": via})
 	ev := &model.Event{ID: model.NewID(), TenantID: tenantID, TS: time.Now().UTC(),
 		Type: model.EventAck, Severity: model.SevInfo, Payload: raw}
 	a.insertEvents(r.Context(), ev)

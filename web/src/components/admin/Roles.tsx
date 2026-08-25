@@ -24,7 +24,7 @@ export function RolesTab() {
   const [copying, setCopying] = useState<Role | null>(null)
   return (
     <div className="space-y-4">
-      <TableActions onCreate={() => setEditing('new')} label={t('create')} />
+      <TableActions onCreate={() => setEditing('new')} label={t('create')} writePerm="admin:write" />
       <Table>
         <TableHeader>
           <TableRow>

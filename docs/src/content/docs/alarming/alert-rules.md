@@ -21,7 +21,7 @@ An alert rule turns events into alerts. Each enabled rule compiles a CEL express
 | `name` | string | Unique per tenant; used in default dedup keys and in `alert_opened.rule` |
 | `disabled` | bool, `false` | Skip the rule |
 | `match` | CEL string | Required unless `heartbeat` is set; mutually exclusive with it |
-| `heartbeat` | `{source, expectEvery}` | Silence detection for an event source **id** — see [Heartbeat rules](#heartbeat-rules) |
+| `heartbeat` | `{source, expectEvery}` | Silence detection for an event source (name or id) or a heartbeat resource — see [Heartbeat rules](#heartbeat-rules) |
 | `pendingFor` | duration, `0` | Delay opening until the condition has been pending this long |
 | `dedupKey` | Go template, empty | Overrides the default dedup key — see [Dedup key](#dedup-key) |
 | `severity` | `critical` \| `warning` \| `info` \| `ok`, empty | Alert severity; empty = the triggering event's severity |
@@ -123,7 +123,7 @@ A custom `dedupKey` is a Go `text/template` with data `{{ .event.* }}` (the CEL 
 `title` is a Go template whose only data is **`{{ .event.* }}`** — the same view the CEL expression sees. Correct forms: `{{ .event.summary }}`, `{{ .event.object }} is {{ .event.state }}`, `{{ .event.payload.subject }}`, `{{ .event.labels.host }}: {{ .event.output }}`. If the template is empty, fails, or renders empty, the title falls back to the event summary, then `<object> is <state>`, then the rule name.
 
 :::caution[Wrong placeholders fail silently]
-The data is `{{ .event.* }}` — lowercase. `{{ .Payload.title }}` (from the old operator guide) errors at execution time and silently produces the fallback title; `{{ .ObjectID }}` or `{{ .ObjectName }} ist {{ .ToLabel }}` (the placeholders shown in the rule dialog's input fields) render the literal text `<no value>`. Use `{{ .event.payload.title }}`, `{{ .object.id }}` (dedup only) and `{{ .event.object }} is {{ .event.state }}`.
+The data is `{{ .event.* }}` — lowercase. `{{ .Payload.title }}` (from the old operator guide) errors at execution time and silently produces the fallback title; `{{ .ObjectID }}` or `{{ .ObjectName }} ist {{ .ToLabel }}` (placeholders an older rule dialog suggested; the dialog now shows the correct forms) render the literal text `<no value>`. Use `{{ .event.payload.title }}`, `{{ .object.id }}` (dedup only) and `{{ .event.object }} is {{ .event.state }}`.
 :::
 
 ## Pending, auto-close, labels and severity
@@ -147,16 +147,12 @@ kind: AlertRule
 metadata: { name: sensor-gateway-silent }
 spec:
   heartbeat:
-    source: 0199a0b1-2c3d-7e4f-8a9b-0c1d2e3f4a5b   # EventSource *id*
+    source: sensor-gateway        # EventSource name or id — or a Heartbeat resource name
     expectEvery: 10m
   severity: warning
 ```
 
-The engine records the last time it saw **any** event carrying a `sourceId` (every ingress event counts as a beat). A heartbeat rule arms after the first such event; from then on, if no event arrived for longer than `expectEvery`, it opens an alert with dedup key `heartbeat/<ruleName>` and title `No event from "<source>" for <duration> (expected every <expectEvery>)`; as soon as events resume, the alert is resolved by that key. The last-seen map is in memory — after a restart the rule re-arms only once the source sends again.
-
-:::caution[`heartbeat.source` is the EventSource id]
-It is compared with the event's `sourceId`, which is the source's UUID — not its name. The rule dialog's placeholder (`backup-job`) suggests a name; that never arms. For a dead-man check on a job that is not an event source, use a [Heartbeat resource](/docs/monitoring/heartbeats/) plus a normal rule on `event.type == "heartbeat_missed"`.
-:::
+The engine records the last time it saw **any** event carrying a `sourceId` (every ingress event counts as a beat). `heartbeat.source` may be the event source's **name or id**; a name is resolved per evaluation, so renaming the source and the rule together keeps working. It may also name a [Heartbeat resource](/docs/monitoring/heartbeats/) — its beats (`POST /heartbeats/{name}/beat`) then count as "seen", which is what the demo seed's `demo-heartbeat-rule` relies on. A heartbeat rule arms after the first event/beat; from then on, if nothing arrived for longer than `expectEvery`, it opens an alert with dedup key `heartbeat/<ruleName>` and title `No event from "<source>" for <duration> (expected every <expectEvery>)`; as soon as events resume, the alert is resolved by that key. The event last-seen map is in memory — after a restart an event-source rule re-arms only once the source sends again (heartbeat-resource beats are persisted).
 
 ## Testing rules
 

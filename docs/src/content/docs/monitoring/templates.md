@@ -139,7 +139,7 @@ In templates and objects they are referenced by name from two fields:
 | Field | Used by |
 |---|---|
 | `notificationPeriod` | direct object notifications (`contacts`/`contactGroups`): a hard state change outside the period sends nothing; evaluated in UTC |
-| `checkPeriod` | resolved and shown in the effective config (default `24x7`), but not consulted by the scheduler in this version — checks run around the clock |
+| `checkPeriod` | resolved into the effective config (default `24x7`) and enforced: scheduled runs and freshness probes outside the period are skipped; a manual check-now always runs |
 
 Contacts and on-call schedules reference time periods as well (channel preferences, rotation restrictions); see [Contacts and on-call](/docs/alarming/contacts-and-oncall/).
 
